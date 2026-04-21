@@ -4,6 +4,7 @@ import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
 import 'profile_screen.dart';
+import 'scan_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -45,10 +46,13 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _showScanSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _ScanSheet(),
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const ScanScreen(),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 300),
+        fullscreenDialog: true,
+      ),
     );
   }
 }
@@ -174,40 +178,6 @@ class _ScanTabItem extends StatelessWidget {
   }
 }
 
-class _ScanSheet extends StatelessWidget {
-  const _ScanSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.chipBorder, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 24),
-          const Text('📸', style: TextStyle(fontSize: 48)),
-          const SizedBox(height: 16),
-          const Text('Scan a Receipt', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
-          const SizedBox(height: 8),
-          Text('Point your camera at a grocery receipt\nand QUILLO will suggest delicious recipes.', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: AppColors.textMedium, height: 1.5)),
-          const SizedBox(height: 28),
-          Container(
-            width: double.infinity,
-            height: 54,
-            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(16)),
-            child: const Center(child: Text('Open Camera', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'Nunito'))),
-          ),
-          const SizedBox(height: 12),
-        ],
-      ),
-    );
-  }
-}
 
 // Placeholder screens
 class ScanPlaceholderScreen extends StatelessWidget {

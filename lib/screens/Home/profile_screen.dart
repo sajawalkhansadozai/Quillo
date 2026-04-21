@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../paywall_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -237,7 +238,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: AppColors.accent,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('Go Pro', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (_, anim, __) => const PaywallScreen(),
+                        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+                          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                          child: child,
+                        ),
+                        transitionDuration: const Duration(milliseconds: 400),
+                        fullscreenDialog: true,
+                      ),
+                    ),
+                    child: const Text('Go Pro', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                  ),
                 ),
               ],
             ),

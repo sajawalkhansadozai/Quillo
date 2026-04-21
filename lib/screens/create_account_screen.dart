@@ -299,7 +299,7 @@ class _LoadingButton extends StatelessWidget {
       width: double.infinity,
       height: 54,
       decoration: BoxDecoration(
-        color: AppColors.accent.withOpacity(0.7),
+        color: AppColors.accent.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(16),
       ),
       child: const Center(
@@ -378,7 +378,7 @@ class _AllSetScreenState extends State<AllSetScreen>
                           width: 80,
                           height: 80,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withOpacity(0.15),
+                            color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: const Center(
