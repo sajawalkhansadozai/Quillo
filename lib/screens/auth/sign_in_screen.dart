@@ -4,6 +4,7 @@ import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
 import '../../widgets/quillo_button.dart';
 import '../../widgets/sso_button.dart';
+import '../../services/auth_service.dart';
 import '../Home/main_shell.dart';
 import 'create_account_screen.dart';
 import 'reset_password_screen.dart';
@@ -48,15 +49,63 @@ class _SignInScreenState extends State<SignInScreen>
   }
 
   Future<void> _handleSignIn() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (mounted) {
-      setState(() => _isLoading = false);
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-        (_) => false,
-      );
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty || password.isEmpty) {
+      _showError('Please enter your email and password.');
+      return;
     }
+    setState(() => _isLoading = true);
+    final result = await AuthService.signIn(email: email, password: password);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _goHome();
+    } else {
+      _showError(result.error ?? 'Sign in failed.');
+    }
+  }
+
+  Future<void> _handleGoogle() async {
+    setState(() => _isLoading = true);
+    final result = await AuthService.signInWithGoogle();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _goHome();
+    } else if (result.error != null && !result.error!.contains('cancelled')) {
+      _showError(result.error!);
+    }
+  }
+
+  Future<void> _handleApple() async {
+    setState(() => _isLoading = true);
+    final result = await AuthService.signInWithApple();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _goHome();
+    } else if (result.error != null && !result.error!.contains('cancelled')) {
+      _showError(result.error!);
+    }
+  }
+
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (_) => false,
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFE53935),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   @override
@@ -182,7 +231,7 @@ class _SignInScreenState extends State<SignInScreen>
                               child: SsoButton(
                                 label: 'Google',
                                 icon: _GoogleIcon(),
-                                onTap: () {},
+                                onTap: _handleGoogle,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -190,7 +239,7 @@ class _SignInScreenState extends State<SignInScreen>
                               child: SsoButton(
                                 label: 'Apple',
                                 icon: const Icon(Icons.apple, size: 20, color: AppColors.textDark),
-                                onTap: () {},
+                                onTap: _handleApple,
                                 dark: true,
                               ),
                             ),

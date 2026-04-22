@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/quillo_button.dart';
-import '../auth/create_account_screen.dart';
+import 'household_size_screen.dart';
 
 class SkillLevelScreen extends StatefulWidget {
   const SkillLevelScreen({super.key});
@@ -206,7 +206,7 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
 
   void _handleContinue() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
+      MaterialPageRoute(builder: (_) => const HouseholdSizeScreen()),
     );
   }
 }

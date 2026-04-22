@@ -4,6 +4,7 @@ import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
 import '../../widgets/quillo_button.dart';
 import '../../widgets/sso_button.dart';
+import '../../services/auth_service.dart';
 import '../Home/main_shell.dart';
 import 'sign_in_screen.dart';
 
@@ -50,14 +51,78 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   }
 
   Future<void> _handleCreate() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmController.text;
+    if (email.isEmpty || password.isEmpty || confirm.isEmpty) {
+      _showError('Please fill in all fields.');
+      return;
+    }
+    if (password != confirm) {
+      _showError('Passwords do not match.');
+      return;
+    }
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters.');
+      return;
+    }
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (mounted) {
-      setState(() => _isLoading = false);
+    final result = await AuthService.signUp(email: email, password: password);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.needsEmailVerification) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AllSetScreen()),
       );
+    } else if (result.success) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AllSetScreen()),
+      );
+    } else {
+      _showError(result.error ?? 'Sign up failed.');
     }
+  }
+
+  Future<void> _handleGoogle() async {
+    setState(() => _isLoading = true);
+    final result = await AuthService.signInWithGoogle();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _goHome();
+    } else if (result.error != null && !result.error!.contains('cancelled')) {
+      _showError(result.error!);
+    }
+  }
+
+  Future<void> _handleApple() async {
+    setState(() => _isLoading = true);
+    final result = await AuthService.signInWithApple();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _goHome();
+    } else if (result.error != null && !result.error!.contains('cancelled')) {
+      _showError(result.error!);
+    }
+  }
+
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (_) => false,
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFE53935),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   @override
@@ -178,7 +243,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                               child: SsoButton(
                                 label: 'Google',
                                 icon: _GoogleIcon(),
-                                onTap: () {},
+                                onTap: _handleGoogle,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -186,7 +251,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                               child: SsoButton(
                                 label: 'Apple',
                                 icon: const Icon(Icons.apple, size: 20, color: AppColors.textDark),
-                                onTap: () {},
+                                onTap: _handleApple,
                                 dark: true,
                               ),
                             ),

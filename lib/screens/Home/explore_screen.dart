@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
-import '../../models/recipe_model.dart';
+import 'package:quillo/models/recipe_model.dart';
+import 'package:quillo/theme/app_theme.dart';
 import 'recipe_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -16,6 +16,7 @@ class _ExploreScreenState extends State<ExploreScreen>
   late Animation<double> _fadeAnim;
   String _selectedCategory = 'All';
   final _searchController = TextEditingController();
+  bool _isSearchFocused = false;
 
   final List<String> _categories = ['All', 'Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -265,7 +266,7 @@ class _NotifBell extends StatelessWidget {
       children: [
         Container(
           width: 40, height: 40,
-          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
+          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)]),
           child: const Icon(Icons.notifications_none_rounded, size: 22, color: AppColors.textDark),
         ),
         Positioned(top: 8, right: 8, child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFFFF5252), shape: BoxShape.circle))),
@@ -279,7 +280,7 @@ class _FilterButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 40, height: 40,
-      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
+      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)]),
       child: const Icon(Icons.tune_rounded, size: 20, color: AppColors.textDark),
     );
   }
@@ -293,7 +294,7 @@ class _ExploreSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 46,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)]),
       child: Row(
         children: [
           const SizedBox(width: 14),
@@ -373,7 +374,7 @@ class _FeaturedTodayCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: const LinearGradient(colors: [Color(0xFF1A1A2E), Color(0xFF16213E)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.2), blurRadius: 16, offset: const Offset(0, 6))],
+          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.2), blurRadius: 16, offset: const Offset(0, 6))],
         ),
         child: Stack(
           children: [
@@ -384,7 +385,7 @@ class _FeaturedTodayCard extends StatelessWidget {
             ),
             Positioned(
               top: 14, right: 14,
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(20)), child: Text('${recipe.time} min', style: const TextStyle(fontSize: 11, color: Colors.white))),
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(20)), child: Text('${recipe.time} min', style: const TextStyle(fontSize: 11, color: Colors.white))),
             ),
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -392,19 +393,19 @@ class _FeaturedTodayCard extends StatelessWidget {
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                  gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+                  gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withOpacity(0.7)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(recipe.cuisine.toUpperCase(), style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w700, letterSpacing: 1)),
+                    Text(recipe.cuisine.toUpperCase(), style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w700, letterSpacing: 1)),
                     Text(recipe.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito')),
                     Row(children: [
                       const Icon(Icons.star_rounded, color: AppColors.accent, size: 12),
                       const SizedBox(width: 4),
                       Text('${recipe.rating}', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
                       const SizedBox(width: 6),
-                      Text('(${recipe.reviews})', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.7))),
+                      Text('(${recipe.reviews})', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.7))),
                     ]),
                   ],
                 ),
@@ -438,10 +439,10 @@ class _CollectionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('COLLECTION', style: TextStyle(fontSize: 9, color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                Text('COLLECTION', style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w700, letterSpacing: 0.8)),
                 const SizedBox(height: 2),
                 Text(data.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'Nunito')),
-                Text('${data.recipeCount} recipes', style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.8))),
+                Text('${data.recipeCount} recipes', style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.8))),
               ],
             ),
           ),
@@ -461,14 +462,14 @@ class _TrendingCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Container(
-              decoration: BoxDecoration(color: recipe.color.withValues(alpha: 0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(14))),
+              decoration: BoxDecoration(color: recipe.color.withOpacity(0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(14))),
               child: Center(child: Text(recipe.emoji, style: const TextStyle(fontSize: 36))),
             ),
           ),
@@ -509,14 +510,14 @@ class _QuickCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             width: 60, height: 60,
-            decoration: BoxDecoration(color: recipe.color.withValues(alpha: 0.12), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: recipe.color.withOpacity(0.12), shape: BoxShape.circle),
             child: Center(child: Text(recipe.emoji, style: const TextStyle(fontSize: 30))),
           ),
           const SizedBox(height: 8),

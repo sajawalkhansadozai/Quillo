@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
-import '../../models/recipe_model.dart';
+import 'package:quillo/models/recipe_model.dart';
+import 'package:quillo/theme/app_theme.dart';
 import 'recipe_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -214,7 +214,7 @@ class _NotifBell extends StatelessWidget {
         Container(
           width: 40,
           height: 40,
-          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
+          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)]),
           child: const Icon(Icons.notifications_none_rounded, size: 22, color: AppColors.textDark),
         ),
         Positioned(
@@ -250,7 +250,7 @@ class _SearchBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Row(
         children: [
@@ -306,7 +306,7 @@ class _FeaturedCard extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.2), blurRadius: 16, offset: const Offset(0, 6))],
+          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.2), blurRadius: 16, offset: const Offset(0, 6))],
         ),
         child: Stack(
           children: [
@@ -332,7 +332,7 @@ class _FeaturedCard extends StatelessWidget {
               right: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(20)),
                 child: Text('${recipe.time} min', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
               ),
             ),
@@ -377,7 +377,7 @@ class _InfoPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
       child: Text(label, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600)),
     );
   }
@@ -391,7 +391,7 @@ class _AIBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
       ),
       child: Row(
         children: [
@@ -481,7 +481,7 @@ class _RecipeListTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
         ),
         child: Row(
           children: [
@@ -490,7 +490,7 @@ class _RecipeListTile extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: recipe.color.withValues(alpha: 0.15),
+                color: recipe.color.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(child: Text(recipe.emoji, style: const TextStyle(fontSize: 32))),
@@ -505,7 +505,7 @@ class _RecipeListTile extends StatelessWidget {
                       margin: const EdgeInsets.only(bottom: 4),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: recipe.color.withValues(alpha: 0.12),
+                        color: recipe.color.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(recipe.tag, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: recipe.color)),
@@ -529,7 +529,7 @@ class _RecipeListTile extends StatelessWidget {
             Container(
               width: 32,
               height: 32,
-              decoration: BoxDecoration(color: AppColors.chipBorder.withValues(alpha: 0.5), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: AppColors.chipBorder.withOpacity(0.5), shape: BoxShape.circle),
               child: const Icon(Icons.add_rounded, size: 18, color: AppColors.textMedium),
             ),
           ],
@@ -551,7 +551,7 @@ class _SavedCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -578,7 +578,7 @@ class _ScanBanner extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppColors.primary.withValues(alpha: 0.9), const Color(0xFF9C8FFF)],
+          colors: [AppColors.primary.withOpacity(0.9), const Color(0xFF9C8FFF)],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
@@ -593,14 +593,14 @@ class _ScanBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Scan a Receipt', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'Nunito')),
-                Text('Turn groceries into meal ideas', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.85))),
+                Text('Turn groceries into meal ideas', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.85))),
               ],
             ),
           ),
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.25), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), shape: BoxShape.circle),
             child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18),
           ),
         ],

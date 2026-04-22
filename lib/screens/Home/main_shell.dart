@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+import 'package:quillo/theme/app_theme.dart';
 import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
@@ -49,7 +49,8 @@ class _MainShellState extends State<MainShell> {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => const ScanScreen(),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 300),
         fullscreenDialog: true,
       ),
@@ -178,12 +179,8 @@ class _ScanTabItem extends StatelessWidget {
   }
 }
 
-
-// Placeholder screens
 class ScanPlaceholderScreen extends StatelessWidget {
   const ScanPlaceholderScreen({super.key});
   @override
   Widget build(BuildContext context) => const SizedBox();
 }
-
-

@@ -45,5 +45,26 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Google Sign-In URL scheme (reversed iOS client ID) -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.app.quillo</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1095833940103-ht1miba38u48pu11939o9i0uprl8dkar</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Camera & Photo access for receipt scanning -->
+	<key>NSCameraUsageDescription</key>
+	<string>Quillo needs camera access to scan your grocery receipts</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Quillo needs photo access to upload receipt images</string>
 </dict>
 </plist>

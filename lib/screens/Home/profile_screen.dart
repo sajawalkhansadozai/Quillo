@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../auth/sign_in_screen.dart';
 import '../paywall_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -13,23 +15,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
   bool _twoFactor = false;
 
+  Future<void> _signOut(BuildContext ctx) async {
+    await AuthService.signOut();
+    if (!ctx.mounted) return;
+    Navigator.of(ctx).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+      (_) => false,
+    );
+  }
+
   final List<_PrefChip> _dietChips = [
     _PrefChip('Vegan', const Color(0xFF4CAF50)),
-    _PrefChip('Vegetarian', const Color(0xFF2196F3)),
-    _PrefChip('Meat', const Color(0xFFE91E63)),
+    _PrefChip('Vegetarian', const Color(0xFF5C6BC0)),
+    _PrefChip('Thai', const Color(0xFFFF7043)),
     _PrefChip('Pescatarian', const Color(0xFF009688)),
-    _PrefChip('Gluten Free', const Color(0xFFFF9800)),
-    _PrefChip('Dairy Free', const Color(0xFF9C27B0)),
-    _PrefChip('Nut Free', const Color(0xFF795548)),
+    _PrefChip('Gluten free', const Color(0xFFFFB300)),
+    _PrefChip('Dairy free', const Color(0xFFEC407A)),
+    _PrefChip('Nut free', const Color(0xFF8D6E63)),
   ];
 
   final List<_PrefChip> _skillChips = [
-    _PrefChip('Beginner', const Color(0xFFFF9800)),
-    _PrefChip('Home Cook', const Color(0xFF6C63FF)),
-    _PrefChip('Intermediate', const Color(0xFF9C27B0)),
-    _PrefChip('Family', const Color(0xFF4CAF50)),
-    _PrefChip('Meal Prep', const Color(0xFF2196F3)),
-    _PrefChip('Advanced', const Color(0xFFE91E63)),
+    _PrefChip('Sushi', const Color(0xFF37474F)),
+    _PrefChip('Indian', const Color(0xFFFFB300)),
+    _PrefChip('Italian', const Color(0xFF1E88E5)),
+    _PrefChip('Fitness', const Color(0xFF00897B)),
+    _PrefChip('Nut Gal', const Color(0xFF5C6BC0)),
+    _PrefChip('Advanced', const Color(0xFF8E24AA)),
   ];
 
   @override
@@ -126,19 +137,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'john@quillo.com',
+                    'john@apple.com',
                     style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8)),
                   ),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25),
+                      color: AppColors.accent,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(
-                      '✦ Pro Member',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                      'All Pro',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
                     ),
                   ),
                 ],
@@ -174,14 +185,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 8),
           _ChipWrap(chips: _dietChips),
           const SizedBox(height: 12),
-          _SubLabel('Skill Level'),
+          _SubLabel('Skills'),
           const SizedBox(height: 8),
           _ChipWrap(chips: _skillChips),
           const SizedBox(height: 14),
           _PrefRow(
-            icon: '🥗',
-            title: 'More Nutritious',
-            subtitle: 'Prioritise healthier recipe suggestions',
+            icon: '👥',
+            title: 'Household size',
+            subtitle: 'How many people you cook for',
             trailing: const Text('Update >', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
           ),
           _Divider(),
@@ -189,7 +200,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: '🍳',
             title: 'Cooking Fill',
             subtitle: 'Manage your pantry ingredients',
-            trailing: const Text('Manage >', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
+            trailing: const Text('Language >', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
           ),
           _Divider(),
           _PrefRow(
@@ -269,7 +280,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
                 ),
                 Text(
-                  '/month',
+                  '/year',
                   style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75)),
                 ),
                 const Spacer(),
@@ -379,9 +390,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(
-                  icon: Icons.login_rounded,
-                  iconColor: const Color(0xFF4CAF50),
-                  title: 'Sign In',
+                  icon: Icons.apple_rounded,
+                  iconColor: const Color(0xFF212121),
+                  title: 'Apple',
                   subtitle: 'Manage connected accounts',
                   trailing: 'Continue',
                 ),
@@ -487,7 +498,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: GestureDetector(
-        onTap: () {},
+        onTap: () => _signOut(context),
         child: const Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,

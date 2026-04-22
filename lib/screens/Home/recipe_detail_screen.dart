@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
-import '../../models/recipe_model.dart';
+import 'package:quillo/models/recipe_model.dart';
+import 'package:quillo/theme/app_theme.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final RecipeModel recipe;
@@ -58,20 +58,20 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                   onTap: () => Navigator.of(context).pop(),
                   child: Container(
                     margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)]),
+                    decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
                     child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: AppColors.textDark),
                   ),
                 ),
                 actions: [
                   GestureDetector(
                     onTap: () {},
-                    child: Container(margin: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)]), child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.share_rounded, size: 18, color: AppColors.textDark))),
+                    child: Container(margin: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]), child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.share_rounded, size: 18, color: AppColors.textDark))),
                   ),
                   GestureDetector(
                     onTap: () => setState(() => _isSaved = !_isSaved),
                     child: Container(
                       margin: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
-                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)]),
+                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
                       child: Padding(
                         padding: const EdgeInsets.all(8),
                         child: Icon(_isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 18, color: _isSaved ? AppColors.primary : AppColors.textDark),
@@ -84,7 +84,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                     fit: StackFit.expand,
                     children: [
                       Container(
-                        color: recipe.color.withValues(alpha: 0.12),
+                        color: recipe.color.withOpacity(0.12),
                         child: Center(child: Text(recipe.emoji, style: const TextStyle(fontSize: 100))),
                       ),
                       // Rating overlay
@@ -93,7 +93,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                         left: 16,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)]),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -261,7 +261,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF8E1),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                          border: Border.all(color: AppColors.accent.withOpacity(0.3)),
                         ),
                         child: Column(
                           children: [
@@ -373,7 +373,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               decoration: BoxDecoration(
                 color: Colors.white,
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4))],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, -4))],
               ),
               child: Row(
                 children: [
@@ -395,7 +395,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF9C8FFF)]),
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 5))],
+                          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 5))],
                         ),
                         child: const Center(
                           child: Text('✦  Start Cooking', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'Nunito')),
@@ -496,7 +496,7 @@ class _InstructionCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6)],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,14 +554,14 @@ class _NutritionCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          border: Border.all(color: color.withOpacity(0.2)),
         ),
         child: Column(
           children: [
             Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: color, fontFamily: 'Nunito')),
-            if (unit.isNotEmpty) Text(unit, style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.7))),
+            if (unit.isNotEmpty) Text(unit, style: TextStyle(fontSize: 10, color: color.withOpacity(0.7))),
             const SizedBox(height: 2),
             Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textMedium, fontWeight: FontWeight.w600)),
           ],
