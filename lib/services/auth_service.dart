@@ -99,6 +99,7 @@ class AuthService {
         clientId: defaultTargetPlatform == TargetPlatform.iOS
             ? SupabaseConfig.googleIosClientId
             : SupabaseConfig.googleAndroidClientId,
+        serverClientId: SupabaseConfig.googleWebClientId,
       );
 
       final googleUser = await googleSignIn.signIn();
@@ -127,6 +128,7 @@ class AuthService {
       return AuthResult.err('Google sign-in failed. Please try again.');
     }
   }
+
 
   // ── Apple ──────────────────────────────────────────────────────────────────
 
