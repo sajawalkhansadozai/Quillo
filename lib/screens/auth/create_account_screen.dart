@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
@@ -71,10 +72,14 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.needsEmailVerification) {
+      await saveOnboardingDataToDb();
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AllSetScreen()),
       );
     } else if (result.success) {
+      await saveOnboardingDataToDb();
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AllSetScreen()),
       );
@@ -89,6 +94,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
+      await saveOnboardingDataToDb();
+      if (!mounted) return;
       _goHome();
     } else if (result.error != null && !result.error!.contains('cancelled')) {
       _showError(result.error!);
@@ -101,6 +108,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
+      await saveOnboardingDataToDb();
+      if (!mounted) return;
       _goHome();
     } else if (result.error != null && !result.error!.contains('cancelled')) {
       _showError(result.error!);
@@ -112,6 +121,27 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       MaterialPageRoute(builder: (_) => const MainShell()),
       (_) => false,
     );
+  }
+
+  /// Reads onboarding selections from SharedPreferences and persists them
+  /// to the Supabase users + user_preferences tables.
+  static Future<void> saveOnboardingDataToDb() async {
+    final prefs = await SharedPreferences.getInstance();
+    final gdprConsent = prefs.getBool('gdpr_analytics') ?? false;
+    final householdSize = prefs.getInt('onboarding_household_size') ?? 2;
+    final dietary = prefs.getStringList('onboarding_dietary') ?? [];
+    final cuisines = prefs.getStringList('onboarding_cuisines') ?? [];
+    final email = AuthService.currentUser?.email ?? '';
+
+    await AuthService.initUserProfile(
+      email: email,
+      gdprConsent: gdprConsent,
+      householdSize: householdSize,
+      preferredCuisines: cuisines,
+    );
+    if (dietary.isNotEmpty) {
+      await AuthService.saveUserPreferences(dietaryLabels: dietary);
+    }
   }
 
   void _showError(String message) {

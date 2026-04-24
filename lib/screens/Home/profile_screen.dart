@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
+import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
 import '../paywall_screen.dart';
@@ -15,6 +17,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
   bool _twoFactor = false;
 
+  // ── Real user data ──────────────────────────────────────────────────────────
+  final _client = Supabase.instance.client;
+  String _userEmail = '';
+  String _userName = '';
+  bool _isPremium = false;
+  List<_PrefChip> _dietChips = [];
+  List<_PrefChip> _cuisineChips = [];
+
+  static const _dietColors = [
+    Color(0xFF4CAF50), Color(0xFF5C6BC0), Color(0xFFFF7043),
+    Color(0xFF009688), Color(0xFFFFB300), Color(0xFFEC407A),
+    Color(0xFF8D6E63),
+  ];
+  static const _cuisineColors = [
+    Color(0xFF37474F), Color(0xFFFFB300), Color(0xFF1E88E5),
+    Color(0xFF00897B), Color(0xFF5C6BC0), Color(0xFF8E24AA),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final uid = _client.auth.currentUser?.id;
+    final email = _client.auth.currentUser?.email ?? '';
+    if (uid == null) return;
+
+    try {
+      final userRow = await _client
+          .from('users')
+          .select('email, subscription_status')
+          .eq('id', uid)
+          .maybeSingle();
+
+      final prefsRow = await _client
+          .from('user_preferences')
+          .select('dietary_labels, preferred_cuisines')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+      final dietary = List<String>.from(prefsRow?['dietary_labels'] ?? []);
+      final cuisines = List<String>.from(prefsRow?['preferred_cuisines'] ?? []);
+      final status = (userRow?['subscription_status'] as String?) ?? 'free';
+
+      if (!mounted) return;
+      setState(() {
+        _userEmail = (userRow?['email'] as String?) ?? email;
+        _userName = _firstName(_userEmail);
+        _isPremium = status == 'premium';
+        _dietChips = dietary
+            .asMap()
+            .entries
+            .map((e) => _PrefChip(
+                  e.value,
+                  _dietColors[e.key % _dietColors.length],
+                ))
+            .toList();
+        _cuisineChips = cuisines
+            .asMap()
+            .entries
+            .map((e) => _PrefChip(
+                  e.value,
+                  _cuisineColors[e.key % _cuisineColors.length],
+                ))
+            .toList();
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _userEmail = email;
+          _userName = _firstName(email);
+        });
+      }
+    }
+  }
+
+  String _firstName(String email) {
+    final local = email.split('@').first;
+    if (local.isEmpty) return 'Chef';
+    final stripped = local.replaceAll(RegExp(r'\d+$'), '');
+    final name = stripped.isNotEmpty ? stripped : 'Chef';
+    return name[0].toUpperCase() + name.substring(1).toLowerCase();
+  }
+
   Future<void> _signOut(BuildContext ctx) async {
     await AuthService.signOut();
     if (!ctx.mounted) return;
@@ -24,24 +112,94 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  final List<_PrefChip> _dietChips = [
-    _PrefChip('Vegan', const Color(0xFF4CAF50)),
-    _PrefChip('Vegetarian', const Color(0xFF5C6BC0)),
-    _PrefChip('Thai', const Color(0xFFFF7043)),
-    _PrefChip('Pescatarian', const Color(0xFF009688)),
-    _PrefChip('Gluten free', const Color(0xFFFFB300)),
-    _PrefChip('Dairy free', const Color(0xFFEC407A)),
-    _PrefChip('Nut free', const Color(0xFF8D6E63)),
-  ];
+  Future<void> _showChangePasswordDialog() async {
+    final formKey = GlobalKey<FormState>();
+    String newPass = '';
+    bool loading = false;
 
-  final List<_PrefChip> _skillChips = [
-    _PrefChip('Sushi', const Color(0xFF37474F)),
-    _PrefChip('Indian', const Color(0xFFFFB300)),
-    _PrefChip('Italian', const Color(0xFF1E88E5)),
-    _PrefChip('Fitness', const Color(0xFF00897B)),
-    _PrefChip('Nut Gal', const Color(0xFF5C6BC0)),
-    _PrefChip('Advanced', const Color(0xFF8E24AA)),
-  ];
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Change Password',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              obscureText: true,
+              decoration: InputDecoration(
+                hintText: 'New password (min 8 chars)',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              validator: (v) =>
+                  (v == null || v.length < 8) ? 'Min 8 characters' : null,
+              onSaved: (v) => newPass = v ?? '',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              onPressed: loading
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      formKey.currentState!.save();
+                      setDlgState(() => loading = true);
+                      final result = await AuthService.changePassword(newPass);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                              result.success
+                                  ? 'Password updated!'
+                                  : (result.error ?? 'Failed to update password'),
+                            ),
+                            backgroundColor:
+                                result.success ? AppColors.green : Colors.red),
+                      );
+                    },
+              child: loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPaywall() async {
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const PaywallScreen(),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+        fullscreenDialog: true,
+      ),
+    );
+    // Refresh subscription status after returning from paywall
+    final prem = await SubscriptionService.isPremium();
+    if (mounted) setState(() => _isPremium = prem);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -121,8 +279,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   colors: [Color(0xFFFFD54F), Color(0xFFFF8A65)],
                 ),
               ),
-              child: const Center(
-                child: Text('J', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
+              child: Center(
+                child: Text(
+                  _userName.isNotEmpty ? _userName[0].toUpperCase() : 'Q',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -131,25 +292,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'John',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
+                  Text(
+                    _userName.isNotEmpty ? _userName : 'Chef',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'john@apple.com',
+                    _userEmail,
                     style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8)),
                   ),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
-                      color: AppColors.accent,
+                      color: _isPremium ? AppColors.accent : Colors.white.withValues(alpha: 0.25),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      'All Pro',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                    child: Text(
+                      _isPremium ? '✨ All Pro' : 'Free Plan',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
                     ),
                   ),
                 ],
@@ -181,13 +342,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           _SectionLabel('Preferences'),
           const SizedBox(height: 10),
-          _SubLabel('Cuisine'),
+          _SubLabel('Dietary'),
           const SizedBox(height: 8),
-          _ChipWrap(chips: _dietChips),
+          _dietChips.isNotEmpty
+              ? _ChipWrap(chips: _dietChips)
+              : const Text('None set', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
           const SizedBox(height: 12),
-          _SubLabel('Skills'),
+          _SubLabel('Cuisines'),
           const SizedBox(height: 8),
-          _ChipWrap(chips: _skillChips),
+          _cuisineChips.isNotEmpty
+              ? _ChipWrap(chips: _cuisineChips)
+              : const Text('None set', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
           const SizedBox(height: 14),
           _PrefRow(
             icon: '👥',
@@ -249,20 +414,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: AppColors.accent,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(context).push(
-                      PageRouteBuilder(
-                        pageBuilder: (_, anim, __) => const PaywallScreen(),
-                        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-                          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-                              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-                          child: child,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 400),
-                        fullscreenDialog: true,
-                      ),
+                  child:                   GestureDetector(
+                    onTap: _isPremium ? null : _openPaywall,
+                    child: Text(
+                      _isPremium ? 'Active ✓' : 'Go Pro',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
                     ),
-                    child: const Text('Go Pro', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
                   ),
                 ),
               ],
@@ -372,12 +529,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(
               children: [
-                _SettingArrowRow(
-                  icon: Icons.lock_outline_rounded,
-                  iconColor: const Color(0xFF9C27B0),
-                  title: 'Change Password',
-                  subtitle: 'Update your account password',
-                  trailing: '',
+                GestureDetector(
+                  onTap: _showChangePasswordDialog,
+                  child: _SettingArrowRow(
+                    icon: Icons.lock_outline_rounded,
+                    iconColor: const Color(0xFF9C27B0),
+                    title: 'Change Password',
+                    subtitle: 'Update your account password',
+                    trailing: '',
+                  ),
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(

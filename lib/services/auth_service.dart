@@ -194,6 +194,78 @@ class AuthService {
     }
   }
 
+  /// Called once after account creation or first SSO login.
+  /// Seeds the users row with email, GDPR consent, and default values.
+  static Future<void> initUserProfile({
+    required String email,
+    bool gdprConsent = false,
+    int householdSize = 2,
+    List<String> preferredCuisines = const [],
+  }) async {
+    final uid = currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _client.from('users').upsert({
+        'id': uid,
+        'email': email,
+        'subscription_status': 'free',
+        'scan_streak': 0,
+        'household_size': householdSize,
+        'preferred_cuisine': preferredCuisines,
+        'gdpr_consent': gdprConsent,
+        if (gdprConsent) 'gdpr_consent_at': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {}
+  }
+
+  /// Saves dietary labels and excluded ingredients to user_preferences table.
+  static Future<void> saveUserPreferences({
+    List<String> dietaryLabels = const [],
+    List<String> excludeIngredients = const [],
+  }) async {
+    final uid = currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _client.from('user_preferences').upsert(
+        {
+          'user_id': uid,
+          'dietary_labels': dietaryLabels,
+          'exclude_ingredients': excludeIngredients,
+        },
+        onConflict: 'user_id',
+      );
+    } catch (_) {}
+  }
+
+  /// Updates the signed-in user's password.
+  static Future<AuthResult> changePassword(String newPassword) async {
+    try {
+      await _client.auth.updateUser(UserAttributes(password: newPassword));
+      return AuthResult.ok();
+    } on AuthException catch (e) {
+      return AuthResult.err(_friendlyError(e.message));
+    } catch (e) {
+      return AuthResult.err('Failed to update password. Please try again.');
+    }
+  }
+
+  /// Returns true if this is the first sign-in for the current user
+  /// (i.e. no row exists yet in the users table).
+  static Future<bool> isNewUser() async {
+    final uid = currentUser?.id;
+    if (uid == null) return false;
+    try {
+      final row = await _client
+          .from('users')
+          .select('id')
+          .eq('id', uid)
+          .maybeSingle();
+      return row == null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   static String _friendlyError(String raw) {

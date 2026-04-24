@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/quillo_button.dart';
 import '../../widgets/section_header.dart';
@@ -52,6 +53,23 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   int get _totalSelected =>
       _selectedDietary.length + _selectedLifestyle.length + _selectedCuisines.length;
+
+  Future<void> _saveAndContinue() async {
+    final prefs = await SharedPreferences.getInstance();
+    final allDietary = [..._selectedDietary, ..._selectedLifestyle].toList();
+    await prefs.setStringList('onboarding_dietary', allDietary);
+    await prefs.setStringList('onboarding_cuisines', _selectedCuisines.toList());
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const SkillLevelScreen()),
+    );
+  }
+
+  void _skipToNext() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const SkillLevelScreen()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -217,18 +235,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 children: [
                   QuilloButton(
                     label: '✦  Continue',
-                    onTap: () => Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const SkillLevelScreen()),
-                    ),
+                    onTap: _saveAndContinue,
                     backgroundColor: AppColors.primary,
                     textColor: Colors.white,
                   ),
                   const SizedBox(height: 12),
                   QuilloButton(
                     label: 'Skip for now',
-                    onTap: () => Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const SkillLevelScreen()),
-                    ),
+                    onTap: _skipToNext,
                     backgroundColor: AppColors.textDark,
                     textColor: Colors.white,
                   ),

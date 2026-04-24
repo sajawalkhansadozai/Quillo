@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
+import '../services/subscription_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PaywallScreen
+// PaywallScreen — wired to RevenueCat
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _Plan { yearly, monthly }
@@ -17,6 +19,8 @@ class PaywallScreen extends StatefulWidget {
 class _PaywallScreenState extends State<PaywallScreen>
     with SingleTickerProviderStateMixin {
   _Plan _selected = _Plan.yearly;
+  bool _purchasing = false;
+  Offerings? _offerings;
 
   late AnimationController _heroCtrl;
   late Animation<double> _heroScale;
@@ -39,6 +43,81 @@ class _PaywallScreenState extends State<PaywallScreen>
         .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.elasticOut));
     _heroFade = CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut);
     _heroCtrl.forward();
+    _loadOfferings();
+  }
+
+  Future<void> _loadOfferings() async {
+    final offerings = await SubscriptionService.getOfferings();
+    if (mounted) setState(() => _offerings = offerings);
+  }
+
+  Future<void> _purchase() async {
+    if (_purchasing) return;
+    setState(() => _purchasing = true);
+
+    try {
+      final offering = _offerings?.current;
+      Package? pkg;
+      if (offering != null) {
+        pkg = _selected == _Plan.yearly
+            ? offering.annual
+            : offering.monthly;
+      }
+
+      if (pkg == null) {
+        // No offerings loaded yet (test keys) — show message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Products not available yet — set up RevenueCat API keys first.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = await SubscriptionService.purchase(pkg);
+      if (!mounted) return;
+
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Welcome to QUILLO Pro!'),
+            backgroundColor: Color(0xFF4CAF50),
+          ),
+        );
+        Navigator.of(context).pop(true);
+      } else if (!result.cancelled && result.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.error!)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _purchasing = false);
+    }
+  }
+
+  Future<void> _restorePurchases() async {
+    setState(() => _purchasing = true);
+    try {
+      final result = await SubscriptionService.restorePurchases();
+      if (!mounted) return;
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Purchases restored successfully!'),
+            backgroundColor: Color(0xFF4CAF50),
+          ),
+        );
+        Navigator.of(context).pop(true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No active subscription found to restore.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _purchasing = false);
+    }
   }
 
   @override
@@ -399,7 +478,7 @@ class _PaywallScreenState extends State<PaywallScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: GestureDetector(
-        onTap: () {},
+        onTap: _purchasing ? null : _purchase,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           width: double.infinity,
@@ -420,26 +499,36 @@ class _PaywallScreenState extends State<PaywallScreen>
             ],
           ),
           child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isYearly ? '▶  ' : '⚡  ',
-                  style: const TextStyle(fontSize: 14, color: Colors.black87),
-                ),
-                Text(
-                  isYearly
-                      ? 'Start Free Trial'
-                      : 'Upgrade Now · £5.99/mo',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black87,
-                    fontFamily: 'Nunito',
+            child: _purchasing
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.black87,
+                    ),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isYearly ? '▶  ' : '⚡  ',
+                        style: const TextStyle(
+                            fontSize: 14, color: Colors.black87),
+                      ),
+                      Text(
+                        isYearly
+                            ? 'Start Free Trial'
+                            : 'Upgrade Now · \$5.99/mo',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -450,7 +539,7 @@ class _PaywallScreenState extends State<PaywallScreen>
 
   Widget _buildRestore() {
     return GestureDetector(
-      onTap: () {},
+      onTap: _purchasing ? null : _restorePurchases,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_service.dart';
 import '../auth/create_account_screen.dart';
@@ -47,7 +48,8 @@ class _HouseholdSizeScreenState extends State<HouseholdSizeScreen>
   }
 
   Future<void> _continue() async {
-    // If already signed in, save household size to profile
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('onboarding_household_size', _selected);
     if (AuthService.isSignedIn) {
       await AuthService.saveUserProfile(householdSize: _selected);
     }

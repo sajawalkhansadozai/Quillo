@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../services/scan_service.dart';
+import '../scan/ingredient_review_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scan states
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum _ScanState { idle, processing, success, error }
+enum _ScanState { idle, processing, error }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ScanScreen
@@ -21,26 +24,28 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   _ScanState _state = _ScanState.idle;
+  String? _errorMessage;
 
   // Scan line animation
   late AnimationController _scanLineCtrl;
   late Animation<double> _scanLineAnim;
 
   // Processing step animation
-  late AnimationController _stepCtrl;
   int _completedSteps = 0;
-  Timer? _stepTimer;
 
   // Overlay card slide-in animation
   late AnimationController _cardCtrl;
   late Animation<double> _cardFade;
   late Animation<Offset> _cardSlide;
 
+  // Step ticker for visual feedback
+  Timer? _stepTimer;
+
   final _processingSteps = [
     'Image captured',
-    'Analysing text...',
+    'Uploading to server...',
+    'Reading your receipt...',
     'Identifying ingredients...',
-    'Generating recipes...',
   ];
 
   @override
@@ -52,13 +57,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-
     _scanLineAnim = CurvedAnimation(parent: _scanLineCtrl, curve: Curves.easeInOut);
-
-    _stepCtrl = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
 
     _cardCtrl = AnimationController(
       duration: const Duration(milliseconds: 400),
@@ -73,44 +72,95 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   void dispose() {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     _scanLineCtrl.dispose();
-    _stepCtrl.dispose();
     _cardCtrl.dispose();
     _stepTimer?.cancel();
     super.dispose();
   }
 
-  void _onShutter() {
+  // ── Shutter: capture from camera ────────────────────────────────────────────
+
+  Future<void> _onShutter() async {
     if (_state != _ScanState.idle) return;
+    final file = await ScanService.pickFromCamera();
+    if (file == null) return;
+    await _processScan(file);
+  }
+
+  // ── Gallery: pick existing photo ────────────────────────────────────────────
+
+  Future<void> _onGallery() async {
+    if (_state != _ScanState.idle) return;
+    final file = await ScanService.pickFromGallery();
+    if (file == null) return;
+    await _processScan(file);
+  }
+
+  // ── Core pipeline ───────────────────────────────────────────────────────────
+
+  Future<void> _processScan(XFile file) async {
     setState(() {
       _state = _ScanState.processing;
       _completedSteps = 0;
     });
     _cardCtrl.forward(from: 0);
-    _simulateProcessing();
+    _startStepTicker();
+
+    try {
+      final result = await ScanService.runScan(file).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw const ScanException(
+            'Scan is taking too long — please check your connection and try again.'),
+      );
+
+      _stepTimer?.cancel();
+      if (!mounted) return;
+
+      // Navigate to ingredient review screen
+      await _cardCtrl.reverse();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => IngredientReviewScreen(
+            scanId: result.scanId,
+            ingredients: result.ingredients,
+          ),
+        ),
+      );
+    } on RateLimitException catch (e) {
+      _showError(e.message);
+    } on ScanException catch (e) {
+      _showError(e.message);
+    } catch (e) {
+      _showError('Could not read your receipt — please try again in better lighting.');
+    }
   }
 
-  void _simulateProcessing() {
+  void _startStepTicker() {
     int step = 0;
-    _stepTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
+    _stepTimer = Timer.periodic(const Duration(milliseconds: 1200), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
       step++;
-      setState(() => _completedSteps = step);
-      if (step >= _processingSteps.length) {
+      if (step < _processingSteps.length) {
+        setState(() => _completedSteps = step);
+      } else {
         timer.cancel();
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (!mounted) return;
-          // 70% chance success, 30% error (for demo)
-          final success = DateTime.now().millisecondsSinceEpoch % 10 < 7;
-          _cardCtrl.reverse().then((_) {
-            if (!mounted) return;
-            setState(() => _state = success ? _ScanState.success : _ScanState.error);
-            _cardCtrl.forward(from: 0);
-          });
-        });
       }
+    });
+  }
+
+  void _showError(String message) {
+    _stepTimer?.cancel();
+    _cardCtrl.reverse().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _state = _ScanState.error;
+        _errorMessage = message;
+        _completedSteps = 0;
+      });
+      _cardCtrl.forward(from: 0);
     });
   }
 
@@ -120,10 +170,13 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         _state = _ScanState.idle;
+        _errorMessage = null;
         _completedSteps = 0;
       });
     });
   }
+
+  // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -131,10 +184,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       backgroundColor: const Color(0xFF07070F),
       body: Stack(
         children: [
-          // Camera background simulation
           _CameraBackground(),
-
-          // Safe area content
           SafeArea(
             child: Column(
               children: [
@@ -144,10 +194,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
-
-          // State overlay
-          if (_state != _ScanState.idle)
-            _buildStateOverlay(),
+          if (_state != _ScanState.idle) _buildStateOverlay(),
         ],
       ),
     );
@@ -167,17 +214,19 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           ),
           RichText(
             text: const TextSpan(
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, fontFamily: 'Nunito', letterSpacing: 1),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                fontFamily: 'Nunito',
+                letterSpacing: 1,
+              ),
               children: [
                 TextSpan(text: 'QUILL', style: TextStyle(color: Colors.white)),
                 TextSpan(text: 'O', style: TextStyle(color: Color(0xFF6C63FF))),
               ],
             ),
           ),
-          _DarkCircleBtn(
-            icon: Icons.bolt_rounded,
-            onTap: () {},
-          ),
+          const SizedBox(width: 38),
         ],
       ),
     );
@@ -195,9 +244,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
             height: 200,
             child: Stack(
               children: [
-                // Corner brackets
                 const _CornerBrackets(),
-                // Animated scan line (only when idle)
                 if (_state == _ScanState.idle)
                   AnimatedBuilder(
                     animation: _scanLineAnim,
@@ -242,12 +289,11 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Gallery button
           AnimatedOpacity(
             duration: const Duration(milliseconds: 300),
             opacity: isActive ? 1.0 : 0.4,
             child: GestureDetector(
-              onTap: isActive ? () {} : null,
+              onTap: isActive ? _onGallery : null,
               child: Container(
                 width: 52,
                 height: 52,
@@ -255,11 +301,11 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                   color: const Color(0xFFFFC107),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 24),
+                child: const Icon(Icons.photo_library_outlined,
+                    color: Colors.white, size: 24),
               ),
             ),
           ),
-          // Shutter button
           GestureDetector(
             onTap: _onShutter,
             child: AnimatedContainer(
@@ -276,20 +322,26 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-          // Quillo text button
           AnimatedOpacity(
             duration: const Duration(milliseconds: 300),
             opacity: isActive ? 1.0 : 0.4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: const Text(
-                'Library',
-                style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700),
+            child: GestureDetector(
+              onTap: isActive ? _onGallery : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                ),
+                child: const Text(
+                  'Library',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ),
@@ -301,31 +353,27 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // ── State overlay ────────────────────────────────────────────────────────────
 
   Widget _buildStateOverlay() {
-    return Positioned(
-      left: 24,
-      right: 24,
-      top: 0,
-      bottom: 0,
+    return Positioned.fill(
       child: Center(
-        child: FadeTransition(
-          opacity: _cardFade,
-          child: SlideTransition(
-            position: _cardSlide,
-            child: switch (_state) {
-              _ScanState.processing => _ProcessingCard(
-                  steps: _processingSteps,
-                  completedSteps: _completedSteps,
-                ),
-              _ScanState.success => _SuccessCard(
-                  ingredientCount: 12,
-                  onContinue: () => Navigator.of(context).pop(),
-                ),
-              _ScanState.error => _ErrorCard(
-                  onTryAgain: _reset,
-                  onUpload: () {},
-                ),
-              _ScanState.idle => const SizedBox(),
-            },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: FadeTransition(
+            opacity: _cardFade,
+            child: SlideTransition(
+              position: _cardSlide,
+              child: switch (_state) {
+                _ScanState.processing => _ProcessingCard(
+                    steps: _processingSteps,
+                    completedSteps: _completedSteps,
+                  ),
+                _ScanState.error => _ErrorCard(
+                    message: _errorMessage,
+                    onTryAgain: _reset,
+                    onUpload: _onGallery,
+                  ),
+                _ScanState.idle => const SizedBox(),
+              },
+            ),
           ),
         ),
       ),
@@ -354,7 +402,6 @@ class _ProcessingCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Icon
           Container(
             width: 56,
             height: 56,
@@ -363,7 +410,8 @@ class _ProcessingCard extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: const Center(
-              child: Icon(Icons.receipt_long_rounded, color: Color(0xFF6C63FF), size: 28),
+              child: Icon(Icons.receipt_long_rounded,
+                  color: Color(0xFF6C63FF), size: 28),
             ),
           ),
           const SizedBox(height: 16),
@@ -378,9 +426,12 @@ class _ProcessingCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Hang tight. This will only take a few\nseconds for your ingredients',
+            'Hang tight. This will only take a few seconds.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.6), height: 1.5),
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.6),
+                height: 1.5),
           ),
           const SizedBox(height: 20),
           ...List.generate(steps.length, (i) {
@@ -403,7 +454,8 @@ class _ProcessingCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: done
-                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 13)
+                        ? const Icon(Icons.check_rounded,
+                            color: Colors.white, size: 13)
                         : active
                             ? const _PulsingDot()
                             : null,
@@ -413,7 +465,8 @@ class _ProcessingCard extends StatelessWidget {
                     steps[i],
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: done ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight:
+                          done ? FontWeight.w700 : FontWeight.w400,
                       color: done
                           ? Colors.white
                           : active
@@ -432,81 +485,19 @@ class _ProcessingCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Success card
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SuccessCard extends StatelessWidget {
-  final int ingredientCount;
-  final VoidCallback onContinue;
-  const _SuccessCard({required this.ingredientCount, required this.onContinue});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A2E),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF4CAF50).withValues(alpha: 0.4), width: 2),
-            ),
-            child: const Icon(Icons.check_rounded, color: Color(0xFF4CAF50), size: 32),
-          ),
-          const SizedBox(height: 18),
-          const Text(
-            'Receipt scanned!',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Found $ingredientCount ingredients',
-            style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onTap: onContinue,
-            child: Container(
-              width: double.infinity,
-              height: 50,
-              decoration: BoxDecoration(
-                color: const Color(0xFF6C63FF),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Center(
-                child: Text(
-                  'View Recipes',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Error card
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ErrorCard extends StatelessWidget {
+  final String? message;
   final VoidCallback onTryAgain;
   final VoidCallback onUpload;
-  const _ErrorCard({required this.onTryAgain, required this.onUpload});
+  const _ErrorCard(
+      {this.message, required this.onTryAgain, required this.onUpload});
 
   @override
   Widget build(BuildContext context) {
+    final isRateLimit = message?.contains('daily') ?? false;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -516,90 +507,122 @@ class _ErrorCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF9800).withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.4), width: 2),
-              ),
-              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9800), size: 28),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Center(
-            child: Text(
-              "Couldn't read receipt",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Center(
-            child: Text(
-              "The image was a bit blurry or out of frame.\nLet's give it another shot!",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.6), height: 1.5),
-            ),
-          ),
-          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(14),
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFFF9800).withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: const Color(0xFFFF9800).withValues(alpha: 0.4),
+                  width: 2),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _ErrorTip('Make sure the receipt is fully and fully visible'),
-                _ErrorTip('Hold the camera steady in good lighting'),
-                _ErrorTip('Avoid shadows or glare on the paper'),
-              ],
-            ),
+            child: const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFFF9800), size: 28),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "Couldn't read receipt",
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                fontFamily: 'Nunito'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message ??
+                "Could not read your receipt — please try again in better lighting.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.65),
+                height: 1.5),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: onTryAgain,
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6C63FF),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Center(
-                      child: Text('Try Again', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
-                    ),
-                  ),
-                ),
+          if (!isRateLimit) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: onUpload,
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Upload instead',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8)),
+              child: Column(
+                children: [
+                  _ErrorTip('Make sure the receipt is fully visible'),
+                  _ErrorTip('Hold the camera steady in good lighting'),
+                  _ErrorTip('Avoid shadows or glare on the paper'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: onTryAgain,
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6C63FF),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Center(
+                        child: Text('Try Again',
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white)),
                       ),
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: onUpload,
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Upload instead',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white.withValues(alpha: 0.8)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: onTryAgain,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C63FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Center(
+                  child: Text('Got it',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white)),
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
@@ -630,7 +653,10 @@ class _ErrorTip extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.6), height: 1.4),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  height: 1.4),
             ),
           ),
         ],
@@ -664,13 +690,9 @@ class _CameraBackground extends StatelessWidget {
 
 class _CornerBrackets extends StatelessWidget {
   const _CornerBrackets();
-
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _BracketPainter(),
-      child: const SizedBox.expand(),
-    );
+    return CustomPaint(painter: _BracketPainter(), child: const SizedBox.expand());
   }
 }
 
@@ -684,7 +706,7 @@ class _BracketPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     const len = 24.0;
-    final r = 8.0;
+    const r = 8.0;
 
     void drawCorner(Offset origin, bool flipX, bool flipY) {
       final dx = flipX ? -1.0 : 1.0;
@@ -694,7 +716,7 @@ class _BracketPainter extends CustomPainter {
         ..lineTo(origin.dx + dx * r, origin.dy)
         ..arcToPoint(
           Offset(origin.dx, origin.dy + dy * r),
-          radius: Radius.circular(r),
+          radius: const Radius.circular(r),
           clockwise: !(flipX ^ flipY),
         )
         ..lineTo(origin.dx, origin.dy + dy * len);
@@ -712,7 +734,7 @@ class _BracketPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Animated scan line
+// Scan line
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ScanLine extends StatelessWidget {
@@ -743,23 +765,24 @@ class _ScanLine extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pulsing dot for active step
+// Pulsing dot
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PulsingDot extends StatefulWidget {
   const _PulsingDot();
-
   @override
   State<_PulsingDot> createState() => _PulsingDotState();
 }
 
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(duration: const Duration(milliseconds: 700), vsync: this)
+    _ctrl = AnimationController(
+        duration: const Duration(milliseconds: 700), vsync: this)
       ..repeat(reverse: true);
   }
 
@@ -778,7 +801,8 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
           width: 6 + _ctrl.value * 4,
           height: 6 + _ctrl.value * 4,
           decoration: BoxDecoration(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.5 + _ctrl.value * 0.5),
+            color: const Color(0xFF6C63FF)
+                .withValues(alpha: 0.5 + _ctrl.value * 0.5),
             shape: BoxShape.circle,
           ),
         ),

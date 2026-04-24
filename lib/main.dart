@@ -6,6 +6,8 @@ import 'config/supabase_config.dart';
 import 'screens/Home/main_shell.dart';
 import 'screens/onboarding/gdpr_screen.dart';
 import 'screens/onboarding/splash_screen.dart';
+import 'services/ad_service.dart';
+import 'services/subscription_service.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -22,6 +24,15 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
+
+  // Initialise AdMob SDK
+  await AdService.initialise();
+
+  // Configure RevenueCat (non-fatal — only works after real API keys are set)
+  try {
+    await SubscriptionService.configure();
+    await SubscriptionService.syncOnLaunch();
+  } catch (_) {}
 
   runApp(const QuilloApp());
 }

@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../theme/app_theme.dart';
-import '../../models/recipe_model.dart';
-import 'recipe_detail_screen.dart';
+import '../../models/generated_recipe.dart';
+import '../../services/recipe_service.dart';
+import '../../services/local_db_service.dart';
+import '../scan/recipe_results_screen.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SavedScreen — real saved recipes with offline SQLite cache
+// ─────────────────────────────────────────────────────────────────────────────
 
 class SavedScreen extends StatefulWidget {
   const SavedScreen({super.key});
@@ -12,76 +19,174 @@ class SavedScreen extends StatefulWidget {
 
 class _SavedScreenState extends State<SavedScreen> {
   String _activeFilter = 'All';
-  String _activeTab = 'Recipes';
+  final _filters = ['All', '⏱ Quick 30min', '🔥 Easy'];
 
-  final _filters = ['All', '❤️ Favourites', 'Made Once', 'Quick 30min'];
+  List<GeneratedRecipe> _recipes = [];
+  bool _loading = true;
+  bool _offline = false;
 
-  List<RecipeModel> get _filteredRecipes {
-    if (_activeFilter == 'Quick 30min') {
-      return RecipeModel.savedAll.where((r) => r.time <= 30).toList();
+  @override
+  void initState() {
+    super.initState();
+    _loadRecipes();
+  }
+
+  Future<void> _loadRecipes() async {
+    setState(() => _loading = true);
+
+    // Check connectivity (v6+ returns List<ConnectivityResult>)
+    final connResults = await Connectivity().checkConnectivity();
+    final isOnline = connResults.any((r) => r != ConnectivityResult.none);
+
+    if (isOnline) {
+      try {
+        final online = await RecipeService.loadSavedRecipes();
+        // Sync to SQLite cache
+        for (final r in online) {
+          await LocalDbService.cacheRecipe(r);
+        }
+        if (mounted) {
+          setState(() {
+            _recipes = online;
+            _offline = false;
+            _loading = false;
+          });
+        }
+        return;
+      } catch (_) {
+        // Fall through to offline cache
+      }
     }
-    return RecipeModel.savedAll;
+
+    // Offline fallback
+    final cached = await LocalDbService.loadAllRecipes();
+    if (mounted) {
+      setState(() {
+        _recipes = cached;
+        _offline = !isOnline;
+        _loading = false;
+      });
+    }
+  }
+
+  List<GeneratedRecipe> get _filtered {
+    switch (_activeFilter) {
+      case '⏱ Quick 30min':
+        return _recipes.where((r) => r.cookTimeMinutes <= 30).toList();
+      case '🔥 Easy':
+        return _recipes
+            .where((r) => r.difficulty.toLowerCase() == 'easy')
+            .toList();
+      default:
+        return _recipes;
+    }
+  }
+
+  Future<void> _unsave(GeneratedRecipe recipe) async {
+    if (recipe.id == null) return;
+    try {
+      await RecipeService.unsaveRecipe(recipe.id!);
+      await LocalDbService.removeRecipe(recipe.id!);
+      setState(() => _recipes.removeWhere((r) => r.id == recipe.id));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to remove recipe')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final recipes = _filteredRecipes;
+    final recipes = _filtered;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader()),
-            SliverToBoxAdapter(child: _buildStats()),
-            SliverToBoxAdapter(child: _buildSearch()),
-            SliverToBoxAdapter(child: _buildFilterChips()),
-            SliverToBoxAdapter(child: _buildListHeader(recipes.length)),
-            if (recipes.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: _FeaturedSavedCard(
-                    recipe: recipes.first,
-                    onTap: () => _openDetail(context, recipes.first),
-                  ),
+        child: RefreshIndicator(
+          onRefresh: _loadRecipes,
+          color: AppColors.primary,
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics()),
+            slivers: [
+              // ── Header ───────────────────────────────────────────────
+              SliverToBoxAdapter(child: _buildHeader()),
+
+              // ── Offline banner ────────────────────────────────────────
+              if (_offline)
+                SliverToBoxAdapter(
+                  child: _OfflineBanner(),
                 ),
-              ),
-            if (recipes.length > 1)
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.8,
+
+              // ── Stats ─────────────────────────────────────────────────
+              SliverToBoxAdapter(child: _buildStats()),
+
+              // ── Filter chips ──────────────────────────────────────────
+              SliverToBoxAdapter(child: _buildFilterChips()),
+
+              // ── Loading ───────────────────────────────────────────────
+              if (_loading)
+                const SliverFillRemaining(
+                  child: Center(
+                    child: CircularProgressIndicator(
+                        color: AppColors.primary),
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) => _SavedGridCard(
-                      recipe: recipes[i + 1],
-                      onTap: () => _openDetail(ctx, recipes[i + 1]),
+                )
+              // ── Empty state ───────────────────────────────────────────
+              else if (recipes.isEmpty)
+                SliverToBoxAdapter(child: _buildEmpty())
+              // ── Recipe list ───────────────────────────────────────────
+              else ...[
+                if (recipes.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: _FeaturedSavedCard(
+                        recipe: recipes.first,
+                        onTap: () => _openDetail(recipes.first),
+                        onUnsave: () => _unsave(recipes.first),
+                      ),
                     ),
-                    childCount: recipes.length - 1,
                   ),
-                ),
-              ),
-          ],
+                if (recipes.length > 1)
+                  SliverPadding(
+                    padding:
+                        const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.8,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, i) => _SavedGridCard(
+                          recipe: recipes[i + 1],
+                          onTap: () => _openDetail(recipes[i + 1]),
+                          onUnsave: () => _unsave(recipes[i + 1]),
+                        ),
+                        childCount: recipes.length - 1,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _openDetail(BuildContext context, RecipeModel recipe) {
+  void _openDetail(GeneratedRecipe recipe) {
     Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => RecipeDetailScreen(recipe: recipe),
-        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
+      MaterialPageRoute(
+        builder: (_) => RecipeResultsScreen(
+          recipes: [recipe],
+          scanId: '',
         ),
-        transitionDuration: const Duration(milliseconds: 350),
       ),
     );
   }
@@ -90,34 +195,30 @@ class _SavedScreenState extends State<SavedScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _CircleButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            onTap: () {},
+          const Text(
+            'Saved Recipes',
+            style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textDark,
+                fontFamily: 'Nunito'),
           ),
-          const Expanded(
-            child: Column(
-              children: [
-                Text(
-                  'Hi! Let\'s cook',
-                  style: TextStyle(fontSize: 11, color: AppColors.textMedium),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Saved Recipes',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textDark,
-                    fontFamily: 'Nunito',
-                  ),
-                ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8)
               ],
             ),
-          ),
-          _CircleButton(
-            icon: Icons.tune_rounded,
-            onTap: () {},
+            child: const Icon(Icons.favorite_rounded,
+                size: 20, color: Color(0xFFFF5252)),
           ),
         ],
       ),
@@ -125,98 +226,58 @@ class _SavedScreenState extends State<SavedScreen> {
   }
 
   Widget _buildStats() {
+    final quickCount =
+        _recipes.where((r) => r.cookTimeMinutes <= 30).length;
+    final easyCount = _recipes
+        .where((r) => r.difficulty.toLowerCase() == 'easy')
+        .length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _StatChip(
-            label: '10 Saved',
-            isActive: _activeTab == 'Saved',
-            activeColor: AppColors.primary,
-            onTap: () => setState(() => _activeTab = 'Saved'),
-          ),
+          _StatChip(label: '${_recipes.length} Saved', emoji: '❤️'),
           const SizedBox(width: 8),
-          _StatChip(
-            label: '22 Recipes',
-            isActive: _activeTab == 'Recipes',
-            activeColor: AppColors.primary,
-            onTap: () => setState(() => _activeTab = 'Recipes'),
-          ),
+          _StatChip(label: '$quickCount Quick', emoji: '⏱'),
           const SizedBox(width: 8),
-          _StatChip(
-            label: '4 Created',
-            isActive: _activeTab == 'Created',
-            activeColor: const Color(0xFF4CAF50),
-            onTap: () => setState(() => _activeTab = 'Created'),
-          ),
+          _StatChip(label: '$easyCount Easy', emoji: '🔥'),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSearch() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      child: Container(
-        height: 46,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 14),
-            const Icon(Icons.search_rounded, color: AppColors.textLight, size: 20),
-            const SizedBox(width: 10),
-            const Text(
-              'Search your saved recipes',
-              style: TextStyle(fontSize: 14, color: AppColors.textLight),
-            ),
-          ],
-        ),
       ),
     );
   }
 
   Widget _buildFilterChips() {
     return SizedBox(
-      height: 44,
+      height: 40,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: _filters.length,
         itemBuilder: (ctx, i) {
           final f = _filters[i];
-          final isSelected = f == _activeFilter;
+          final sel = f == _activeFilter;
           return GestureDetector(
             onTap: () => setState(() => _activeFilter = f),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? AppColors.primary : Colors.white,
+                color:
+                    sel ? AppColors.primary : Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: isSelected ? AppColors.primary : AppColors.chipBorder,
-                ),
+                    color: sel
+                        ? AppColors.primary
+                        : AppColors.chipBorder),
               ),
-              child: Text(
-                f,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected ? Colors.white : AppColors.textMedium,
-                ),
-              ),
+              child: Text(f,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: sel
+                          ? Colors.white
+                          : AppColors.textMedium)),
             ),
           );
         },
@@ -224,36 +285,27 @@ class _SavedScreenState extends State<SavedScreen> {
     );
   }
 
-  Widget _buildListHeader(int count) {
+  Widget _buildEmpty() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.fromLTRB(20, 40, 20, 40),
+      child: Column(
         children: [
-          Text(
-            '$count recipes saved',
-            style: const TextStyle(fontSize: 13, color: AppColors.textMedium),
-          ),
-          GestureDetector(
-            onTap: () {},
-            child: Row(
-              children: [
-                const Text(
-                  'Recent saved',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textDark,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 18,
+          const Text('📚', style: TextStyle(fontSize: 60)),
+          const SizedBox(height: 16),
+          const Text('No saved recipes yet',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.textDark,
-                ),
-              ],
-            ),
+                  fontFamily: 'Nunito')),
+          const SizedBox(height: 8),
+          const Text(
+            'Scan a receipt, generate recipes and save the ones you love!',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textMedium,
+                height: 1.5),
           ),
         ],
       ),
@@ -262,125 +314,159 @@ class _SavedScreenState extends State<SavedScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Featured saved card – full width
+// Sub-widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _FeaturedSavedCard extends StatelessWidget {
-  final RecipeModel recipe;
-  final VoidCallback onTap;
-  const _FeaturedSavedCard({required this.recipe, required this.onTap});
+class _OfflineBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3CD),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFB300)),
+      ),
+      child: const Row(
+        children: [
+          Text('📵', style: TextStyle(fontSize: 16)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "You're offline — showing cached recipes",
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF856404)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final String label;
+  final String emoji;
+  const _StatChip({required this.label, required this.emoji});
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.chipBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark)),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeaturedSavedCard extends StatelessWidget {
+  final GeneratedRecipe recipe;
+  final VoidCallback onTap;
+  final VoidCallback onUnsave;
+  const _FeaturedSavedCard(
+      {required this.recipe,
+      required this.onTap,
+      required this.onUnsave});
+
+  @override
+  Widget build(BuildContext context) {
+    final emoji = _emoji(recipe.title);
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 200,
+        height: 180,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          color: recipe.color.withValues(alpha: 0.15),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6))
+          ],
         ),
-        clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Background emoji large
             Positioned(
-              right: -10,
-              bottom: -10,
-              child: Text(recipe.emoji, style: const TextStyle(fontSize: 120)),
-            ),
-            // Gradient overlay
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerRight,
-                  end: Alignment.centerLeft,
-                  colors: [
-                    Colors.transparent,
-                    recipe.color.withValues(alpha: 0.75),
-                  ],
-                ),
+                right: 16,
+                top: 16,
+                child: Text(emoji,
+                    style: const TextStyle(fontSize: 70))),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20)),
+                child: const Text('Saved',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700)),
               ),
             ),
-            // Tag chip (top left)
-            if (recipe.tag.isNotEmpty)
-              Positioned(
-                top: 14,
-                left: 14,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    recipe.tag,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            // Bookmark icon (top right)
             Positioned(
               top: 10,
               right: 10,
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
+              child: GestureDetector(
+                onTap: onUnsave,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      shape: BoxShape.circle),
+                  child: const Icon(Icons.favorite_rounded,
+                      size: 16, color: Color(0xFFFF5252)),
                 ),
-                child: const Icon(Icons.bookmark_rounded, color: Colors.white, size: 18),
               ),
             ),
-            // Info at bottom
             Positioned(
-              left: 16,
-              right: 80,
               bottom: 14,
+              left: 14,
+              right: 14,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    recipe.name,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      fontFamily: 'Nunito',
-                    ),
-                  ),
+                  Text(recipe.title,
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          fontFamily: 'Nunito')),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.star_rounded, color: AppColors.accent, size: 14),
-                      const SizedBox(width: 3),
-                      Text(
-                        recipe.rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Icon(Icons.timer_outlined, color: Colors.white70, size: 13),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${recipe.time} min',
-                        style: const TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
-                      const SizedBox(width: 10),
-                      const Icon(Icons.people_outline_rounded, color: Colors.white70, size: 13),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${recipe.servings} serv',
-                        style: const TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
+                      _Pill('${recipe.servings} servings'),
+                      const SizedBox(width: 8),
+                      _Pill(recipe.difficulty),
+                      const SizedBox(width: 8),
+                      _Pill('${recipe.cookTimeMinutes} min'),
                     ],
                   ),
                 ],
@@ -393,25 +479,43 @@ class _FeaturedSavedCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Grid card
-// ─────────────────────────────────────────────────────────────────────────────
+class _Pill extends StatelessWidget {
+  final String label;
+  const _Pill(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(10)),
+      child: Text(label,
+          style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.w600)),
+    );
+  }
+}
 
 class _SavedGridCard extends StatefulWidget {
-  final RecipeModel recipe;
+  final GeneratedRecipe recipe;
   final VoidCallback onTap;
-  const _SavedGridCard({required this.recipe, required this.onTap});
+  final VoidCallback onUnsave;
+  const _SavedGridCard(
+      {required this.recipe,
+      required this.onTap,
+      required this.onUnsave});
 
   @override
   State<_SavedGridCard> createState() => _SavedGridCardState();
 }
 
 class _SavedGridCardState extends State<_SavedGridCard> {
-  bool _bookmarked = true;
-
   @override
   Widget build(BuildContext context) {
-    final recipe = widget.recipe;
+    final emoji = _emoji(widget.recipe.title);
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
@@ -420,117 +524,67 @@ class _SavedGridCardState extends State<_SavedGridCard> {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 8)
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image area
             Expanded(
-              child: Stack(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: recipe.color.withValues(alpha: 0.13),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                    ),
-                    child: Center(
-                      child: Text(recipe.emoji, style: const TextStyle(fontSize: 52)),
-                    ),
-                  ),
-                  // Tag chip
-                  if (recipe.tag.isNotEmpty)
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(18)),
+                ),
+                child: Stack(
+                  children: [
+                    Center(
+                        child: Text(emoji,
+                            style: const TextStyle(fontSize: 48))),
                     Positioned(
-                      top: 10,
-                      left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: recipe.color,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          recipe.tag,
-                          style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: widget.onUnsave,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                              color:
+                                  Colors.white.withValues(alpha: 0.9),
+                              shape: BoxShape.circle),
+                          child: const Icon(Icons.favorite_rounded,
+                              size: 14, color: Color(0xFFFF5252)),
                         ),
                       ),
                     ),
-                  // Bookmark button
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: GestureDetector(
-                      onTap: () => setState(() => _bookmarked = !_bookmarked),
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          _bookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          size: 16,
-                          color: _bookmarked ? AppColors.primary : AppColors.textLight,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            // Info area
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    recipe.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
+                  Text(widget.recipe.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark)),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.star_rounded, color: AppColors.accent, size: 12),
-                      const SizedBox(width: 2),
-                      Text(
-                        recipe.rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.timer_outlined, color: AppColors.textLight, size: 11),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${recipe.time}m',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textLight),
-                      ),
+                      const Icon(Icons.timer_outlined,
+                          size: 11, color: AppColors.textLight),
+                      const SizedBox(width: 3),
+                      Text('${widget.recipe.cookTimeMinutes} min',
+                          style: const TextStyle(
+                              fontSize: 10,
+                              color: AppColors.textLight)),
                     ],
                   ),
                 ],
@@ -543,76 +597,17 @@ class _SavedGridCardState extends State<_SavedGridCard> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CircleButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _CircleButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-            ),
-          ],
-        ),
-        child: Icon(icon, size: 16, color: AppColors.textDark),
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final Color activeColor;
-  final VoidCallback onTap;
-  const _StatChip({
-    required this.label,
-    required this.isActive,
-    required this.activeColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive ? activeColor : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive ? activeColor : AppColors.chipBorder,
-          ),
-          boxShadow: isActive
-              ? [BoxShadow(color: activeColor.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))]
-              : [],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: isActive ? Colors.white : AppColors.textMedium,
-          ),
-        ),
-      ),
-    );
-  }
+String _emoji(String title) {
+  final t = title.toLowerCase();
+  if (t.contains('pasta') || t.contains('spaghetti')) return '🍝';
+  if (t.contains('chicken')) return '🍗';
+  if (t.contains('beef') || t.contains('steak')) return '🥩';
+  if (t.contains('fish') || t.contains('salmon')) return '🐟';
+  if (t.contains('salad')) return '🥗';
+  if (t.contains('soup')) return '🍲';
+  if (t.contains('pizza')) return '🍕';
+  if (t.contains('rice')) return '🍚';
+  if (t.contains('egg')) return '🍳';
+  if (t.contains('bread')) return '🍞';
+  return '🍽️';
 }

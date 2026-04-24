@@ -66,5 +66,21 @@
 	<string>Quillo needs camera access to scan your grocery receipts</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Quillo needs photo access to upload receipt images</string>
+
+	<!--
+	  AdMob App ID — REPLACE with your real App ID from https://admob.google.com
+	  Test App ID below works on any device for development.
+	-->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
+
+	<!-- Required by google_mobile_ads on iOS 14+ -->
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>
