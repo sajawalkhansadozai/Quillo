@@ -5,15 +5,44 @@ import '../../widgets/quillo_button.dart';
 import 'skill_level_screen.dart';
 
 class PreferencesScreen extends StatefulWidget {
-  const PreferencesScreen({super.key});
+  /// When provided, the screen runs in "edit mode":
+  /// — pre-fills selections from these lists
+  /// — calls [onSaved] with (dietary, cuisines) instead of navigating to SkillLevelScreen
+  final List<String>? initialDietary;
+  final List<String>? initialCuisines;
+  final void Function(List<String> dietary, List<String> cuisines)? onSaved;
+
+  const PreferencesScreen({
+    super.key,
+    this.initialDietary,
+    this.initialCuisines,
+    this.onSaved,
+  });
+
+  bool get isEditMode => onSaved != null;
+
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  final Set<String> _selectedDietary = {};
-  final Set<String> _selectedLifestyle = {};
-  final Set<String> _selectedCuisines = {};
+  late final Set<String> _selectedDietary;
+  late final Set<String> _selectedLifestyle;
+  late final Set<String> _selectedCuisines;
+
+  // Known lifestyle labels (used to split combined dietary+lifestyle lists)
+  static const _lifestyleLabels = {
+    'Low-carb', 'Keto', 'Paleo', 'Raw food', 'Mediterranean', 'Sugar-free', 'High-protein',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final allDietary = widget.initialDietary ?? [];
+    _selectedDietary = allDietary.where((l) => !_lifestyleLabels.contains(l)).toSet();
+    _selectedLifestyle = allDietary.where((l) => _lifestyleLabels.contains(l)).toSet();
+    _selectedCuisines = (widget.initialCuisines ?? []).toSet();
+  }
 
   // Each chip has a unique pastel background colour
   final List<_ChipData> _dietaryOptions = const [
@@ -54,6 +83,16 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       _selectedDietary.length + _selectedLifestyle.length + _selectedCuisines.length;
 
   Future<void> _saveAndContinue() async {
+    if (widget.isEditMode) {
+      // Edit mode: return selections via callback and pop
+      widget.onSaved!(
+        [..._selectedDietary, ..._selectedLifestyle],
+        _selectedCuisines.toList(),
+      );
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    // Onboarding mode: save to SharedPreferences and go to next step
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
         'onboarding_dietary', [..._selectedDietary, ..._selectedLifestyle]);
@@ -65,6 +104,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   }
 
   void _skipToNext() {
+    if (widget.isEditMode) {
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const SkillLevelScreen()),
     );
@@ -87,12 +130,16 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 children: [
                   _CircleBack(onTap: () => Navigator.of(context).pop()),
                   const Spacer(),
-                  _StepPill(label: '• Step 4 of 5'),
+                  if (!widget.isEditMode) _StepPill(label: '• Step 4 of 5'),
+                  if (widget.isEditMode)
+                    const Text('Edit Preferences',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+                            color: AppColors.textDark, fontFamily: 'Nunito')),
                   const Spacer(),
                   TextButton(
                     onPressed: _skipToNext,
-                    child: const Text('Skip',
-                        style: TextStyle(fontSize: 14, color: AppColors.textMedium,
+                    child: Text(widget.isEditMode ? 'Cancel' : 'Skip',
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMedium,
                             fontWeight: FontWeight.w600)),
                   ),
                 ],
@@ -188,18 +235,20 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               child: Column(
                 children: [
                   QuilloButton(
-                    label: '→  Continue',
+                    label: widget.isEditMode ? '✓  Save Preferences' : '→  Continue',
                     onTap: _saveAndContinue,
                     backgroundColor: AppColors.primary,
                     textColor: Colors.white,
                   ),
-                  const SizedBox(height: 12),
-                  QuilloButton(
-                    label: 'Skip for now',
-                    onTap: _skipToNext,
-                    backgroundColor: AppColors.textDark,
-                    textColor: Colors.white,
-                  ),
+                  if (!widget.isEditMode) ...[
+                    const SizedBox(height: 12),
+                    QuilloButton(
+                      label: 'Skip for now',
+                      onTap: _skipToNext,
+                      backgroundColor: AppColors.textDark,
+                      textColor: Colors.white,
+                    ),
+                  ],
                 ],
               ),
             ),

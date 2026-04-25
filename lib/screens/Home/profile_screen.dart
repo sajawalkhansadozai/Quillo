@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
+import '../onboarding/preferences_screen.dart';
 import '../paywall_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -30,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _googleConnected = false;
   bool _appleConnected = false;
   bool _isEmailLogin = true;
+  String _measurementUnit = 'Metric'; // 'Metric' | 'Imperial'
 
   static const _dietColors = [
     Color(0xFF4CAF50), Color(0xFF5C6BC0), Color(0xFFFF7043),
@@ -45,6 +48,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadUserData();
+    _loadLocalSettings();
+  }
+
+  Future<void> _loadLocalSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _measurementUnit = prefs.getString('measurement_unit') ?? 'Metric';
+      });
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -189,6 +202,162 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── Preference editors ───────────────────────────────────────────────────────
+
+  Future<void> _editMeasurementUnit() async {
+    const units = [
+      _UnitOption(
+        label: 'Metric',
+        description: 'Grams, millilitres, Celsius',
+        examples: '250g • 200ml • 180°C',
+        emoji: '🌍',
+      ),
+      _UnitOption(
+        label: 'Imperial',
+        description: 'Ounces, cups, Fahrenheit',
+        examples: '8oz • 1 cup • 350°F',
+        emoji: '🇺🇸',
+      ),
+    ];
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Measurement Units',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textDark,
+                    fontFamily: 'Nunito')),
+            const SizedBox(height: 4),
+            const Text(
+                'Choose how ingredient amounts are shown in recipes',
+                style: TextStyle(fontSize: 13, color: AppColors.textMedium)),
+            const SizedBox(height: 20),
+            ...units.map((u) {
+              final isSelected = u.label == _measurementUnit;
+              return GestureDetector(
+                onTap: () async {
+                  setState(() => _measurementUnit = u.label);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('measurement_unit', u.label);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.06)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primary
+                          : const Color(0xFFE8E8E8),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(u.emoji,
+                          style: const TextStyle(fontSize: 28)),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(u.label,
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textDark)),
+                            const SizedBox(height: 2),
+                            Text(u.description,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textMedium)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(u.examples,
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textMedium,
+                                      fontFamily: 'monospace')),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isSelected)
+                        const Icon(Icons.check_circle_rounded,
+                            color: AppColors.primary, size: 22),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editDietaryAndCuisine() async {
+    final uid = _client.auth.currentUser?.id;
+    final currentDietary = _dietChips.map((c) => c.label).toList();
+    final currentCuisines = _cuisineChips.map((c) => c.label).toList();
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PreferencesScreen(
+          initialDietary: currentDietary,
+          initialCuisines: currentCuisines,
+          onSaved: (dietary, cuisines) async {
+            if (uid == null) return;
+            try {
+              // Save dietary labels to user_preferences
+              await _client.from('user_preferences').upsert(
+                {'user_id': uid, 'dietary_labels': dietary},
+                onConflict: 'user_id',
+              );
+              // Save cuisines to users table
+              await _client
+                  .from('users')
+                  .update({'preferred_cuisine': cuisines})
+                  .eq('id', uid);
+            } catch (_) {}
+            // Refresh displayed data
+            await _loadUserData();
+          },
+        ),
+      ),
+    );
+  }
 
   Future<void> _editHouseholdSize() async {
     int temp = _householdSize;
@@ -610,29 +779,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Dietary ────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _SubLabel('DIETARY'),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                  child: _dietChips.isNotEmpty
-                      ? _ChipWrap(chips: _dietChips)
-                      : const Text('None set — complete onboarding to add',
-                          style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                _PrefEditRow(
+                  emoji: '🥗',
+                  emojiColor: const Color(0xFF4CAF50),
+                  title: 'Dietary & Lifestyle',
+                  chips: _dietChips,
+                  emptyLabel: 'Tap to set dietary restrictions',
+                  onTap: _editDietaryAndCuisine,
                 ),
                 Divider(height: 1, color: AppColors.divider),
                 // ── Cuisine ────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _SubLabel('CUISINE'),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                  child: _cuisineChips.isNotEmpty
-                      ? _ChipWrap(chips: _cuisineChips)
-                      : const Text('None set — complete onboarding to add',
-                          style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                _PrefEditRow(
+                  emoji: '🌍',
+                  emojiColor: const Color(0xFF5C6BC0),
+                  title: 'Favourite Cuisines',
+                  chips: _cuisineChips,
+                  emptyLabel: 'Tap to set favourite cuisines',
+                  onTap: _editDietaryAndCuisine,
                 ),
                 Divider(height: 1, color: AppColors.divider),
                 // ── Household Size ─────────────────────────────────────
@@ -812,8 +975,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   icon: Icons.straighten_rounded,
                   iconColor: const Color(0xFF4CAF50),
                   title: 'Measurement Units',
-                  subtitle: 'Cups, grams, ml...',
-                  trailing: 'Metric',
+                  subtitle: _measurementUnit == 'Metric'
+                      ? 'Grams, millilitres, Celsius'
+                      : 'Ounces, cups, Fahrenheit',
+                  trailing: _measurementUnit,
+                  onTap: _editMeasurementUnit,
                 ),
               ],
             ),
@@ -1024,35 +1190,100 @@ class _PrefChip {
   const _PrefChip(this.label, this.color);
 }
 
-class _ChipWrap extends StatelessWidget {
+// ── Dietary / Cuisine edit row ────────────────────────────────────────────────
+
+class _PrefEditRow extends StatelessWidget {
+  final String emoji;
+  final Color emojiColor;
+  final String title;
   final List<_PrefChip> chips;
-  const _ChipWrap({required this.chips});
+  final String emptyLabel;
+  final VoidCallback onTap;
+
+  const _PrefEditRow({
+    required this.emoji,
+    required this.emojiColor,
+    required this.title,
+    required this.chips,
+    required this.emptyLabel,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: chips
-          .map(
-            (c) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38, height: 38,
               decoration: BoxDecoration(
-                color: c.color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: c.color.withValues(alpha: 0.3)),
+                color: emojiColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                c.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: c.color,
-                ),
+              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+                  const SizedBox(height: 6),
+                  chips.isNotEmpty
+                      ? Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            ...chips.take(5).map((c) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: c.color.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: c.color.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(c.label,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: c.color)),
+                                )),
+                            if (chips.length > 5)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryLight,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text('+${chips.length - 5} more',
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary)),
+                              ),
+                          ],
+                        )
+                      : Text(emptyLabel,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textLight)),
+                ],
               ),
             ),
-          )
-          .toList(),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded,
+                size: 16, color: AppColors.textLight),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1159,19 +1390,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _SubLabel extends StatelessWidget {
-  final String text;
-  const _SubLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMedium),
-    );
-  }
-}
-
 class _SettingDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1235,6 +1453,7 @@ class _SettingArrowRow extends StatelessWidget {
   final String subtitle;
   final String trailing;
   final Color trailingColor;
+  final VoidCallback? onTap;
 
   const _SettingArrowRow({
     required this.icon,
@@ -1243,12 +1462,13 @@ class _SettingArrowRow extends StatelessWidget {
     required this.subtitle,
     required this.trailing,
     this.trailingColor = AppColors.textMedium,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1461,6 +1681,19 @@ class _ConnectBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+class _UnitOption {
+  final String label;
+  final String description;
+  final String examples;
+  final String emoji;
+  const _UnitOption({
+    required this.label,
+    required this.description,
+    required this.examples,
+    required this.emoji,
+  });
 }
 
 class _CircleBtn extends StatelessWidget {
