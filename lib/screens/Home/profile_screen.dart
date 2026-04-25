@@ -27,6 +27,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _householdSize = 2;
   String _cookingSkill = 'Intermediate';
   int _maxCookTime = 45;
+  bool _googleConnected = false;
+  bool _appleConnected = false;
+  bool _isEmailLogin = true;
 
   static const _dietColors = [
     Color(0xFF4CAF50), Color(0xFF5C6BC0), Color(0xFFFF7043),
@@ -66,6 +69,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final cuisines = List<String>.from(userRow?['preferred_cuisine'] ?? []);
       final status = (userRow?['subscription_status'] as String?) ?? 'free';
 
+      // Detect SSO providers
+      final identities = _client.auth.currentUser?.identities ?? [];
+      final providers = identities.map((i) => i.provider).toSet();
+
       if (!mounted) return;
       setState(() {
         _userEmail = (userRow?['email'] as String?) ?? email;
@@ -74,6 +81,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _householdSize = (userRow?['household_size'] as int?) ?? 2;
         _cookingSkill = (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate';
         _maxCookTime = (prefsRow?['max_cook_time'] as int?) ?? 45;
+        _googleConnected = providers.contains('google');
+        _appleConnected = providers.contains('apple');
+        _isEmailLogin = providers.contains('email');
         _dietChips = dietary
             .asMap()
             .entries
@@ -790,14 +800,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onChanged: (v) => setState(() => _pushNotifications = v),
                 ),
                 _SettingDivider(),
-                _SettingArrowRow(
-                  icon: Icons.language_rounded,
-                  iconColor: const Color(0xFF2196F3),
-                  title: 'Language',
-                  subtitle: 'Set your preferred language',
-                  trailing: 'English',
-                ),
-                _SettingDivider(),
+                // _SettingArrowRow(
+                //   icon: Icons.language_rounded,
+                //   iconColor: const Color(0xFF2196F3),
+                //   title: 'Language',
+                //   subtitle: 'Set your preferred language',
+                //   trailing: 'English',
+                // ),
+                // _SettingDivider(),
                 _SettingArrowRow(
                   icon: Icons.straighten_rounded,
                   iconColor: const Color(0xFF4CAF50),
@@ -816,6 +826,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Account section ─────────────────────────────────────────────────────────
 
   Widget _buildAccountSection() {
+    // Truncate email for display
+    final shortEmail = _userEmail.length > 22
+        ? '${_userEmail.substring(0, 22)}...'
+        : _userEmail;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Column(
@@ -831,42 +846,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(
               children: [
-                GestureDetector(
-                  onTap: _showChangePasswordDialog,
-                  child: _SettingArrowRow(
-                    icon: Icons.lock_outline_rounded,
-                    iconColor: const Color(0xFF9C27B0),
-                    title: 'Change Password',
-                    subtitle: 'Update your account password',
-                    trailing: '',
+                // Change Password — email/password users only
+                if (_isEmailLogin) ...[
+                  GestureDetector(
+                    onTap: _showChangePasswordDialog,
+                    behavior: HitTestBehavior.opaque,
+                    child: _AccountRow(
+                      iconWidget: const Icon(Icons.lock_outline_rounded, size: 18, color: Color(0xFF9C27B0)),
+                      iconBg: const Color(0xFFF3E5F5),
+                      title: 'Change Password',
+                      subtitle: 'Last changed 3 months ago',
+                    ),
                   ),
+                  _SettingDivider(),
+                ],
+                // Google
+                _AccountRow(
+                  iconWidget: Image.asset(
+                    'assets/icons/google.png',
+                    width: 18, height: 18,
+                    errorBuilder: (_, __, ___) => const Text('G',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF4285F4))),
+                  ),
+                  iconBg: const Color(0xFFE8F0FE),
+                  title: 'Google',
+                  subtitle: _googleConnected ? shortEmail : 'Not connected',
+                  badge: _googleConnected ? _ConnectedBadge() : _ConnectBadge(),
                 ),
                 _SettingDivider(),
-                _SettingArrowRow(
-                  icon: Icons.people_outline_rounded,
-                  iconColor: const Color(0xFF2196F3),
-                  title: 'People',
-                  subtitle: 'Manage followers & following',
-                  trailing: 'Remove',
-                  trailingColor: const Color(0xFFE53935),
+                // Apple ID
+                _AccountRow(
+                  iconWidget: Image.asset(
+                    'assets/icons/apple.png',
+                    width: 18, height: 18,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.apple_rounded, size: 18, color: Colors.white),
+                  ),
+                  iconBg: const Color(0xFF212121),
+                  title: 'Apple ID',
+                  subtitle: _appleConnected ? shortEmail : 'Not connected',
+                  badge: _appleConnected ? _ConnectedBadge() : _ConnectBadge(),
                 ),
-                _SettingDivider(),
-                _SettingArrowRow(
-                  icon: Icons.apple_rounded,
-                  iconColor: const Color(0xFF212121),
-                  title: 'Apple',
-                  subtitle: 'Manage connected accounts',
-                  trailing: 'Continue',
-                ),
-                _SettingDivider(),
-                _SettingToggleRow(
-                  icon: Icons.shield_outlined,
-                  iconColor: const Color(0xFFFF9800),
-                  title: 'Two-Factor Authentication',
-                  subtitle: 'Extra security for your account',
-                  value: _twoFactor,
-                  onChanged: (v) => setState(() => _twoFactor = v),
-                ),
+                // Two-Factor Authentication — email/password users only
+                if (_isEmailLogin) ...[
+                  _SettingDivider(),
+                  _SettingToggleRow(
+                    icon: Icons.fingerprint_rounded,
+                    iconColor: const Color(0xFFE91E63),
+                    title: 'Two-Factor Authentication',
+                    subtitle: 'Extra layer of account security',
+                    value: _twoFactor,
+                    onChanged: (v) => setState(() => _twoFactor = v),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1330,6 +1361,103 @@ class _DangerRow extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFFEF9A9A)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Account row ───────────────────────────────────────────────────────────────
+
+class _AccountRow extends StatelessWidget {
+  final Widget iconWidget;
+  final Color iconBg;
+  final String title;
+  final String subtitle;
+  final Widget? badge;
+
+  const _AccountRow({
+    required this.iconWidget,
+    required this.iconBg,
+    required this.title,
+    required this.subtitle,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(child: iconWidget),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textMedium)),
+              ],
+            ),
+          ),
+          if (badge != null) ...[badge!, const SizedBox(width: 6)],
+          const Icon(Icons.chevron_right_rounded,
+              size: 18, color: AppColors.textLight),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectedBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        'Connected',
+        style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF2E7D32)),
+      ),
+    );
+  }
+}
+
+class _ConnectBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: const Text(
+        'Connect',
+        style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textMedium),
       ),
     );
   }
