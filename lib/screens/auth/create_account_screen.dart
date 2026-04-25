@@ -158,69 +158,83 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: SlideTransition(
             position: _slideAnim,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const AuthIllustration(type: IllustrationType.createAccount),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        RichText(
-                          text: const TextSpan(
-                            style: TextStyle(fontFamily: 'Nunito'),
-                            children: [
-                              TextSpan(
-                                text: 'Create account ',
-                                style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                              TextSpan(text: '👋', style: TextStyle(fontSize: 24)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textMedium,
-                              fontFamily: 'Nunito',
-                            ),
-                            children: [
-                              const TextSpan(text: 'Join QUILLO already cooking? '),
-                              WidgetSpan(
-                                child: GestureDetector(
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => const SignInScreen()),
-                                  ),
-                                  child: const Text(
-                                    'Sign in',
+            child: Column(
+              children: [
+                // ── Illustration zone ──────────────────────────────────
+                const AuthIllustration(type: IllustrationType.createAccount),
+                // ── White card form ────────────────────────────────────
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 44),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 28),
+                          // Title — centred
+                          Center(
+                            child: RichText(
+                              text: const TextSpan(
+                                style: TextStyle(fontFamily: 'Nunito'),
+                                children: [
+                                  TextSpan(
+                                    text: 'Create account ',
                                     style: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontFamily: 'Nunito',
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.textDark,
                                     ),
                                   ),
-                                ),
+                                  TextSpan(text: '👋', style: TextStyle(fontSize: 24)),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 24),
+                          const SizedBox(height: 6),
+                          // Subtitle — centred
+                          Center(
+                            child: RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMedium,
+                                  fontFamily: 'Nunito',
+                                ),
+                                children: [
+                                  const TextSpan(text: 'Join QUILLO already cooking? '),
+                                  WidgetSpan(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute(builder: (_) => const SignInScreen()),
+                                      ),
+                                      child: const Text(
+                                        'Sign in',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'Nunito',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
                         const _FieldLabel(label: 'EMAIL'),
                         const SizedBox(height: 8),
                         AuthTextField(
@@ -267,26 +281,34 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                         const SizedBox(height: 20),
                         const _OrDivider(),
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SsoButton(
-                                label: 'Google',
-                                icon: _GoogleIcon(),
-                                onTap: _handleGoogle,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SsoButton(
+                                  label: 'Google',
+                                  icon: Image.asset(
+                                    'assets/icons/google.png',
+                                    width: 20, height: 20,
+                                    errorBuilder: (_, __, ___) => const Text('G',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+                                  ),
+                                  onTap: _handleGoogle,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: SsoButton(
-                                label: 'Apple',
-                                icon: const Icon(Icons.apple, size: 20, color: AppColors.textDark),
-                                onTap: _handleApple,
-                                dark: true,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: SsoButton(
+                                  label: 'Apple',
+                                  icon: Image.asset(
+                                    'assets/icons/apple.png',
+                                    width: 20, height: 20,
+                                    errorBuilder: (_, __, ___) => const Icon(Icons.apple, size: 20, color: AppColors.textDark),
+                                  ),
+                                  onTap: _handleApple,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                         const SizedBox(height: 20),
                         Center(
                           child: RichText(
@@ -318,12 +340,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 28),
-                      ],
+                          const SizedBox(height: 28),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -394,13 +417,6 @@ class _LoadingButton extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _GoogleIcon extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return const Text('G', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4)));
   }
 }
 

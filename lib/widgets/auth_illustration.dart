@@ -10,53 +10,61 @@ class AuthIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use a dedicated asset for sign-in; fallback to Flutter-drawn blobs for others
+    if (type == IllustrationType.signIn) {
+      return SizedBox(
+        height: 210,
+        width: double.infinity,
+        child: Image.asset(
+          'assets/onboarding/signin_illustration.png',
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _buildFallback(),
+        ),
+      );
+    }
+    return _buildFallback();
+  }
+
+  Widget _buildFallback() {
     return SizedBox(
-      height: 200,
+      height: 210,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Background blobs
+          // Large primary blob — left/centre
           Positioned(
-            top: 10,
-            left: -20,
-            child: _Blob(color: AppColors.primary.withValues(alpha: 0.12), size: 140),
+            top: -10, left: -30,
+            child: _Blob(color: AppColors.primary.withValues(alpha: 0.18), size: 200),
           ),
+          // Tan/beige blob — top right
           Positioned(
-            top: 30,
-            right: -10,
-            child: _Blob(color: AppColors.accent.withValues(alpha: 0.18), size: 100),
+            top: 0, right: -20,
+            child: _Blob(color: const Color(0xFFE8D5B0).withValues(alpha: 0.55), size: 150),
           ),
+          // Small green accent blob — bottom left
           Positioned(
-            bottom: -10,
-            left: 60,
-            child: _Blob(color: const Color(0xFFE8F5E9).withValues(alpha: 0.8), size: 90),
+            bottom: 0, left: 50,
+            child: _Blob(color: const Color(0xFFD5EDDA).withValues(alpha: 0.7), size: 80),
           ),
-
           // Food/context emojis
           ..._getDecorations(),
-
-          // Center illustration
+          // Centre illustration
           Center(
             child: Container(
-              width: 100,
-              height: 100,
+              width: 96, height: 96,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
+                    color: AppColors.primary.withValues(alpha: 0.14),
+                    blurRadius: 24, offset: const Offset(0, 8),
                   ),
                 ],
               ),
               child: Center(
-                child: Text(
-                  _getCenterEmoji(),
-                  style: const TextStyle(fontSize: 46),
-                ),
+                child: Text(_getCenterEmoji(), style: const TextStyle(fontSize: 44)),
               ),
             ),
           ),

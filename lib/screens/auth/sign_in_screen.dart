@@ -111,58 +111,69 @@ class _SignInScreenState extends State<SignInScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: SlideTransition(
             position: _slideAnim,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const AuthIllustration(type: IllustrationType.signIn),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        RichText(
-                          text: const TextSpan(
-                            style: TextStyle(fontFamily: 'Nunito'),
-                            children: [
-                              TextSpan(
-                                text: 'Welcome back ',
-                                style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                              TextSpan(text: '🔍', style: TextStyle(fontSize: 24)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textMedium,
-                              fontFamily: 'Nunito',
-                            ),
-                            children: [
-                              const TextSpan(text: 'Sign in to your QUILLO account. '),
-                              WidgetSpan(
-                                child: GestureDetector(
-                                  onTap: () => Navigator.of(context).pushReplacement(
-                                    MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
+            child: Column(
+              children: [
+                // ── Illustration zone ────────────────────────────────
+                const AuthIllustration(type: IllustrationType.signIn),
+                // ── White card form ──────────────────────────────────
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 44),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 16),
+                          Center(
+                            child: RichText(
+                            text: const TextSpan(
+                              style: TextStyle(fontFamily: 'Nunito'),
+                              children: [
+                                TextSpan(
+                                  text: 'Welcome back ',
+                                  style: TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppColors.textDark,
                                   ),
-                                  child: const Text(
-                                    'Create one?',
-                                    style: TextStyle(
-                                      fontSize: 13,
+                                ),
+                                TextSpan(text: '🔍', style: TextStyle(fontSize: 24)),
+                              ],
+                            ),
+                          ),
+                          ),
+                        const SizedBox(height: 6),
+                        Center(
+                          child: RichText(
+                            textAlign: TextAlign.center,
+                            text: TextSpan(
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textMedium,
+                                fontFamily: 'Nunito',
+                              ),
+                              children: [
+                                const TextSpan(text: 'Sign in to your QUILLO account. '),
+                                WidgetSpan(
+                                  child: GestureDetector(
+                                    onTap: () => Navigator.of(context).pushReplacement(
+                                      MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
+                                    ),
+                                    child: const Text(
+                                      'Create one?',
+                                      style: TextStyle(
+                                        fontSize: 13,
                                       color: AppColors.primary,
                                       fontWeight: FontWeight.w700,
                                       fontFamily: 'Nunito',
@@ -171,6 +182,7 @@ class _SignInScreenState extends State<SignInScreen>
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -230,7 +242,12 @@ class _SignInScreenState extends State<SignInScreen>
                             Expanded(
                               child: SsoButton(
                                 label: 'Google',
-                                icon: _GoogleIcon(),
+                                icon: Image.asset(
+                                  'assets/icons/google.png',
+                                  width: 20, height: 20,
+                                  errorBuilder: (_, __, ___) => const Text('G',
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+                                ),
                                 onTap: _handleGoogle,
                               ),
                             ),
@@ -238,9 +255,13 @@ class _SignInScreenState extends State<SignInScreen>
                             Expanded(
                               child: SsoButton(
                                 label: 'Apple',
-                                icon: const Icon(Icons.apple, size: 20, color: AppColors.textDark),
+                                icon: Image.asset(
+                                  'assets/icons/apple.png',
+                                  width: 20, height: 20,
+                                  errorBuilder: (_, __, ___) => const Icon(Icons.apple, size: 20, color: Colors.black),
+                                ),
                                 onTap: _handleApple,
-                                dark: true,
+                                dark: false,
                               ),
                             ),
                           ],
@@ -276,12 +297,13 @@ class _SignInScreenState extends State<SignInScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 28),
-                      ],
+                          const SizedBox(height: 28),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -353,10 +375,3 @@ class _LoadingButton extends StatelessWidget {
   }
 }
 
-class _GoogleIcon extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return const Text('G',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4)));
-  }
-}

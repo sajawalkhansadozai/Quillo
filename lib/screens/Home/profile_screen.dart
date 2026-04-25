@@ -24,6 +24,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isPremium = false;
   List<_PrefChip> _dietChips = [];
   List<_PrefChip> _cuisineChips = [];
+  int _householdSize = 2;
+  String _cookingSkill = 'Intermediate';
+  int _maxCookTime = 45;
 
   static const _dietColors = [
     Color(0xFF4CAF50), Color(0xFF5C6BC0), Color(0xFFFF7043),
@@ -49,18 +52,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final userRow = await _client
           .from('users')
-          .select('email, subscription_status')
+          .select('email, subscription_status, household_size, preferred_cuisine')
           .eq('id', uid)
           .maybeSingle();
 
       final prefsRow = await _client
           .from('user_preferences')
-          .select('dietary_labels, preferred_cuisines')
+          .select('dietary_labels, cooking_skill, max_cook_time')
           .eq('user_id', uid)
           .maybeSingle();
 
       final dietary = List<String>.from(prefsRow?['dietary_labels'] ?? []);
-      final cuisines = List<String>.from(prefsRow?['preferred_cuisines'] ?? []);
+      final cuisines = List<String>.from(userRow?['preferred_cuisine'] ?? []);
       final status = (userRow?['subscription_status'] as String?) ?? 'free';
 
       if (!mounted) return;
@@ -68,30 +71,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _userEmail = (userRow?['email'] as String?) ?? email;
         _userName = _firstName(_userEmail);
         _isPremium = status == 'premium';
+        _householdSize = (userRow?['household_size'] as int?) ?? 2;
+        _cookingSkill = (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate';
+        _maxCookTime = (prefsRow?['max_cook_time'] as int?) ?? 45;
         _dietChips = dietary
             .asMap()
             .entries
-            .map((e) => _PrefChip(
-                  e.value,
-                  _dietColors[e.key % _dietColors.length],
-                ))
+            .map((e) => _PrefChip(e.value, _dietColors[e.key % _dietColors.length]))
             .toList();
         _cuisineChips = cuisines
             .asMap()
             .entries
-            .map((e) => _PrefChip(
-                  e.value,
-                  _cuisineColors[e.key % _cuisineColors.length],
-                ))
+            .map((e) => _PrefChip(e.value, _cuisineColors[e.key % _cuisineColors.length]))
             .toList();
       });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _userEmail = email;
-          _userName = _firstName(email);
-        });
-      }
+      if (mounted) setState(() { _userEmail = email; _userName = _firstName(email); });
     }
   }
 
@@ -181,6 +176,259 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  // ── Preference editors ───────────────────────────────────────────────────────
+
+  Future<void> _editHouseholdSize() async {
+    int temp = _householdSize;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text('Household Size',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+              const SizedBox(height: 4),
+              const Text('How many people do you usually cook for?',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMedium)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _CounterBtn(
+                    icon: Icons.remove_rounded,
+                    onTap: temp > 1 ? () => setS(() => temp--) : null,
+                  ),
+                  const SizedBox(width: 32),
+                  Column(
+                    children: [
+                      Text('$temp', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w900, color: AppColors.primary, fontFamily: 'Nunito')),
+                      Text(temp == 1 ? 'person' : 'people', style: const TextStyle(fontSize: 12, color: AppColors.textMedium)),
+                    ],
+                  ),
+                  const SizedBox(width: 32),
+                  _CounterBtn(
+                    icon: Icons.add_rounded,
+                    onTap: temp < 10 ? () => setS(() => temp++) : null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    setState(() => _householdSize = temp);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Save', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editCookingSkill() async {
+    const skills = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Cooking Skill',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+            const SizedBox(height: 4),
+            const Text('What best describes your experience in the kitchen?',
+                style: TextStyle(fontSize: 13, color: AppColors.textMedium)),
+            const SizedBox(height: 20),
+            ...skills.map((s) {
+              final isSelected = s == _cookingSkill;
+              final color = _skillColor(s);
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _cookingSkill = s);
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: isSelected ? color.withValues(alpha: 0.1) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected ? color : const Color(0xFFE8E8E8),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10, height: 10,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(s,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? color : AppColors.textDark,
+                          )),
+                      const Spacer(),
+                      if (isSelected) Icon(Icons.check_circle_rounded, size: 20, color: color),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editMaxCookTime() async {
+    const times = [15, 30, 45, 60, 90, 120];
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Max Cook Time',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+            const SizedBox(height: 4),
+            const Text('Recipes will be limited to this duration',
+                style: TextStyle(fontSize: 13, color: AppColors.textMedium)),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: times.map((t) {
+                final isSelected = t == _maxCookTime;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _maxCookTime = t);
+                    Navigator.pop(ctx);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : const Color(0xFFE8E8E8),
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      '$t min',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected ? Colors.white : AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _savePreferences() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _client
+          .from('users')
+          .update({'household_size': _householdSize})
+          .eq('id', uid);
+      await _client.from('user_preferences').upsert(
+        {
+          'user_id': uid,
+          'cooking_skill': _cookingSkill,
+          'max_cook_time': _maxCookTime,
+        },
+        onConflict: 'user_id',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Preferences saved!'),
+          backgroundColor: AppColors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save: $e'),
+          backgroundColor: const Color(0xFFE53935),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Future<void> _openPaywall() async {
@@ -340,51 +588,105 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Preferences'),
+          _SectionLabel('PREFERENCES'),
           const SizedBox(height: 10),
-          _SubLabel('Dietary'),
-          const SizedBox(height: 8),
-          _dietChips.isNotEmpty
-              ? _ChipWrap(chips: _dietChips)
-              : const Text('None set', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
-          const SizedBox(height: 12),
-          _SubLabel('Cuisines'),
-          const SizedBox(height: 8),
-          _cuisineChips.isNotEmpty
-              ? _ChipWrap(chips: _cuisineChips)
-              : const Text('None set', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
-          const SizedBox(height: 14),
-          _PrefRow(
-            icon: '👥',
-            title: 'Household size',
-            subtitle: 'How many people you cook for',
-            trailing: const Text('Update >', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
-          ),
-          _Divider(),
-          _PrefRow(
-            icon: '🍳',
-            title: 'Cooking Fill',
-            subtitle: 'Manage your pantry ingredients',
-            trailing: const Text('Language >', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
-          ),
-          _Divider(),
-          _PrefRow(
-            icon: '⏱️',
-            title: 'Max Cook Time',
-            subtitle: 'Set your maximum cooking time',
-            trailing: const Text('36m >', style: TextStyle(fontSize: 12, color: AppColors.textMedium, fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () {},
-            child: const Text(
-              'View preferences →',
-              style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Dietary ────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _SubLabel('DIETARY'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: _dietChips.isNotEmpty
+                      ? _ChipWrap(chips: _dietChips)
+                      : const Text('None set — complete onboarding to add',
+                          style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                ),
+                Divider(height: 1, color: AppColors.divider),
+                // ── Cuisine ────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _SubLabel('CUISINE'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: _cuisineChips.isNotEmpty
+                      ? _ChipWrap(chips: _cuisineChips)
+                      : const Text('None set — complete onboarding to add',
+                          style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                ),
+                Divider(height: 1, color: AppColors.divider),
+                // ── Household Size ─────────────────────────────────────
+                _PrefSettingRow(
+                  emoji: '👥',
+                  emojiColor: const Color(0xFF5C6BC0),
+                  title: 'Household Size',
+                  subtitle: 'How many people you cook for',
+                  value: '$_householdSize ${_householdSize == 1 ? "person" : "people"}',
+                  onTap: _editHouseholdSize,
+                ),
+                Divider(height: 1, indent: 54, color: AppColors.divider),
+                // ── Cooking Skill ──────────────────────────────────────
+                _PrefSettingRow(
+                  emoji: '🍳',
+                  emojiColor: const Color(0xFFFF9800),
+                  title: 'Cooking Skill',
+                  subtitle: 'Your experience in the kitchen',
+                  value: _cookingSkill,
+                  valueColor: _skillColor(_cookingSkill),
+                  onTap: _editCookingSkill,
+                ),
+                Divider(height: 1, indent: 54, color: AppColors.divider),
+                // ── Max Cook Time ──────────────────────────────────────
+                _PrefSettingRow(
+                  emoji: '⏱️',
+                  emojiColor: const Color(0xFF009688),
+                  title: 'Max Cook Time',
+                  subtitle: 'Limit recipes to this duration',
+                  value: '$_maxCookTime min',
+                  onTap: _editMaxCookTime,
+                ),
+                // ── Save preferences link ──────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                  child: GestureDetector(
+                    onTap: _savePreferences,
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text('Save preferences',
+                            style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
+                        SizedBox(width: 4),
+                        Icon(Icons.arrow_forward_rounded, size: 13, color: AppColors.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  static Color _skillColor(String skill) {
+    switch (skill.toLowerCase()) {
+      case 'beginner': return const Color(0xFF4CAF50);
+      case 'intermediate': return const Color(0xFFFF9800);
+      case 'advanced': return const Color(0xFF6C63FF);
+      case 'expert': return const Color(0xFFE53935);
+      default: return AppColors.textMedium;
+    }
   }
 
   // ── Quillo Pro card ─────────────────────────────────────────────────────────
@@ -724,32 +1026,85 @@ class _ChipWrap extends StatelessWidget {
   }
 }
 
-class _PrefRow extends StatelessWidget {
-  final String icon;
-  final String title;
-  final String subtitle;
-  final Widget trailing;
-  const _PrefRow({required this.icon, required this.title, required this.subtitle, required this.trailing});
+class _CounterBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _CounterBtn({required this.icon, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 22)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
-                Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textMedium)),
-              ],
+    final enabled = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44, height: 44,
+        decoration: BoxDecoration(
+          color: enabled ? AppColors.primary.withValues(alpha: 0.1) : const Color(0xFFF0F0F0),
+          shape: BoxShape.circle,
+          border: Border.all(color: enabled ? AppColors.primary.withValues(alpha: 0.3) : const Color(0xFFE0E0E0)),
+        ),
+        child: Icon(icon, size: 22, color: enabled ? AppColors.primary : const Color(0xFFBDBDBD)),
+      ),
+    );
+  }
+}
+
+class _PrefSettingRow extends StatelessWidget {
+  final String emoji;
+  final Color emojiColor;
+  final String title;
+  final String subtitle;
+  final String value;
+  final Color? valueColor;
+  final VoidCallback? onTap;
+
+  const _PrefSettingRow({
+    required this.emoji,
+    required this.emojiColor,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    this.valueColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: emojiColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
             ),
-          ),
-          trailing,
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textMedium)),
+                ],
+              ),
+            ),
+            Text(value,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: valueColor ?? AppColors.textMedium,
+                )),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.textLight),
+          ],
+        ),
       ),
     );
   }
@@ -783,13 +1138,6 @@ class _SubLabel extends StatelessWidget {
       text,
       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMedium),
     );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Divider(height: 1, color: AppColors.divider);
   }
 }
 

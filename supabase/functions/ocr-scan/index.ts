@@ -94,8 +94,8 @@ serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 2048,
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1024,
         messages: [
           {
             role: 'user',

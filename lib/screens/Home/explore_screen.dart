@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
 import '../scan/recipe_results_screen.dart';
+import '../scan/recipe_detail_page.dart';
 import '../explore/collection_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,7 +375,10 @@ class _ExploreScreenState extends State<ExploreScreen>
 
   void _openRecipe(GeneratedRecipe recipe) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RecipeResultsScreen(recipes: [recipe], scanId: ''),
+      builder: (_) => GeneratedRecipeDetailPage(
+        recipe: recipe,
+        accentColor: _tagColor(recipe.difficulty),
+      ),
     ));
   }
 

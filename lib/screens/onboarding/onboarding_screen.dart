@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/quillo_button.dart';
+import '../auth/sign_in_screen.dart';
 import 'preferences_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
-
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
@@ -15,40 +14,55 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   final PageController _pageController = PageController();
   int _currentPage = 0;
   late AnimationController _animController;
-  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnim;
 
   final List<_OnboardingData> _pages = const [
     _OnboardingData(
       step: 'Step 1 of 5',
-      title: 'Scan &\nDiscover\nRecipe',
-      titleHighlight: 'Discover',
-      subtitle: 'We turn your grocery list into smart, delicious meal ideas',
-      features: ['Instant scan', 'AI-powered', 'Smart meals', ''],
-      emoji: '🛒',
-      illustration: _IllustrationStyle.scan,
+      title: 'Scan & ',
+      highlight: 'Discover',
+      titleEnd: '\nRecipe',
+      subtitle: 'We turn your grocery list into\nsmart, delicious meal ideas',
+      features: [
+        _Feature('📋', 'Instant scan'),
+        _Feature('✦', 'AI-powered'),
+        _Feature('🍽️', 'Smart meals'),
+      ],
+      illustrationAsset: 'assets/onboarding/step1_illustration.png',
+      illustrationStyle: _IllustrationStyle.scan,
+      illustrationBg: Color(0xFFEDECFF),
     ),
     _OnboardingData(
       step: 'Step 2 of 5',
-      title: 'Recipes in\nSeconds ⚡',
-      titleHighlight: '',
-      subtitle: 'Point your camera at any receipt. Our AI does the rest instantly',
-      features: ['Instant scan', 'AI-powered', 'Smart meals', ''],
-      emoji: '📸',
-      illustration: _IllustrationStyle.camera,
+      title: 'Recipes in\n',
+      highlight: 'Seconds',
+      titleEnd: ' ✨',
+      subtitle: 'Point your camera at any receipt.\nOur AI does the rest instantly',
+      features: [
+        _Feature('📋', 'Instant scan'),
+        _Feature('✦', 'AI-powered'),
+        _Feature('🍽️', 'Smart meals'),
+      ],
+      illustrationAsset: 'assets/onboarding/step2_illustration.png',
+      illustrationStyle: _IllustrationStyle.camera,
+      illustrationBg: Color(0xFFEDECFF),
     ),
     _OnboardingData(
       step: 'Step 3 of 5',
-      title: 'Cook Smarter\nEvery Day',
-      titleHighlight: 'Smarter',
-      subtitle: 'Save time, reduce waste, and eat better effortlessly',
+      title: 'Cook ',
+      highlight: 'Smarter',
+      titleEnd: '\nEvery Day',
+      subtitle: 'Save time, reduce waste,\nand eat better effortlessly',
       features: [],
-      emoji: '📊',
-      illustration: _IllustrationStyle.stats,
       stats: [
-        _StatItem(value: '3.2', unit: 'hrs', label: 'saved'),
-        _StatItem(value: '42%', unit: '', label: 'waste reduction'),
-        _StatItem(value: '14+', unit: '', label: 'recipes'),
+        _StatItem('🔄', '3.2', 'hrs', 'saved per week'),
+        _StatItem('♻️', '42%', '', 'less food waste'),
+        _StatItem('🍽️', '14+', '', 'meals per month'),
       ],
+      illustrationAsset: 'assets/onboarding/step3_illustration.png',
+      illustrationStyle: _IllustrationStyle.stats,
+      illustrationBg: Color(0xFFFFF8DC),
+      isLast: true,
     ),
   ];
 
@@ -59,10 +73,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.08, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
   }
 
@@ -76,7 +87,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   void _nextPage() {
     if (_currentPage < _pages.length - 1) {
       _pageController.nextPage(
-        duration: const Duration(milliseconds: 350),
+        duration: const Duration(milliseconds: 380),
         curve: Curves.easeInOut,
       );
     } else {
@@ -88,121 +99,448 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final page = _pages[_currentPage];
+    final isLast = page.isLast;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Column(
+            children: [
+              // ── Illustration area ─────────────────────────────────────
+              Expanded(
+                flex: 52,
+                child: PageView.builder(
+                  controller: _pageController,
+                  onPageChanged: (i) {
+                    setState(() => _currentPage = i);
+                    _animController.reset();
+                    _animController.forward();
+                  },
+                  itemCount: _pages.length,
+                  itemBuilder: (_, i) => _IllustrationArea(data: _pages[i]),
+                ),
+              ),
+
+              // ── Step pill ─────────────────────────────────────────────
+              Container(
+                margin: const EdgeInsets.only(top: 16, bottom: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7, height: 7,
+                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(page.step,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                  ],
+                ),
+              ),
+
+              // ── Text + actions ────────────────────────────────────────
+              Expanded(
+                flex: 48,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Column(
+                    children: [
+                      // Title
+                      RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          style: const TextStyle(
+                            fontSize: 34, fontWeight: FontWeight.w900,
+                            color: AppColors.textDark, fontFamily: 'Nunito', height: 1.15,
                           ),
-                        ],
+                          children: [
+                            TextSpan(text: page.title),
+                            TextSpan(text: page.highlight,
+                                style: const TextStyle(color: AppColors.primary)),
+                            TextSpan(text: page.titleEnd),
+                          ],
+                        ),
                       ),
-                      child: const Icon(Icons.arrow_back_ios_new_rounded,
-                          size: 16, color: AppColors.textDark),
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _pages[_currentPage].step,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+                      const SizedBox(height: 12),
+                      // Subtitle
+                      Text(page.subtitle,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14, color: AppColors.textMedium, height: 1.6)),
+                      const SizedBox(height: 16),
+                      // Feature chips or stat cards
+                      if (page.features.isNotEmpty)
+                        Wrap(
+                          spacing: 10, runSpacing: 10,
+                          alignment: WrapAlignment.center,
+                          children: page.features.map((f) => _FeatureChip(f)).toList(),
+                        ),
+                      if (page.stats.isNotEmpty)
+                        Row(
+                          children: page.stats
+                              .map((s) => Expanded(child: _StatCard(stat: s)))
+                              .toList(),
+                        ),
+                      const Spacer(),
+                      // CTA button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _nextPage,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18)),
+                          ),
+                          child: Text(
+                            isLast ? '⚡  Start Now' : 'Next  →',
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w800, fontFamily: 'Nunito'),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                            builder: (_) => const PreferencesScreen()),
-                      );
-                    },
-                    child: Text(
-                      'Skip',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textMedium,
-                        fontWeight: FontWeight.w600,
+                      // Sign-in link on last page
+                      if (isLast) ...[
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(builder: (_) => const SignInScreen()),
+                          ),
+                          child: RichText(
+                            text: TextSpan(
+                              text: 'Already have an account?  ',
+                              style: const TextStyle(fontSize: 13, color: AppColors.textMedium),
+                              children: [
+                                TextSpan(text: 'Sign in',
+                                    style: const TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w700,
+                                        decoration: TextDecoration.underline)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      // Dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(
+                          _pages.length,
+                          (i) => _StepDot(active: i == _currentPage),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() => _currentPage = index);
-                  _animController.reset();
-                  _animController.forward();
-                },
-                itemCount: _pages.length,
-                itemBuilder: (context, index) {
-                  return SlideTransition(
-                    position: _slideAnimation,
-                    child: _OnboardingPage(data: _pages[index]),
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      _pages.length,
-                      (i) => _StepDot(active: i == _currentPage),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  QuilloButton(
-                    label: 'Next →',
-                    onTap: _nextPage,
-                    backgroundColor: AppColors.primary,
-                    textColor: Colors.white,
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Illustration area — shows asset image or fallback widget
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _IllustrationArea extends StatelessWidget {
+  final _OnboardingData data;
+  const _IllustrationArea({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      decoration: BoxDecoration(
+        color: data.illustrationBg,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Stack(
+        children: [
+          // Subtle blobs inside the coloured zone
+          Positioned(
+            top: -30, right: -40,
+            child: _Blob(size: 180, color: Colors.white.withValues(alpha: 0.25)),
+          ),
+          Positioned(
+            bottom: -20, left: -30,
+            child: _Blob(size: 150, color: Colors.white.withValues(alpha: 0.18)),
+          ),
+          // Illustration: asset first, fallback widget if missing
+          Center(
+            child: Image.asset(
+              data.illustrationAsset,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => _FallbackIllustration(style: data.illustrationStyle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fallback Flutter-drawn illustrations (shown until real assets are provided)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FallbackIllustration extends StatelessWidget {
+  final _IllustrationStyle style;
+  const _FallbackIllustration({required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (style) {
+      case _IllustrationStyle.scan:
+        return const _ScanIllustration();
+      case _IllustrationStyle.camera:
+        return const _CameraIllustration();
+      case _IllustrationStyle.stats:
+        return const _StatsIllustration();
+    }
+  }
+}
+
+class _ScanIllustration extends StatelessWidget {
+  const _ScanIllustration();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Receipt card (tilted left)
+        Positioned(
+          top: 30, left: 20,
+          child: Transform.rotate(
+            angle: -0.12,
+            child: _ReceiptCard(),
+          ),
+        ),
+        // Recipe card (tilted right)
+        Positioned(
+          top: 55, right: 20,
+          child: Transform.rotate(
+            angle: 0.08,
+            child: _RecipeCard(),
+          ),
+        ),
+        // Magic circle in center
+        Container(
+          width: 56, height: 56,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 16)],
+          ),
+          child: const Center(child: Text('✦', style: TextStyle(fontSize: 22, color: Colors.white))),
+        ),
+        // Floating food items
+        const Positioned(top: 10, left: 10, child: Text('🌿', style: TextStyle(fontSize: 22))),
+        const Positioned(top: 10, right: 20, child: Text('🫑', style: TextStyle(fontSize: 20))),
+        const Positioned(bottom: 30, left: 15, child: Text('🍑', style: TextStyle(fontSize: 20))),
+        const Positioned(bottom: 35, right: 35, child: Text('🍋', style: TextStyle(fontSize: 18))),
+      ],
+    );
+  }
+}
+
+class _ReceiptCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 130, height: 155,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(6)),
+            child: const Text('GROCERY RECEIPT', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
+          ),
+          const SizedBox(height: 10),
+          ...List.generate(4, (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Container(height: 6, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(3))),
+          )),
+          Row(children: [
+            Container(width: 30, height: 6, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(3))),
+            const Spacer(),
+            Container(width: 20, height: 6, decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(3))),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _RecipeCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 115, height: 100,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E3),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 14, offset: const Offset(0, 5))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(5)),
+            child: const Text('RECIPE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
+          ),
+          const SizedBox(height: 8),
+          const Text('🥗🍅', style: TextStyle(fontSize: 24)),
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.timer_outlined, size: 11, color: AppColors.textMedium),
+            const SizedBox(width: 3),
+            const Text('25 min', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMedium)),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _CameraIllustration extends StatelessWidget {
+  const _CameraIllustration();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 140, height: 140,
+          decoration: BoxDecoration(
+            color: AppColors.accent.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: const Center(child: Text('📸', style: TextStyle(fontSize: 68))),
+        ),
+        Positioned(top: 15, right: 25,
+          child: _FloatChip(color: Colors.white, emoji: '⚡')),
+        Positioned(bottom: 15, left: 25,
+          child: _FloatChip(color: AppColors.primaryLight, emoji: '🤖')),
+      ],
+    );
+  }
+}
+
+class _StatsIllustration extends StatelessWidget {
+  const _StatsIllustration();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 140, height: 140,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Center(child: Text('📊', style: TextStyle(fontSize: 68))),
+        ),
+        const Positioned(top: 10, right: 20, child: Text('⏱️', style: TextStyle(fontSize: 28))),
+        const Positioned(bottom: 10, left: 20, child: Text('♻️', style: TextStyle(fontSize: 28))),
+        const Positioned(top: 20, left: 20, child: Text('🥗', style: TextStyle(fontSize: 24))),
+      ],
+    );
+  }
+}
+
+class _FloatChip extends StatelessWidget {
+  final Color color;
+  final String emoji;
+  const _FloatChip({required this.color, required this.emoji});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48, height: 48,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 10)],
+      ),
+      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+    );
+  }
+}
+
+class _Blob extends StatelessWidget {
+  final double size;
+  final Color color;
+  const _Blob({required this.size, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature chip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FeatureChip extends StatelessWidget {
+  final _Feature feature;
+  const _FeatureChip(this.feature);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.chipBorder),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(feature.emoji, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 6),
+          Text(feature.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textDark)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step dot indicator
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _StepDot extends StatelessWidget {
   final bool active;
   const _StepDot({required this.active});
-
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
@@ -218,186 +556,9 @@ class _StepDot extends StatelessWidget {
   }
 }
 
-enum _IllustrationStyle { scan, camera, stats }
-
-class _StatItem {
-  final String value;
-  final String unit;
-  final String label;
-  const _StatItem({required this.value, required this.unit, required this.label});
-}
-
-class _OnboardingData {
-  final String step;
-  final String title;
-  final String titleHighlight;
-  final String subtitle;
-  final List<String> features;
-  final String emoji;
-  final _IllustrationStyle illustration;
-  final List<_StatItem> stats;
-
-  const _OnboardingData({
-    required this.step,
-    required this.title,
-    required this.titleHighlight,
-    required this.subtitle,
-    required this.features,
-    required this.emoji,
-    required this.illustration,
-    this.stats = const [],
-  });
-}
-
-class _OnboardingPage extends StatelessWidget {
-  final _OnboardingData data;
-  const _OnboardingPage({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Center(
-            child: SizedBox(
-              height: 220,
-              child: _buildIllustration(),
-            ),
-          ),
-          const SizedBox(height: 28),
-          _buildTitle(),
-          const SizedBox(height: 12),
-          Text(
-            data.subtitle,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textMedium,
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 20),
-          if (data.features.isNotEmpty)
-            _FeatureChips(features: data.features.where((f) => f.isNotEmpty).toList()),
-          if (data.stats.isNotEmpty) _StatsRow(stats: data.stats),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTitle() {
-    if (data.titleHighlight.isEmpty) {
-      return Text(
-        data.title,
-        style: const TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.w900,
-          color: AppColors.textDark,
-          height: 1.15,
-          fontFamily: 'Nunito',
-        ),
-      );
-    }
-    final parts = data.title.split(data.titleHighlight);
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.w900,
-          color: AppColors.textDark,
-          height: 1.15,
-          fontFamily: 'Nunito',
-        ),
-        children: [
-          TextSpan(text: parts[0]),
-          TextSpan(
-            text: data.titleHighlight,
-            style: const TextStyle(color: AppColors.primary),
-          ),
-          if (parts.length > 1) TextSpan(text: parts[1]),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIllustration() {
-    switch (data.illustration) {
-      case _IllustrationStyle.scan:
-        return const _ScanIllustration();
-      case _IllustrationStyle.camera:
-        return const _CameraIllustration();
-      case _IllustrationStyle.stats:
-        return const _StatsIllustration();
-    }
-  }
-}
-
-class _FeatureChips extends StatelessWidget {
-  final List<String> features;
-  const _FeatureChips({required this.features});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: features.map((f) => _FeatureChip(label: f)).toList(),
-    );
-  }
-}
-
-class _FeatureChip extends StatelessWidget {
-  final String label;
-  const _FeatureChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.chipBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_rounded, size: 15, color: AppColors.primary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textDark,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsRow extends StatelessWidget {
-  final List<_StatItem> stats;
-  const _StatsRow({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: stats.map((s) => Expanded(child: _StatCard(stat: s))).toList(),
-    );
-  }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat card (Step 3)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final _StatItem stat;
@@ -407,197 +568,90 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF5F5FF),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        border: Border.all(color: AppColors.chipBorder),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          Text(stat.emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(height: 4),
           RichText(
+            textAlign: TextAlign.center,
             text: TextSpan(
               children: [
                 TextSpan(
                   text: stat.value,
                   style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textDark,
-                    fontFamily: 'Nunito',
-                  ),
+                      fontSize: 20, fontWeight: FontWeight.w900,
+                      color: AppColors.textDark, fontFamily: 'Nunito'),
                 ),
                 if (stat.unit.isNotEmpty)
                   TextSpan(
                     text: stat.unit,
                     style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textMedium,
-                      fontFamily: 'Nunito',
-                    ),
+                        fontSize: 12, color: AppColors.textMedium, fontFamily: 'Nunito'),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            stat.label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textLight,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          const SizedBox(height: 3),
+          Text(stat.label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: AppColors.textLight, height: 1.3)),
         ],
       ),
     );
   }
 }
 
-class _ScanIllustration extends StatelessWidget {
-  const _ScanIllustration();
+// ─────────────────────────────────────────────────────────────────────────────
+// Data models
+// ─────────────────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Positioned(
-          top: 10,
-          left: 20,
-          child: _IllustCard(
-            color: AppColors.accent.withValues(alpha: 0.15),
-            child: const Text('🛒', style: TextStyle(fontSize: 32)),
-          ),
-        ),
-        Positioned(
-          top: 30,
-          right: 10,
-          child: _IllustCard(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            child: const Text('📋', style: TextStyle(fontSize: 28)),
-          ),
-        ),
-        Positioned(
-          bottom: 20,
-          left: 30,
-          child: _IllustCard(
-            color: AppColors.green.withValues(alpha: 0.1),
-            child: const Text('✅', style: TextStyle(fontSize: 24)),
-          ),
-        ),
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-          ),
-          child: const Center(
-            child: Text('🍽️', style: TextStyle(fontSize: 52)),
-          ),
-        ),
-      ],
-    );
-  }
+enum _IllustrationStyle { scan, camera, stats }
+
+class _Feature {
+  final String emoji;
+  final String label;
+  const _Feature(this.emoji, this.label);
 }
 
-class _CameraIllustration extends StatelessWidget {
-  const _CameraIllustration();
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 140,
-          height: 140,
-          decoration: BoxDecoration(
-            color: AppColors.accent.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: const Center(child: Text('📸', style: TextStyle(fontSize: 64))),
-        ),
-        Positioned(
-          top: 10,
-          right: 20,
-          child: _IllustCard(
-            color: Colors.white,
-            child: const Text('⚡', style: TextStyle(fontSize: 20)),
-          ),
-        ),
-        Positioned(
-          bottom: 10,
-          left: 20,
-          child: _IllustCard(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            child: const Text('🤖', style: TextStyle(fontSize: 20)),
-          ),
-        ),
-      ],
-    );
-  }
+class _StatItem {
+  final String emoji;
+  final String value;
+  final String unit;
+  final String label;
+  const _StatItem(this.emoji, this.value, this.unit, this.label);
 }
 
-class _StatsIllustration extends StatelessWidget {
-  const _StatsIllustration();
+class _OnboardingData {
+  final String step;
+  final String title;
+  final String highlight;
+  final String titleEnd;
+  final String subtitle;
+  final List<_Feature> features;
+  final List<_StatItem> stats;
+  final String illustrationAsset;
+  final _IllustrationStyle illustrationStyle;
+  final Color illustrationBg;
+  final bool isLast;
 
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 140,
-          height: 140,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: const Center(child: Text('📊', style: TextStyle(fontSize: 64))),
-        ),
-        const Positioned(
-            top: 5, right: 15, child: Text('⏱️', style: TextStyle(fontSize: 28))),
-        const Positioned(
-            bottom: 5,
-            left: 15,
-            child: Text('♻️', style: TextStyle(fontSize: 28))),
-        const Positioned(
-            top: 15, left: 15, child: Text('🥗', style: TextStyle(fontSize: 22))),
-      ],
-    );
-  }
-}
-
-class _IllustCard extends StatelessWidget {
-  final Color color;
-  final Widget child;
-  const _IllustCard({required this.color, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: Center(child: child),
-    );
-  }
+  const _OnboardingData({
+    required this.step,
+    required this.title,
+    required this.highlight,
+    required this.titleEnd,
+    required this.subtitle,
+    required this.features,
+    required this.illustrationAsset,
+    required this.illustrationStyle,
+    required this.illustrationBg,
+    this.stats = const [],
+    this.isLast = false,
+  });
 }

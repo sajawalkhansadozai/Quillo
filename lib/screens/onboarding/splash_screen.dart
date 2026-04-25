@@ -56,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen>
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 0),
             child: Column(
               children: [
                 const Spacer(flex: 1),
@@ -70,7 +70,11 @@ class _SplashScreenState extends State<SplashScreen>
                   },
                   child: SizedBox(
                     height: 260,
-                    child: _ChefIllustration(),
+                    child: Image.asset(
+                      'assets/onboarding/chef_illustration.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _ChefIllustration(),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -145,17 +149,20 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
                 const Spacer(flex: 2),
-                QuilloButton(
-                  label: '✦  Get Started',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const OnboardingScreen(),
-                      ),
-                    );
-                  },
-                  backgroundColor: AppColors.accent,
-                  textColor: AppColors.textDark,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: QuilloButton(
+                    label: '✦  Get Started',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OnboardingScreen(),
+                        ),
+                      );
+                    },
+                    backgroundColor: AppColors.accent,
+                    textColor: AppColors.textDark,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 GestureDetector(

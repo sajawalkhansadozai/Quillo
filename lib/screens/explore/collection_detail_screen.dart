@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
-import '../scan/recipe_results_screen.dart';
+import '../scan/recipe_detail_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CollectionDetailScreen — shows user's recipes matching a collection's keywords
@@ -160,7 +160,10 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
 
   void _openRecipe(GeneratedRecipe recipe) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RecipeResultsScreen(recipes: [recipe], scanId: ''),
+      builder: (_) => GeneratedRecipeDetailPage(
+        recipe: recipe,
+        accentColor: widget.color,
+      ),
     ));
   }
 
