@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../models/ingredient_item.dart';
 import '../../services/recipe_service.dart';
 import '../../services/scan_service.dart';
+import '../../services/daily_limit_service.dart';
+import '../../widgets/scan_limit_sheet.dart';
 import '../../theme/app_theme.dart';
 import 'recipe_results_screen.dart';
 
@@ -51,6 +53,11 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       _showSnack('Add at least one ingredient before generating recipes.');
       return;
     }
+    // Check daily limit (covers manual entry path)
+    if (!await DailyLimitService.canScan()) {
+      if (mounted) await showScanLimitSheet(context);
+      return;
+    }
     setState(() => _isGenerating = true);
 
     try {
@@ -63,6 +70,7 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
             'Recipe generation is taking longer than usual — tap to retry.'),
       );
 
+      await DailyLimitService.recordScan();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(

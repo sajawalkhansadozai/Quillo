@@ -56,7 +56,7 @@ class RecipeModel {
         tag: "Chef's Pick",
         color: AppColors.primary,
         chef: 'Chef Maria R.',
-        tags: ['Italian', 'Easy', 'AI Pick'],
+        tags: ['Italian', 'Easy', 'Quillo Pick'],
         ingredients: [
           IngredientModel(name: 'Penne', amount: '300g', emoji: '🍝'),
           IngredientModel(name: 'Parmesan', amount: '80g', emoji: '🧀'),

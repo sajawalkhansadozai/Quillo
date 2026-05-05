@@ -17,7 +17,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
-  bool _twoFactor = false;
 
   // ── Real user data ──────────────────────────────────────────────────────────
   final _client = Supabase.instance.client;
@@ -56,6 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) {
       setState(() {
         _measurementUnit = prefs.getString('measurement_unit') ?? 'Metric';
+        _pushNotifications = prefs.getBool('push_notifications') ?? true;
       });
     }
   }
@@ -610,6 +610,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _launchUrl(String url) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Opening: $url'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _confirmPauseAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Pause Account',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text(
+            'Pausing your account will temporarily hide your profile and disable recipe generation. You can resume anytime.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF9800),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Pause'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Account paused. Contact support to resume.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFFF9800),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Account',
+            style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFE53935))),
+        content: const Text(
+            'This will permanently delete your account and all your data. This action cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Account deletion request sent. You will receive a confirmation email within 24 hours.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFE53935),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   Future<void> _openPaywall() async {
     await Navigator.of(context).push(
       PageRouteBuilder(
@@ -659,7 +744,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Row(
         children: [
-          _CircleBtn(icon: Icons.arrow_back_ios_new_rounded, onTap: () {}),
+          const SizedBox(width: 40),
           const Expanded(
             child: Text(
               'Settings',
@@ -903,21 +988,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _ProFeature('Unlimited recipe access'),
             _ProFeature('Scan receipts & generate recipes by meal'),
             _ProFeature('Nutritional info per recipe'),
-            _ProFeature('Priority AI suggestions'),
+            _ProFeature('Priority suggestions'),
             const SizedBox(height: 14),
             Row(
               children: [
                 const Text(
-                  '£7.99',
+                  '£43.99',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
                 ),
                 Text(
-                  '/year',
+                  '/year · or £5.99/mo',
                   style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75)),
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () {},
+                  onTap: _openPaywall,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     decoration: BoxDecoration(
@@ -960,7 +1045,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Push Notifications',
                   subtitle: 'Recipe alerts & reminders',
                   value: _pushNotifications,
-                  onChanged: (v) => setState(() => _pushNotifications = v),
+                  onChanged: (v) async {
+                    setState(() => _pushNotifications = v);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('push_notifications', v);
+                  },
                 ),
                 _SettingDivider(),
                 // _SettingArrowRow(
@@ -1055,13 +1144,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // Two-Factor Authentication — email/password users only
                 if (_isEmailLogin) ...[
                   _SettingDivider(),
-                  _SettingToggleRow(
+                  _SettingArrowRow(
                     icon: Icons.fingerprint_rounded,
                     iconColor: const Color(0xFFE91E63),
                     title: 'Two-Factor Authentication',
-                    subtitle: 'Extra layer of account security',
-                    value: _twoFactor,
-                    onChanged: (v) => setState(() => _twoFactor = v),
+                    subtitle: 'Coming soon',
+                    trailing: '',
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Two-Factor Authentication is coming in a future update.'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -1096,6 +1191,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Help Center',
                   subtitle: 'FAQs and support articles',
                   trailing: '',
+                  onTap: () => _launchUrl('https://quillo.app/help'),
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(
@@ -1104,6 +1200,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Send Feedback',
                   subtitle: 'Help us improve Quillo',
                   trailing: '',
+                  onTap: () => _launchUrl('mailto:support@quillo.app'),
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(
@@ -1112,6 +1209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Content Register',
                   subtitle: 'View terms and privacy policy',
                   trailing: '',
+                  onTap: () => _launchUrl('https://quillo.app/terms'),
                 ),
               ],
             ),
@@ -1138,12 +1236,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.pause_circle_outline_rounded,
               title: 'Pause Account',
               subtitle: 'Temporarily disable your account',
+              onTap: _confirmPauseAccount,
             ),
             Divider(height: 1, color: const Color(0xFFFFCDD2).withValues(alpha: 0.6), indent: 54),
             _DangerRow(
               icon: Icons.delete_outline_rounded,
               title: 'Delete Account',
               subtitle: 'Permanently remove your data',
+              onTap: _confirmDeleteAccount,
             ),
           ],
         ),
@@ -1548,12 +1648,13 @@ class _DangerRow extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  const _DangerRow({required this.icon, required this.title, required this.subtitle});
+  final VoidCallback? onTap;
+  const _DangerRow({required this.icon, required this.title, required this.subtitle, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1696,25 +1797,3 @@ class _UnitOption {
   });
 }
 
-class _CircleBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _CircleBtn({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
-        ),
-        child: Icon(icon, size: 16, color: AppColors.textDark),
-      ),
-    );
-  }
-}

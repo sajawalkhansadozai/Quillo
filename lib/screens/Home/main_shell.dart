@@ -16,12 +16,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    ExploreScreen(),
-    ScanPlaceholderScreen(),
-    SavedScreen(),
-    ProfileScreen(),
+  late final List<Widget> _screens = [
+    HomeScreen(onExploreTap: () => setState(() => _currentIndex = 1)),
+    const ExploreScreen(),
+    const ScanPlaceholderScreen(),
+    const SavedScreen(),
+    const ProfileScreen(),
   ];
 
   @override

@@ -11,7 +11,8 @@ import '../scan/recipe_results_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AllRecipesScreen extends StatefulWidget {
-  const AllRecipesScreen({super.key});
+  final String initialFilter;
+  const AllRecipesScreen({super.key, this.initialFilter = 'All'});
   @override
   State<AllRecipesScreen> createState() => _AllRecipesScreenState();
 }
@@ -22,13 +23,14 @@ class _AllRecipesScreenState extends State<AllRecipesScreen> {
   List<GeneratedRecipe> _filtered = [];
   final Set<String> _savedIds = {};
   bool _loading = true;
-  String _selectedFilter = 'All';
+  late String _selectedFilter;
   final _searchCtrl = TextEditingController();
   final _filters = ['All', 'Quick', 'Dinner', 'Lunch', 'Breakfast', 'Vegan', 'Dessert'];
 
   @override
   void initState() {
     super.initState();
+    _selectedFilter = widget.initialFilter;
     _loadRecipes();
     _searchCtrl.addListener(_applyFilter);
   }

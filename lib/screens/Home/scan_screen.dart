@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/scan_service.dart';
+import '../../services/daily_limit_service.dart';
+import '../../widgets/scan_limit_sheet.dart';
 import '../scan/ingredient_review_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +28,10 @@ class ScanScreen extends StatefulWidget {
 class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   _ScanState _state = _ScanState.idle;
   String? _errorMessage;
+
+  // Camera
+  CameraController? _cameraCtrl;
+  bool _cameraReady = false;
 
   // Scan line animation
   late AnimationController _scanLineCtrl;
@@ -66,6 +73,36 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _cardFade = CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOut);
     _cardSlide = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero)
         .animate(CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOutCubic));
+
+    _initCamera();
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final ctrl = CameraController(
+        back,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await ctrl.initialize();
+      if (!mounted) {
+        ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _cameraCtrl = ctrl;
+        _cameraReady = true;
+      });
+    } catch (_) {
+      // Camera unavailable — fall back to gradient background silently.
+    }
   }
 
   @override
@@ -74,6 +111,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _scanLineCtrl.dispose();
     _cardCtrl.dispose();
     _stepTimer?.cancel();
+    _cameraCtrl?.dispose();
     super.dispose();
   }
 
@@ -81,6 +119,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Future<void> _onShutter() async {
     if (_state != _ScanState.idle) return;
+    if (!await _checkLimit()) return;
     final file = await ScanService.pickFromCamera();
     if (file == null) return;
     await _processScan(file);
@@ -90,9 +129,20 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Future<void> _onGallery() async {
     if (_state != _ScanState.idle) return;
+    if (!await _checkLimit()) return;
     final file = await ScanService.pickFromGallery();
     if (file == null) return;
     await _processScan(file);
+  }
+
+  // ── Daily limit gate ─────────────────────────────────────────────────────────
+
+  Future<bool> _checkLimit() async {
+    final allowed = await DailyLimitService.canScan();
+    if (!allowed && mounted) {
+      await showScanLimitSheet(context);
+    }
+    return allowed;
   }
 
   // ── Core pipeline ───────────────────────────────────────────────────────────
@@ -114,6 +164,14 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
       _stepTimer?.cancel();
       if (!mounted) return;
+
+      if (result.ingredients.isEmpty) {
+        _showError('No ingredients detected. Try a clearer photo or better lighting.');
+        return;
+      }
+
+      // Only charge the daily limit when ingredients were actually found
+      await DailyLimitService.recordScan();
 
       // Navigate to ingredient review screen
       await _cardCtrl.reverse();
@@ -184,7 +242,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       backgroundColor: const Color(0xFF07070F),
       body: Stack(
         children: [
-          _CameraBackground(),
+          _CameraBackground(controller: _cameraReady ? _cameraCtrl : null),
           SafeArea(
             child: Column(
               children: [
@@ -670,8 +728,23 @@ class _ErrorTip extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CameraBackground extends StatelessWidget {
+  final CameraController? controller;
+  const _CameraBackground({this.controller});
+
   @override
   Widget build(BuildContext context) {
+    if (controller != null && controller!.value.isInitialized) {
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: controller!.value.previewSize!.height,
+            height: controller!.value.previewSize!.width,
+            child: CameraPreview(controller!),
+          ),
+        ),
+      );
+    }
     return Container(
       decoration: const BoxDecoration(
         gradient: RadialGradient(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_illustration.dart';
@@ -86,6 +87,17 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     } else {
       _showError(result.error ?? 'Sign up failed.');
     }
+  }
+
+  void _openLink(BuildContext context, String url) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Opening: $url'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _handleGoogle() async {
@@ -323,18 +335,22 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                 const TextSpan(text: 'By signing up you agree to our '),
                                 TextSpan(
                                   text: 'Terms',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.w700,
                                   ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = () => _openLink(context, 'https://quillo.app/terms'),
                                 ),
                                 const TextSpan(text: ' &\n'),
                                 TextSpan(
                                   text: 'Conditions',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.w700,
                                   ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = () => _openLink(context, 'https://quillo.app/terms'),
                                 ),
                               ],
                             ),

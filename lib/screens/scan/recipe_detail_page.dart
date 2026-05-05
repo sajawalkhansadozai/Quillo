@@ -468,7 +468,7 @@ class _GeneratedRecipeDetailPageState
                 color: const Color(0xFF4CAF50),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text('AI Generated',
+              child: const Text('Quillo Generated',
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -504,7 +504,7 @@ class _GeneratedRecipeDetailPageState
         t.contains('vegetable')) {
       tags.add('Vegetarian');
     }
-    if (tags.isEmpty) tags.add('AI Recipe');
+    if (tags.isEmpty) tags.add('Quillo Recipe');
     return tags.take(3).toList();
   }
 

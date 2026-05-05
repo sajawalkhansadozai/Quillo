@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
-import '../scan/recipe_results_screen.dart';
 import '../scan/recipe_detail_page.dart';
 import '../explore/collection_detail_screen.dart';
+import 'all_recipes_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ExploreScreen — real recipes from Supabase with search + category filter
@@ -99,19 +99,13 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   Future<void> _loadRecipes() async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) {
-      setState(() => _loading = false);
-      return;
-    }
     try {
       final data = await _client
           .from('recipes')
           .select(
               'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url')
-          .eq('user_id', uid)
           .order('created_at', ascending: false)
-          .limit(30);
+          .limit(100);
 
       final recipes = (data as List)
           .map<GeneratedRecipe?>((r) {
@@ -279,7 +273,23 @@ class _ExploreScreenState extends State<ExploreScreen>
 
                   // ── Collections ────────────────────────────────────────
                   SliverToBoxAdapter(
-                    child: _SectionHeader(title: 'Collections', action: 'See all'),
+                    child: _SectionHeader(
+                      title: 'Collections',
+                      action: 'See all',
+                      onAction: () => showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.white,
+                        isScrollControlled: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                        ),
+                        builder: (_) => _AllCollectionsSheet(
+                          collections: _collections,
+                          allRecipes: _allRecipes,
+                          countFor: _countForCollection,
+                        ),
+                      ),
+                    ),
                   ),
                   SliverToBoxAdapter(
                     child: SizedBox(
@@ -300,10 +310,14 @@ class _ExploreScreenState extends State<ExploreScreen>
                   SliverToBoxAdapter(
                     child: _SectionHeader(
                       title: _selectedCategory == 'All'
-                          ? 'Your AI Recipes 🔥'
+                          ? 'Your Quillo Recipes 🔥'
                           : '$_selectedCategory Recipes',
-                      action:
-                          _filteredRecipes.length > 6 ? 'See all' : '',
+                      action: _filteredRecipes.length > 6 ? 'See all' : '',
+                      onAction: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AllRecipesScreen(),
+                        ),
+                      ),
                     ),
                   ),
                   if (_loading)
@@ -345,7 +359,15 @@ class _ExploreScreenState extends State<ExploreScreen>
                   if (_quickRecipes.isNotEmpty) ...[
                     SliverToBoxAdapter(
                       child: _SectionHeader(
-                          title: 'Quick & Easy ⚡', action: 'See all'),
+                        title: 'Quick & Easy ⚡',
+                        action: 'See all',
+                        onAction: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const AllRecipesScreen(initialFilter: 'Quick'),
+                          ),
+                        ),
+                      ),
                     ),
                     SliverToBoxAdapter(
                       child: SizedBox(
@@ -446,7 +468,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                     fontFamily: 'Nunito')),
             const SizedBox(height: 6),
             Text(
-              'Scan a grocery receipt to generate your first AI recipes!',
+              'Scan a grocery receipt to generate your first Quillo recipes!',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 12,
@@ -683,7 +705,7 @@ class _FeaturedCard extends StatelessWidget {
                   decoration: BoxDecoration(
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(20)),
-                  child: const Text("AI Pick",
+                  child: const Text("Quillo Pick",
                       style: TextStyle(
                           fontSize: 11,
                           color: Colors.white,
@@ -1065,6 +1087,121 @@ String _emoji(String title) {
   if (t.contains('pancake') || t.contains('waffle')) return '🥞';
   if (t.contains('shrimp') || t.contains('prawn')) return '🍤';
   return '🍽️';
+}
+
+// ── All Collections bottom sheet ──────────────────────────────────────────────
+
+class _AllCollectionsSheet extends StatelessWidget {
+  final List<_CollectionData> collections;
+  final List<GeneratedRecipe> allRecipes;
+  final int Function(_CollectionData) countFor;
+  const _AllCollectionsSheet({
+    required this.collections,
+    required this.allRecipes,
+    required this.countFor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFE0E0E0),
+                        borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('All Collections',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textDark,
+                        fontFamily: 'Nunito')),
+                const SizedBox(height: 14),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              controller: scrollCtrl,
+              padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding + 24),
+              children: [
+                ...collections.map((col) {
+            final count = countFor(col);
+            return GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => CollectionDetailScreen(
+                    title: col.title,
+                    emoji: col.emoji,
+                    color: col.color,
+                    keywords: col.keywords,
+                    quickOnly: col.quickOnly,
+                  ),
+                ));
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: col.color.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: col.color.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Text(col.emoji, style: const TextStyle(fontSize: 24)),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(col.title,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: col.color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        count == 0 ? 'No recipes' : '$count recipe${count == 1 ? '' : 's'}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: col.color),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.chevron_right_rounded, size: 16, color: col.color),
+                  ],
+                ),
+              ),
+            );
+          }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Color _tagColor(String difficulty) {

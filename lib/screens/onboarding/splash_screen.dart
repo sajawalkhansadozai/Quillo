@@ -139,7 +139,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'Turn your receipts into\ndelicious meals with AI',
+                  'Turn your receipts into\ndelicious meals with Quillo',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,

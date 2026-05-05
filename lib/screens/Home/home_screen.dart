@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/streak_service.dart';
+import '../../services/daily_limit_service.dart';
 import '../../models/generated_recipe.dart';
 import '../../widgets/ad_banner.dart';
+import '../../widgets/scan_limit_sheet.dart';
+import '../../services/recipe_service.dart';
 import '../scan/ingredient_review_screen.dart';
 import '../scan/recipe_detail_page.dart';
 import 'all_recipes_screen.dart';
 import 'scan_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onExploreTap;
+  const HomeScreen({super.key, this.onExploreTap});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -30,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen>
   List<GeneratedRecipe> _savedRecipes = [];
   bool _loading = true;
   String _selectedCategory = 'All';
+  String _searchQuery = '';
   final _categories = ['All', 'Quick', 'Breakfast', 'Lunch', 'Dinner', 'Vegan'];
 
   @override
@@ -39,6 +44,9 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 500), vsync: this);
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
+    _searchCtrl.addListener(() {
+      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+    });
     _loadData();
   }
 
@@ -124,8 +132,12 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   List<GeneratedRecipe> get _filtered {
-    if (_selectedCategory == 'All') return _recentRecipes;
-    return _recentRecipes.where((r) {
+    var list = _recentRecipes;
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((r) => r.title.toLowerCase().contains(_searchQuery)).toList();
+    }
+    if (_selectedCategory == 'All') return list;
+    return list.where((r) {
       final t = r.title.toLowerCase();
       switch (_selectedCategory) {
         case 'Quick': return r.cookTimeMinutes <= 20;
@@ -164,9 +176,15 @@ class _HomeScreenState extends State<HomeScreen>
                 ));
               }),
               const SizedBox(height: 12),
-              _ScanOption(icon: Icons.edit_note_rounded, color: const Color(0xFF4CAF50), title: 'Enter Manually', subtitle: 'Type your ingredients yourself', onTap: () {
+              _ScanOption(icon: Icons.edit_note_rounded, color: const Color(0xFF4CAF50), title: 'Enter Manually', subtitle: 'Type your ingredients yourself', onTap: () async {
                 Navigator.pop(ctx);
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const IngredientReviewScreen(ingredients: [], scanId: '')));
+                if (!await DailyLimitService.canScan()) {
+                  if (context.mounted) await showScanLimitSheet(context);
+                  return;
+                }
+                if (context.mounted) {
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const IngredientReviewScreen(ingredients: [], scanId: '')));
+                }
               }),
               const SizedBox(height: 8),
             ],
@@ -305,11 +323,20 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
             ),
           // Bell
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
-            child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textDark),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.white,
+              shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+              builder: (_) => const _NotificationsSheet(),
+            ),
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
+              child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textDark),
+            ),
           ),
           const SizedBox(width: 10),
           // Avatar
@@ -415,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: const Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.auto_awesome, color: Colors.white, size: 11),
                       SizedBox(width: 4),
-                      Text("AI Pick", style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                      Text("Quillo Pick", style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
                     ]),
                   ),
                 ),
@@ -480,17 +507,20 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('AI found ${_recentRecipes.length} new recipes',
+              Text('Quillo found ${_recentRecipes.length} new recipes',
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textDark)),
               const SizedBox(height: 2),
               const Text('Based on your last recipe scan', style: TextStyle(fontSize: 11, color: AppColors.textMedium)),
             ]),
           ),
           const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: const Color(0xFFFF9800), borderRadius: BorderRadius.circular(20)),
-            child: const Text('Explore', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+          GestureDetector(
+            onTap: widget.onExploreTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(color: const Color(0xFFFF9800), borderRadius: BorderRadius.circular(20)),
+              child: const Text('Explore', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
           ),
         ]),
       ),
@@ -600,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Scan a Receipt', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito')),
                 SizedBox(height: 2),
-                Text('Get AI meal ideas from your groceries', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                Text('Get meal ideas from your groceries', style: TextStyle(fontSize: 12, color: Colors.white70)),
               ]),
             ),
             Container(
@@ -631,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 14),
           const Text('No scans yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textDark, fontFamily: 'Nunito')),
           const SizedBox(height: 6),
-          const Text('Scan your first grocery receipt and let\nQuillo work its magic on your meals.',
+          const Text('Scan your first receipt and let\nQuillo work its magic on your meals.',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5)),
           const SizedBox(height: 18),
           GestureDetector(
@@ -726,19 +756,113 @@ class _HomeScreenState extends State<HomeScreen>
 // Suggested for You tile
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SuggestedTile extends StatelessWidget {
+// ── Notifications sheet ───────────────────────────────────────────────────────
+
+class _NotificationsSheet extends StatelessWidget {
+  const _NotificationsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+                color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.notifications_outlined, size: 30, color: AppColors.primary),
+          ),
+          const SizedBox(height: 16),
+          const Text('Notifications',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textDark,
+                  fontFamily: 'Nunito')),
+          const SizedBox(height: 8),
+          const Text(
+            "You're all caught up! Recipe tips and\ncooking reminders will appear here.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: AppColors.textMedium, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: double.infinity,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Center(
+                child: Text('Got it',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestedTile extends StatefulWidget {
   final GeneratedRecipe recipe;
   final VoidCallback onTap;
   const _SuggestedTile({required this.recipe, required this.onTap});
 
   @override
+  State<_SuggestedTile> createState() => _SuggestedTileState();
+}
+
+class _SuggestedTileState extends State<_SuggestedTile> {
+  bool _saved = false;
+  bool _saving = false;
+
+  Future<void> _toggleSave() async {
+    if (_saving || widget.recipe.id == null) return;
+    setState(() => _saving = true);
+    try {
+      if (_saved) {
+        await RecipeService.unsaveRecipe(widget.recipe.id!);
+      } else {
+        await RecipeService.saveRecipe(widget.recipe);
+      }
+      if (mounted) setState(() => _saved = !_saved);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save recipe'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final recipe = widget.recipe;
     final color = _diffColor(recipe.difficulty);
     final badge = _badge(recipe);
     final emoji = _HomeScreenState._emojiFor(recipe.title);
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
         padding: const EdgeInsets.all(12),
@@ -769,7 +893,6 @@ class _SuggestedTile extends StatelessWidget {
           // Info
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Category badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
@@ -792,7 +915,22 @@ class _SuggestedTile extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           // Bookmark
-          Icon(Icons.bookmark_border_rounded, size: 20, color: AppColors.textLight),
+          GestureDetector(
+            onTap: _toggleSave,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: _saving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 1.5, color: AppColors.primary))
+                  : Icon(
+                      _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      size: 20,
+                      color: _saved ? AppColors.primary : AppColors.textLight,
+                    ),
+            ),
+          ),
         ]),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
 import '../../services/recipe_service.dart';
@@ -22,17 +23,37 @@ class _SavedScreenState extends State<SavedScreen> {
   final _filters = ['All', 'Favourites', 'Under 20min'];
 
   List<GeneratedRecipe> _recipes = [];
+  Set<String> _favouriteIds = {};
   bool _loading = true;
   bool _offline = false;
   String _search = '';
 
   final _searchCtrl = TextEditingController();
+  static const _favKey = 'saved_screen_favourites';
 
   @override
   void initState() {
     super.initState();
     _loadRecipes();
+    _loadFavourites();
     _searchCtrl.addListener(() => setState(() => _search = _searchCtrl.text));
+  }
+
+  Future<void> _loadFavourites() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _favouriteIds = (prefs.getStringList(_favKey) ?? []).toSet());
+  }
+
+  Future<void> _toggleFavourite(String recipeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_favouriteIds.contains(recipeId)) {
+        _favouriteIds.remove(recipeId);
+      } else {
+        _favouriteIds.add(recipeId);
+      }
+    });
+    await prefs.setStringList(_favKey, _favouriteIds.toList());
   }
 
   @override
@@ -83,7 +104,7 @@ class _SavedScreenState extends State<SavedScreen> {
       case 'Under 20min':
         return list.where((r) => r.cookTimeMinutes <= 20).toList();
       case 'Favourites':
-        return list;
+        return list.where((r) => r.id != null && _favouriteIds.contains(r.id)).toList();
       default:
         return list;
     }
@@ -158,6 +179,8 @@ class _SavedScreenState extends State<SavedScreen> {
                       recipe: recipes.first,
                       onTap: () => _openDetail(recipes.first),
                       onUnsave: () => _unsave(recipes.first),
+                      isFavourite: recipes.first.id != null && _favouriteIds.contains(recipes.first.id),
+                      onFavourite: recipes.first.id != null ? () => _toggleFavourite(recipes.first.id!) : null,
                     ),
                   ),
                 ),
@@ -178,6 +201,8 @@ class _SavedScreenState extends State<SavedScreen> {
                           recipe: recipes[i + 1],
                           onTap: () => _openDetail(recipes[i + 1]),
                           onUnsave: () => _unsave(recipes[i + 1]),
+                          isFavourite: recipes[i + 1].id != null && _favouriteIds.contains(recipes[i + 1].id),
+                          onFavourite: recipes[i + 1].id != null ? () => _toggleFavourite(recipes[i + 1].id!) : null,
                         ),
                         childCount: recipes.length - 1,
                       ),
@@ -200,10 +225,7 @@ class _SavedScreenState extends State<SavedScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
       child: Row(
         children: [
-          _CircleBtn(
-            icon: Icons.arrow_back_ios_new_rounded,
-            onTap: () => Navigator.maybePop(context),
-          ),
+          const SizedBox(width: 40),
           Expanded(
             child: Column(
               children: [
@@ -229,10 +251,7 @@ class _SavedScreenState extends State<SavedScreen> {
               ],
             ),
           ),
-          _CircleBtn(
-            icon: Icons.tune_rounded,
-            onTap: () {},
-          ),
+          const SizedBox(width: 40),
         ],
       ),
     );
@@ -415,32 +434,6 @@ class _SavedScreenState extends State<SavedScreen> {
 // Sub-widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CircleBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _CircleBtn({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)
-          ],
-        ),
-        child: Icon(icon, size: 16, color: AppColors.textDark),
-      ),
-    );
-  }
-}
-
 class _StatBadge extends StatelessWidget {
   final String label;
   final Color bg;
@@ -500,8 +493,15 @@ class _FeaturedCard extends StatelessWidget {
   final GeneratedRecipe recipe;
   final VoidCallback onTap;
   final VoidCallback onUnsave;
-  const _FeaturedCard(
-      {required this.recipe, required this.onTap, required this.onUnsave});
+  final bool isFavourite;
+  final VoidCallback? onFavourite;
+  const _FeaturedCard({
+    required this.recipe,
+    required this.onTap,
+    required this.onUnsave,
+    this.isFavourite = false,
+    this.onFavourite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -568,21 +568,40 @@ class _FeaturedCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Bookmark top-right
+              // Action buttons top-right
               Positioned(
                 top: 10,
                 right: 10,
-                child: GestureDetector(
-                  onTap: onUnsave,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        shape: BoxShape.circle),
-                    child: const Icon(Icons.bookmark_rounded,
-                        size: 16, color: Colors.white),
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: onFavourite,
+                      child: Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle),
+                        child: Icon(
+                          isFavourite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          size: 16,
+                          color: isFavourite ? const Color(0xFFFF4E6A) : Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: onUnsave,
+                      child: Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle),
+                        child: const Icon(Icons.bookmark_rounded,
+                            size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               // Bottom info
@@ -649,8 +668,15 @@ class _GridCard extends StatelessWidget {
   final GeneratedRecipe recipe;
   final VoidCallback onTap;
   final VoidCallback onUnsave;
-  const _GridCard(
-      {required this.recipe, required this.onTap, required this.onUnsave});
+  final bool isFavourite;
+  final VoidCallback? onFavourite;
+  const _GridCard({
+    required this.recipe,
+    required this.onTap,
+    required this.onUnsave,
+    this.isFavourite = false,
+    this.onFavourite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -710,27 +736,41 @@ class _GridCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    // Bookmark top-right
+                    // Heart + bookmark top-right
                     Positioned(
                       top: 8,
                       right: 8,
-                      child: GestureDetector(
-                        onTap: onUnsave,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                    color:
-                                        Colors.black.withValues(alpha: 0.08),
-                                    blurRadius: 4)
-                              ]),
-                          child: const Icon(Icons.bookmark_rounded,
-                              size: 14, color: AppColors.primary),
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: onFavourite,
+                            child: Container(
+                              width: 28, height: 28,
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4)]),
+                              child: Icon(
+                                isFavourite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                size: 14,
+                                color: isFavourite ? const Color(0xFFFF4E6A) : AppColors.textLight,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: onUnsave,
+                            child: Container(
+                              width: 28, height: 28,
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4)]),
+                              child: const Icon(Icons.bookmark_rounded, size: 14, color: AppColors.primary),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

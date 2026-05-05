@@ -519,7 +519,7 @@ class _PaywallScreenState extends State<PaywallScreen>
                       Text(
                         isYearly
                             ? 'Start Free Trial'
-                            : 'Upgrade Now · \$5.99/mo',
+                            : 'Upgrade Now · £5.99/mo',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,

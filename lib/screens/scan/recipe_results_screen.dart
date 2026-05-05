@@ -25,6 +25,7 @@ class RecipeResultsScreen extends StatefulWidget {
 class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
   final Set<String> _savedIds = {};
   bool _selectAll = false;
+  String _sort = 'Default'; // Default | Quick | Easy | Hard
 
   Future<void> _toggleSave(GeneratedRecipe recipe) async {
     if (recipe.id == null) return;
@@ -45,10 +46,33 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
     ));
   }
 
+  List<GeneratedRecipe> get _sorted {
+    final list = List<GeneratedRecipe>.from(widget.recipes);
+    switch (_sort) {
+      case 'Quick':
+        list.sort((a, b) => a.cookTimeMinutes.compareTo(b.cookTimeMinutes));
+        break;
+      case 'Easy':
+        list.sort((a, b) {
+          const order = {'Easy': 0, 'Medium': 1, 'Hard': 2};
+          return (order[a.difficulty] ?? 1).compareTo(order[b.difficulty] ?? 1);
+        });
+        break;
+      case 'Hard':
+        list.sort((a, b) {
+          const order = {'Easy': 0, 'Medium': 1, 'Hard': 2};
+          return (order[b.difficulty] ?? 1).compareTo(order[a.difficulty] ?? 1);
+        });
+        break;
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final total = widget.recipes.length;
-    final totalIngredients = widget.recipes
+    final recipes = _sorted;
+    final total = recipes.length;
+    final totalIngredients = recipes
         .expand((r) => r.ingredientsUsed)
         .map((i) => i.name)
         .toSet()
@@ -65,9 +89,9 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
               child: ListView.builder(
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                itemCount: widget.recipes.length,
+                itemCount: recipes.length,
                 itemBuilder: (_, i) {
-                  final recipe = widget.recipes[i];
+                  final recipe = recipes[i];
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 16),
                     child: RecipeListCard(
@@ -135,9 +159,63 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
           const SizedBox(width: 8),
           _FilterChip(label: '$ingredients ingredients'),
           const SizedBox(width: 8),
-          _FilterChip(label: 'Sort', icon: Icons.sort_rounded),
+          GestureDetector(
+            onTap: _showSortSheet,
+            child: _FilterChip(
+              label: _sort == 'Default' ? 'Sort' : _sort,
+              icon: Icons.sort_rounded,
+              selected: _sort != 'Default',
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) {
+        final options = ['Default', 'Quick', 'Easy', 'Hard'];
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Sort Recipes',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+              const SizedBox(height: 12),
+              ...options.map((opt) => GestureDetector(
+                onTap: () { setState(() => _sort = opt); Navigator.pop(context); },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: _sort == opt ? AppColors.primary.withValues(alpha: 0.08) : const Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _sort == opt ? AppColors.primary : Colors.transparent),
+                  ),
+                  child: Row(children: [
+                    Expanded(child: Text(opt, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _sort == opt ? AppColors.primary : AppColors.textDark))),
+                    if (_sort == opt) const Icon(Icons.check_rounded, size: 18, color: AppColors.primary),
+                  ]),
+                ),
+              )),
+            ],
+          ),
+        );
+      },
     );
   }
 

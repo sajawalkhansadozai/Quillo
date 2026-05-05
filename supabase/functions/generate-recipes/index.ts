@@ -47,7 +47,7 @@ function buildRecipePrompt(req: RecipeRequest): string {
     ? req.preferred_cuisines.join(', ')
     : 'Any';
 
-  return `You are a professional chef AI assistant for the Quillo recipe app.
+  return `You are a professional chef assistant for the Quillo recipe app.
 
 Generate EXACTLY 3 distinct recipe suggestions using the ingredients below.
 
