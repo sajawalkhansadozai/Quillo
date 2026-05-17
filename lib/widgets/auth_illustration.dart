@@ -16,6 +16,9 @@ class AuthIllustration extends StatelessWidget {
     if (type == IllustrationType.createAccount) {
       return _buildCreateAccountHeader();
     }
+    if (type == IllustrationType.resetPassword) {
+      return _buildResetPasswordHeader();
+    }
     return _buildFallback();
   }
 
@@ -83,6 +86,59 @@ class AuthIllustration extends StatelessWidget {
               'assets/onboarding/signin_illustration.png',
               height: 120,
               fit: BoxFit.contain,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResetPasswordHeader() {
+    return SizedBox(
+      height: 180,
+      width: double.infinity,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            top: -18,
+            left: -32,
+            child: _Blob(
+              color: AppColors.primary.withValues(alpha: 0.16),
+              size: 150,
+            ),
+          ),
+          Positioned(
+            top: -12,
+            right: -24,
+            child: _Blob(
+              color: AppColors.accent.withValues(alpha: 0.4),
+              size: 100,
+            ),
+          ),
+          Positioned(
+            bottom: 8,
+            left: 24,
+            child: _Blob(
+              color: const Color(0xFFB3E5FC).withValues(alpha: 0.5),
+              size: 80,
+            ),
+          ),
+          const Positioned(
+            top: 4,
+            right: 20,
+            child: _FoodDeco(
+              asset: 'assets/onboarding/deco_lemon.png',
+              size: 48,
+            ),
+          ),
+          Image.asset(
+            'assets/onboarding/reset_email_header.png',
+            height: 110,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Center(
+              child: Text(_getCenterEmoji(), style: const TextStyle(fontSize: 44)),
             ),
           ),
         ],

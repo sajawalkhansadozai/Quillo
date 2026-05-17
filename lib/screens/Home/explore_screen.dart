@@ -380,7 +380,9 @@ class _ExploreScreenState extends State<ExploreScreen>
                         backgroundColor: Colors.white,
                         isScrollControlled: true,
                         shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
                         ),
                         builder: (_) => _AllCollectionsSheet(
                           collections: _collections,
@@ -650,27 +652,32 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader(
       {required this.title, this.action = '', this.onAction});
 
+  static const _actionStyle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    color: Color(0xFF6259FF),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                  fontFamily: 'Nunito')),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
           if (action.isNotEmpty)
             GestureDetector(
               onTap: onAction,
-              child: Text(action,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600)),
+              child: Text(action, style: _actionStyle),
             ),
         ],
       ),
@@ -1024,18 +1031,20 @@ class _CollectionCard extends StatelessWidget {
         width: 140,
         margin: const EdgeInsets.only(right: 10),
         decoration: BoxDecoration(
-            color: data.color,
-            borderRadius: BorderRadius.circular(16)),
+          color: data.color,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Stack(
           children: [
             Positioned(
-                right: 8,
-                bottom: 8,
-                child: Opacity(
-                  opacity: 0.3,
-                  child: Text(data.emoji,
-                      style: const TextStyle(fontSize: 40)),
-                )),
+              right: 8,
+              bottom: 8,
+              child: Opacity(
+                opacity: 0.3,
+                child: Text(data.emoji,
+                    style: const TextStyle(fontSize: 40)),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -1349,13 +1358,16 @@ class _AllCollectionsSheet extends StatelessWidget {
                               color: AppColors.textDark)),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: col.color.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        count == 0 ? 'No recipes' : '$count recipe${count == 1 ? '' : 's'}',
+                        count == 0
+                            ? 'No recipes'
+                            : '$count recipe${count == 1 ? '' : 's'}',
                         style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -1363,7 +1375,8 @@ class _AllCollectionsSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: col.color),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 16, color: col.color),
                   ],
                 ),
               ),

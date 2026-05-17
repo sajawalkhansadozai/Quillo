@@ -28,6 +28,7 @@ class HomeScreenState extends State<HomeScreen>
   final _searchCtrl = TextEditingController();
 
   String _userName = '';
+  String? _avatarUrl;
   int _streak = 0;
   List<Map<String, dynamic>> _recentScans = [];
   List<GeneratedRecipe> _recentRecipes = [];
@@ -64,7 +65,7 @@ class HomeScreenState extends State<HomeScreen>
     try {
       final row = await _client
           .from('users')
-          .select('email, full_name')
+          .select('email, full_name, avatar_url')
           .eq('id', uid)
           .maybeSingle();
       final email = (row?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
@@ -77,6 +78,7 @@ class HomeScreenState extends State<HomeScreen>
             : ssoName.isNotEmpty
                 ? ssoName
                 : _firstName(email);
+        _avatarUrl = _resolveAvatarUrl(row);
       });
     } catch (_) {}
   }
@@ -87,7 +89,7 @@ class HomeScreenState extends State<HomeScreen>
     try {
       final userRow = await _client
           .from('users')
-          .select('email, full_name, scan_streak, last_scan_date')
+          .select('email, full_name, avatar_url, scan_streak, last_scan_date')
           .eq('id', uid)
           .maybeSingle();
       final email = (userRow?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
@@ -118,6 +120,7 @@ class HomeScreenState extends State<HomeScreen>
             : ssoName.isNotEmpty
                 ? ssoName
                 : _firstName(email);
+        _avatarUrl = _resolveAvatarUrl(userRow);
         _streak = rawStreak;
         _recentScans = List<Map<String, dynamic>>.from(scansData);
         _recentRecipes = _parseRecipes(recipesData);
@@ -135,6 +138,25 @@ class HomeScreenState extends State<HomeScreen>
     final stripped = local.replaceAll(RegExp(r'\d+$'), '');
     final name = stripped.isNotEmpty ? stripped : 'Chef';
     return name[0].toUpperCase() + name.substring(1).toLowerCase();
+  }
+
+  String? _resolveAvatarUrl(Map<String, dynamic>? row) {
+    final dbUrl = (row?['avatar_url'] as String?)?.trim();
+    if (dbUrl != null && dbUrl.isNotEmpty) return dbUrl;
+
+    final meta = _client.auth.currentUser?.userMetadata;
+    if (meta == null) return null;
+    for (final key in ['avatar_url', 'picture', 'avatar']) {
+      final value = meta[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return null;
+  }
+
+  String get _userInitial {
+    final trimmed = _userName.trim();
+    if (trimmed.isEmpty) return 'U';
+    return trimmed[0].toUpperCase();
   }
 
   List<GeneratedRecipe> _parseRecipes(List data) =>
@@ -245,7 +267,7 @@ class HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F5FA),
+      backgroundColor: const Color(0xFFF5F6FF),
       bottomNavigationBar: const AdBannerWidget(),
       body: FadeTransition(
         opacity: _fadeAnim,
@@ -337,11 +359,32 @@ class HomeScreenState extends State<HomeScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$_greeting ${DateTime.now().hour < 12 ? "☀️" : DateTime.now().hour < 17 ? "🌤️" : "🌙"}',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textMedium, fontWeight: FontWeight.w500)),
+                Text(
+                  '$_greeting ${DateTime.now().hour < 12 ? "☀️" : DateTime.now().hour < 17 ? "🌤️" : "🌙"}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textMedium,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text('Hey, $_userName!',
-                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                      fontFamily: 'Nunito',
+                    ),
+                    children: [
+                      const TextSpan(text: 'Hey, '),
+                      TextSpan(
+                        text: '$_userName!',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -370,26 +413,70 @@ class HomeScreenState extends State<HomeScreen>
               builder: (_) => const _NotificationsSheet(),
             ),
             child: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)]),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
+                ],
+              ),
               child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textDark),
             ),
           ),
           const SizedBox(width: 10),
-          // Avatar
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF9C8FFF)]),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(_userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
-            ),
-          ),
+          _buildHeaderAvatar(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderAvatar() {
+    const size = 40.0;
+    final hasImage = _avatarUrl != null && _avatarUrl!.isNotEmpty;
+
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
+        ],
+      ),
+      child: hasImage
+          ? Image.network(
+              _avatarUrl!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildHeaderAvatarInitial(size),
+            )
+          : _buildHeaderAvatarInitial(size),
+    );
+  }
+
+  Widget _buildHeaderAvatarInitial([double size = 40]) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [AppColors.primary, Color(0xFF9C8FFF)],
+        ),
+      ),
+      child: Text(
+        _userInitial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 16,
+          fontFamily: 'Nunito',
+        ),
       ),
     );
   }
@@ -415,7 +502,7 @@ class HomeScreenState extends State<HomeScreen>
               controller: _searchCtrl,
               style: const TextStyle(fontSize: 14, color: AppColors.textDark),
               decoration: InputDecoration(
-                hintText: 'Search ${_recentRecipes.length + 1200}+ recipes...',
+                hintText: 'Search 1200+ recipes...',
                 hintStyle: const TextStyle(fontSize: 14, color: AppColors.textLight),
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
@@ -473,27 +560,55 @@ class HomeScreenState extends State<HomeScreen>
                 ),
                 // Badges
                 Positioned(
-                  top: 14, left: 14,
+                  top: 14,
+                  left: 14,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(20)),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.auto_awesome, color: Colors.white, size: 11),
-                      SizedBox(width: 4),
-                      Text("Quillo Pick", style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
-                    ]),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_rounded, color: AppColors.primary, size: 12),
+                        SizedBox(width: 4),
+                        Text(
+                          "Chef's Pick",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 Positioned(
-                  top: 14, right: 14,
+                  top: 14,
+                  right: 14,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(20)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.timer_outlined, color: Colors.white, size: 11),
-                      const SizedBox(width: 4),
-                      Text('${recipe.cookTimeMinutes} min', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
-                    ]),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.schedule_rounded, color: AppColors.textDark, size: 11),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${recipe.cookTimeMinutes} min',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textDark,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 // Title + stats
@@ -506,13 +621,29 @@ class HomeScreenState extends State<HomeScreen>
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito')),
                       const SizedBox(height: 6),
-                      Row(children: [
-                        _FeaturedStat(icon: Icons.people_outline_rounded, label: '${recipe.servings} srv'),
-                        const SizedBox(width: 12),
-                        _FeaturedStat(icon: Icons.bar_chart_rounded, label: recipe.difficulty),
-                        const SizedBox(width: 12),
-                        _FeaturedStat(icon: Icons.local_fire_department_outlined, label: '${recipe.nutrition.calories} cal'),
-                      ]),
+                      Row(
+                        children: [
+                          _FeaturedStat(
+                            icon: Icons.people_outline_rounded,
+                            label: '${recipe.servings} servings',
+                          ),
+                          const SizedBox(width: 12),
+                          _FeaturedStat(
+                            icon: Icons.bar_chart_rounded,
+                            label: recipe.difficultyLabel,
+                          ),
+                          const SizedBox(width: 12),
+                          _FeaturedStat(
+                            icon: Icons.restaurant_rounded,
+                            label: _cuisineHint(recipe.title),
+                          ),
+                          const SizedBox(width: 12),
+                          const _FeaturedStat(
+                            icon: Icons.star_rounded,
+                            label: '4.9',
+                          ),
+                        ],
+                      ),
                     ]),
                   ),
                 ),
@@ -530,37 +661,68 @@ class HomeScreenState extends State<HomeScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF8E1),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFFF9E6), Color(0xFFFFF0B8)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFFFCC02).withValues(alpha: 0.5)),
         ),
-        child: Row(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: const Color(0xFFFFCC02).withValues(alpha: 0.2), shape: BoxShape.circle),
-            child: const Center(child: Text('✨', style: TextStyle(fontSize: 18))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Quillo found ${_recentRecipes.length} new recipes',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textDark)),
-              const SizedBox(height: 2),
-              const Text('Based on your last recipe scan', style: TextStyle(fontSize: 11, color: AppColors.textMedium)),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: widget.onExploreTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(color: const Color(0xFFFF9800), borderRadius: BorderRadius.circular(20)),
-              child: const Text('Explore', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 20),
             ),
-          ),
-        ]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI found ${_recentRecipes.length} new recipes',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Based on your last recipe scan',
+                    style: TextStyle(fontSize: 11, color: AppColors.textMedium),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: widget.onExploreTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Explore',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -584,6 +746,7 @@ class HomeScreenState extends State<HomeScreen>
             itemBuilder: (ctx, i) {
               final cat = _categories[i];
               final sel = cat == _selectedCategory;
+              final chipStyle = _categoryChipStyle(cat, sel);
               return GestureDetector(
                 onTap: () => setState(() => _selectedCategory = cat),
                 child: AnimatedContainer(
@@ -591,12 +754,20 @@ class HomeScreenState extends State<HomeScreen>
                   margin: const EdgeInsets.only(right: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
                   decoration: BoxDecoration(
-                    color: sel ? AppColors.primary : Colors.white,
+                    color: chipStyle.$1,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: sel ? AppColors.primary : AppColors.chipBorder),
+                    border: Border.all(
+                      color: sel ? AppColors.primary : Colors.transparent,
+                    ),
                   ),
-                  child: Text(cat,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: sel ? Colors.white : AppColors.textMedium)),
+                  child: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: chipStyle.$2,
+                    ),
+                  ),
                 ),
               );
             },
@@ -630,12 +801,15 @@ class HomeScreenState extends State<HomeScreen>
 
   Widget _buildSavedScroll() {
     return SizedBox(
-      height: 145,
+      height: _SavedCard.cardHeight,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: _savedRecipes.length,
-        itemBuilder: (ctx, i) => _SavedCard(recipe: _savedRecipes[i], onTap: () => _openRecipe(_savedRecipes[i])),
+        itemBuilder: (ctx, i) => _SavedCard(
+          recipe: _savedRecipes[i],
+          onTap: () => _openRecipe(_savedRecipes[i]),
+        ),
       ),
     );
   }
@@ -648,35 +822,142 @@ class HomeScreenState extends State<HomeScreen>
       child: GestureDetector(
         onTap: _goToScan,
         child: Container(
-          padding: const EdgeInsets.all(18),
+          height: 96,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [AppColors.primary, Color(0xFF9C8FFF)],
-              begin: Alignment.centerLeft, end: Alignment.centerRight,
+              colors: [Color(0xFF7B89F4), Color(0xFFA5A6F6)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
             ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 14, offset: const Offset(0, 5))],
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.28),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-          child: Row(children: [
-            Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 24)),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Scan a Receipt', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito')),
-                SizedBox(height: 2),
-                Text('Get meal ideas from your groceries', style: TextStyle(fontSize: 12, color: Colors.white70)),
-              ]),
-            ),
-            Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-              child: const Icon(Icons.arrow_forward_rounded, color: AppColors.primary, size: 18),
-            ),
-          ]),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Positioned(
+                right: -18,
+                top: -22,
+                child: Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 36,
+                bottom: -28,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.document_scanner_outlined,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Scan a Receipt',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              fontFamily: 'Nunito',
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Turn groceries into meal ideas',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.88),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                size: 10,
+                                color: AppColors.accent.withValues(alpha: 0.95),
+                              ),
+                              const SizedBox(width: 3),
+                              Icon(
+                                Icons.auto_awesome,
+                                size: 8,
+                                color: AppColors.accent.withValues(alpha: 0.8),
+                              ),
+                              const SizedBox(width: 3),
+                              Icon(
+                                Icons.auto_awesome,
+                                size: 12,
+                                color: AppColors.accent,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Color(0xFF5C4033),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -694,24 +975,41 @@ class HomeScreenState extends State<HomeScreen>
           Container(
             width: 70, height: 70,
             decoration: BoxDecoration(color: AppColors.primaryLight, shape: BoxShape.circle),
-            child: const Center(child: Text('🧾', style: TextStyle(fontSize: 30))),
+            child: const Icon(Icons.receipt_long_rounded, color: AppColors.primary, size: 32),
           ),
           const SizedBox(height: 14),
-          const Text('No scans yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textDark, fontFamily: 'Nunito')),
+          const Text(
+            'No scans yet',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
           const SizedBox(height: 6),
-          const Text('Scan your first receipt and let\nQuillo work its magic on your meals.',
-              textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5)),
+          const Text(
+            'Scan your first grocery receipt and let\nQUILLO work its AI magic on your meals.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5),
+          ),
           const SizedBox(height: 18),
           GestureDetector(
             onTap: _goToScan,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(20)),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.add_rounded, color: Colors.white, size: 16),
-                SizedBox(width: 6),
-                Text('Scan First Receipt', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-              ]),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Text(
+                    '+ Scan First Receipt',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+              ),
             ),
           ),
         ]),
@@ -760,16 +1058,60 @@ class HomeScreenState extends State<HomeScreen>
 
   Widget _sectionHeader(String title, String action, {VoidCallback? onTap}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppColors.textDark, fontFamily: 'Nunito')),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            color: AppColors.textDark,
+            fontFamily: 'Nunito',
+          ),
+        ),
         if (action.isNotEmpty)
           GestureDetector(
             onTap: onTap,
-            child: Text(action, style: const TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.w600)),
+            child: Text(
+              action,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
       ]),
     );
+  }
+
+  static (Color, Color) _categoryChipStyle(String cat, bool selected) {
+    if (selected) return (AppColors.primary, Colors.white);
+    switch (cat) {
+      case 'Breakfast':
+        return (const Color(0xFFFFE8D6), const Color(0xFF8D4E1F));
+      case 'Lunch':
+        return (const Color(0xFFDFF5EE), const Color(0xFF1B6B52));
+      case 'Dinner':
+        return (const Color(0xFFEDE7FF), const Color(0xFF5E4DB0));
+      case 'Vegan':
+        return (const Color(0xFFE8F5E9), const Color(0xFF2E7D32));
+      case 'Quick':
+        return (const Color(0xFFEDE7FF), AppColors.primary);
+      default:
+        return (Colors.white, AppColors.textMedium);
+    }
+  }
+
+  static String _cuisineHint(String title) {
+    final t = title.toLowerCase();
+    if (t.contains('ramen') || t.contains('sushi') || t.contains('teriyaki')) return 'Japanese';
+    if (t.contains('taco') || t.contains('burrito') || t.contains('mexican')) return 'Mexican';
+    if (t.contains('pasta') || t.contains('pizza') || t.contains('risotto')) return 'Italian';
+    if (t.contains('curry') || t.contains('tikka') || t.contains('biryani')) return 'Indian';
+    if (t.contains('pad thai') || t.contains('thai')) return 'Thai';
+    if (t.contains('croissant') || t.contains('baguette')) return 'French';
+    return 'Global';
   }
 
   static String _emojiFor(String title) {
@@ -895,90 +1237,176 @@ class _SuggestedTileState extends State<_SuggestedTile> {
   @override
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
-    final color = _diffColor(recipe.difficulty);
     final badge = _badge(recipe);
+    final (badgeBg, badgeFg) = _badgeStyle(badge);
     final emoji = HomeScreenState._emojiFor(recipe.title);
+    final servingsLabel =
+        recipe.servings == 1 ? '1 serving' : '${recipe.servings} servings';
 
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        constraints: const BoxConstraints(minHeight: 104),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        child: Row(children: [
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 80, height: 80,
-              child: recipe.imageUrl != null
-                  ? Image.network(recipe.imageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: color.withValues(alpha: 0.12),
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 32))),
-                      ))
-                  : Container(
-                      color: color.withValues(alpha: 0.12),
-                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 32))),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Info
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-                child: Text(badge, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: color, letterSpacing: 0.5)),
+        clipBehavior: Clip.antiAlias,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 104,
+                child: recipe.imageUrl != null
+                    ? Image.network(
+                        recipe.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _thumbPlaceholder(badgeBg, emoji),
+                      )
+                    : _thumbPlaceholder(badgeBg, emoji),
               ),
-              const SizedBox(height: 5),
-              Text(recipe.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textDark, height: 1.3)),
-              const SizedBox(height: 6),
-              Row(children: [
-                const Icon(Icons.timer_outlined, size: 12, color: AppColors.textLight),
-                const SizedBox(width: 3),
-                Text('${recipe.cookTimeMinutes} min', style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
-                const SizedBox(width: 10),
-                const Icon(Icons.people_outline_rounded, size: 12, color: AppColors.textLight),
-                const SizedBox(width: 3),
-                Text('${recipe.servings} servings', style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
-              ]),
-            ]),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: badgeFg,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        recipe.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                          height: 1.2,
+                          fontFamily: 'Nunito',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.schedule_rounded,
+                                size: 13,
+                                color: Color(0xFF7C7C8C),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${recipe.cookTimeMinutes} min',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF7C7C8C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                servingsLabel,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF7C7C8C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: _toggleSave,
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8E8FF),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: AppColors.primary,
+                                      ),
+                                    )
+                                  : Icon(
+                                      _saved
+                                          ? Icons.bookmark_rounded
+                                          : Icons.bookmark_border_rounded,
+                                      size: 18,
+                                      color: AppColors.primary,
+                                    ),
+                            ),
+                          ),
+                        ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          // Bookmark
-          GestureDetector(
-            onTap: _toggleSave,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: _saving
-                  ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 1.5, color: AppColors.primary))
-                  : Icon(
-                      _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                      size: 20,
-                      color: _saved ? AppColors.primary : AppColors.textLight,
-                    ),
-            ),
-          ),
-        ]),
+        ),
       ),
     );
   }
 
-  static Color _diffColor(String d) {
-    switch (d.toLowerCase()) {
-      case 'easy': return const Color(0xFF4CAF50);
-      case 'hard': return const Color(0xFFE53935);
-      default: return const Color(0xFFFF9800);
+  Widget _thumbPlaceholder(Color badgeBg, String emoji) {
+    return ColoredBox(
+      color: badgeBg,
+      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 36))),
+    );
+  }
+
+  static (Color, Color) _badgeStyle(String badge) {
+    switch (badge) {
+      case 'QUICK':
+        return (const Color(0xFFE8E8FF), AppColors.primary);
+      case 'VEGAN':
+        return (const Color(0xFFE2F9F0), const Color(0xFF27AE60));
+      case 'DINNER':
+        return (const Color(0xFFEDE7FF), const Color(0xFF7B6FE8));
+      case 'DESSERT':
+        return (const Color(0xFFFFE8F0), const Color(0xFFE91E8C));
+      case 'BREAKFAST':
+        return (const Color(0xFFFFE8D6), const Color(0xFFE65100));
+      default:
+        return (const Color(0xFFF0F0F5), AppColors.textMedium);
     }
   }
 
@@ -998,6 +1426,10 @@ class _SuggestedTileState extends State<_SuggestedTile> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SavedCard extends StatelessWidget {
+  static const double cardWidth = 168;
+  /// Image (4:3) + text block + small buffer for font metrics.
+  static const double cardHeight = cardWidth * 3 / 4 + 74;
+
   final GeneratedRecipe recipe;
   final VoidCallback onTap;
   const _SavedCard({required this.recipe, required this.onTap});
@@ -1008,41 +1440,84 @@ class _SavedCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 115,
-        margin: const EdgeInsets.only(right: 12),
+        width: cardWidth,
+        margin: const EdgeInsets.only(right: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            child: SizedBox(
-              height: 75, width: double.infinity,
-              child: recipe.imageUrl != null
-                  ? Image.network(recipe.imageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: AppColors.primaryLight,
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 28))),
-                      ))
-                  : Container(
-                      color: AppColors.primaryLight,
-                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 28))),
-                    ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(recipe.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textDark, height: 1.3)),
-              const SizedBox(height: 3),
-              Text('${recipe.cookTimeMinutes} min', style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
-            ]),
-          ),
-        ]),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: recipe.imageUrl != null
+                  ? Image.network(
+                      recipe.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _imagePlaceholder(emoji),
+                    )
+                  : _imagePlaceholder(emoji),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                      height: 1.15,
+                      fontFamily: 'Nunito',
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.schedule_outlined,
+                        size: 13,
+                        color: Color(0xFF7C7C8C),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${recipe.cookTimeMinutes} min',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF7C7C8C),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _imagePlaceholder(String emoji) {
+    return ColoredBox(
+      color: AppColors.primaryLight,
+      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 36))),
     );
   }
 }

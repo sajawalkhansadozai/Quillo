@@ -151,6 +151,8 @@ class _ScanTabItem extends StatelessWidget {
   final VoidCallback onTap;
   const _ScanTabItem({required this.onTap});
 
+  static const _iconAsset = 'assets/icons/scan_icon.png';
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -159,12 +161,8 @@ class _ScanTabItem extends StatelessWidget {
         width: 52,
         height: 52,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.primary, Color(0xFF9C8FFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          shape: BoxShape.circle,
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
               color: AppColors.primary.withValues(alpha: 0.4),
@@ -173,8 +171,18 @@ class _ScanTabItem extends StatelessWidget {
             ),
           ],
         ),
-        child: const Center(
-          child: Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 24),
+        child: Center(
+          child: Image.asset(
+            _iconAsset,
+            width: 24,
+            height: 24,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
         ),
       ),
     );

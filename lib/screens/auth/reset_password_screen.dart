@@ -3,7 +3,6 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
-import '../../widgets/quillo_button.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({super.key});
@@ -66,7 +65,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -76,21 +75,25 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                   child: GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.arrow_back_ios_new_rounded,
-                            size: 16, color: AppColors.textDark),
+                        Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 14,
+                          color: AppColors.textMedium,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Back to sign in',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
+                            color: AppColors.textMedium,
+                            fontFamily: 'Nunito',
                           ),
                         ),
                       ],
@@ -99,115 +102,130 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 ),
                 const AuthIllustration(type: IllustrationType.resetPassword),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
-                        RichText(
-                          text: const TextSpan(
-                            style: TextStyle(fontFamily: 'Nunito'),
-                            children: [
-                              TextSpan(
-                                text: 'Reset password ',
-                                style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                              TextSpan(text: '🔑', style: TextStyle(fontSize: 24)),
-                            ],
-                          ),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 24,
+                          offset: Offset(0, -4),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          "Enter your email and we'll send a magic link to reset your password.",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textMedium,
-                            height: 1.6,
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        const _FieldLabel(label: 'EMAIL ADDRESS'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _emailController,
-                          hint: 'you@example.com',
-                          prefixIcon: Icons.mail_outline_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 24),
-                        if (_sent)
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: const Color(0xFF4CAF50).withValues(alpha: 0.3)),
-                            ),
-                            child: Row(
+                      ],
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(
+                            text: const TextSpan(
+                              style: TextStyle(fontFamily: 'Nunito'),
                               children: [
-                                const Icon(Icons.check_circle_rounded,
-                                    color: Color(0xFF4CAF50), size: 20),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'Reset link sent! Check your inbox.',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: const Color(0xFF2E7D32),
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                TextSpan(
+                                  text: 'Reset password ',
+                                  style: TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppColors.textDark,
                                   ),
                                 ),
+                                TextSpan(text: '🔑', style: TextStyle(fontSize: 24)),
                               ],
                             ),
                           ),
-                        _isLoading
-                            ? _LoadingButton()
-                            : QuilloButton(
-                                label: _sent ? '✓ Link Sent!' : 'Send Reset Link',
-                                onTap: _sent ? () {} : _handleSend,
-                                backgroundColor:
-                                    _sent ? const Color(0xFF4CAF50) : AppColors.accent,
-                                textColor: _sent ? Colors.white : AppColors.textDark,
+                          const SizedBox(height: 10),
+                          const Text(
+                            "Enter your email and we'll send a magic link to reset your password.",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textMedium,
+                              height: 1.55,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          const _FieldLabel(label: 'EMAIL ADDRESS'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _emailController,
+                            hint: 'you@example.com',
+                            prefixIconAsset: 'assets/icons/email_icon.png',
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 24),
+                          if (_sent)
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                                ),
                               ),
-                        const SizedBox(height: 20),
-                        Center(
-                          child: RichText(
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMedium,
-                                fontFamily: 'Nunito',
-                              ),
-                              children: [
-                                const TextSpan(text: 'Remembered it? '),
-                                WidgetSpan(
-                                  child: GestureDetector(
-                                    onTap: () => Navigator.of(context).pop(),
-                                    child: const Text(
-                                      'Sign in',
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: Color(0xFF4CAF50),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Reset link sent! Check your inbox.',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                        fontFamily: 'Nunito',
+                                        color: const Color(0xFF2E7D32),
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
+                                ],
+                              ),
+                            ),
+                          _isLoading
+                              ? const _LoadingButton()
+                              : _SendResetButton(
+                                  label: _sent ? '✓ Link Sent!' : 'Send Reset Link',
+                                  onTap: _sent ? () {} : _handleSend,
+                                  isSuccess: _sent,
                                 ),
-                              ],
+                          const SizedBox(height: 18),
+                          Center(
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMedium,
+                                  fontFamily: 'Nunito',
+                                ),
+                                children: [
+                                  const TextSpan(text: 'Remembered it? '),
+                                  WidgetSpan(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.of(context).pop(),
+                                      child: const Text(
+                                        'Sign in',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'Nunito',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -238,7 +256,55 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
+class _SendResetButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool isSuccess;
+
+  const _SendResetButton({
+    required this.label,
+    required this.onTap,
+    this.isSuccess = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 54,
+        decoration: BoxDecoration(
+          color: isSuccess ? const Color(0xFF4CAF50) : AppColors.accent,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: (isSuccess ? const Color(0xFF4CAF50) : AppColors.accent)
+                  .withValues(alpha: 0.45),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: isSuccess ? Colors.white : AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LoadingButton extends StatelessWidget {
+  const _LoadingButton();
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -246,14 +312,16 @@ class _LoadingButton extends StatelessWidget {
       height: 54,
       decoration: BoxDecoration(
         color: AppColors.accent.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: const Center(
         child: SizedBox(
           width: 24,
           height: 24,
-          child:
-              CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.textDark),
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: AppColors.textDark,
+          ),
         ),
       ),
     );

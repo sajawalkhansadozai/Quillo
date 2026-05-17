@@ -25,15 +25,44 @@ class GeneratedRecipeDetailPage extends StatefulWidget {
 
 class _GeneratedRecipeDetailPageState
     extends State<GeneratedRecipeDetailPage> {
+  static const _heroHeight = 300.0;
+  static const _navHideStart = 20.0;
+  static const _navHideEnd = 110.0;
+
   bool _isSaved = false;
   bool _checkingStatus = true;
   int _servings = 2;
+  final Set<int> _checkedIngredients = {};
+  final ScrollController _scrollController = ScrollController();
+  double _scrollOffset = 0;
 
   @override
   void initState() {
     super.initState();
     _servings = widget.recipe.servings;
+    _scrollController.addListener(_onScroll);
     _initSavedStatus();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final offset = _scrollController.offset;
+    if ((offset - _scrollOffset).abs() < 0.5) return;
+    setState(() => _scrollOffset = offset);
+  }
+
+  double get _navHideT {
+    if (_scrollOffset <= _navHideStart) return 0;
+    if (_scrollOffset >= _navHideEnd) return 1;
+    return Curves.easeInOut.transform(
+      (_scrollOffset - _navHideStart) / (_navHideEnd - _navHideStart),
+    );
   }
 
   Future<void> _initSavedStatus() async {
@@ -63,39 +92,30 @@ class _GeneratedRecipeDetailPageState
     final recipe = widget.recipe;
     final color = widget.accentColor;
 
+    final topInset = MediaQuery.of(context).padding.top;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           CustomScrollView(
-            physics: const BouncingScrollPhysics(),
+            controller: _scrollController,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
             slivers: [
-              // ── Hero ──────────────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildHero(recipe, color)),
 
-              // ── Tags + Title + Meta ───────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Match + cuisine tags
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          _TagChip(
-                            label: recipe.matchLabel,
-                            color: recipe.matchPercent >= 100
-                                ? const Color(0xFF4CAF50)
-                                : recipe.matchPercent >= 80
-                                    ? color
-                                    : const Color(0xFFFF9800),
-                          ),
-                          ..._cuisineTags(recipe.title)
-                              .map((t) => _TagChip(label: t, color: color)),
-                        ],
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _buildTitleTags(recipe),
                       ),
                       const SizedBox(height: 10),
                       // Title
@@ -132,56 +152,45 @@ class _GeneratedRecipeDetailPageState
                                   fontSize: 12, color: AppColors.textMedium)),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      // AI row
-                      _AIRow(color: color),
-                      const SizedBox(height: 16),
-                      const Divider(height: 1, color: Color(0xFFEEEEEE)),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
               ),
 
-              // ── 4 Stats ───────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
                       _StatBox(
-                          icon: Icons.timer_outlined,
-                          value: '${recipe.cookTimeMinutes}',
-                          unit: 'min',
-                          label: 'Cook Time',
-                          color: color),
-                      const SizedBox(width: 10),
+                        asset: _RecipeDetailAssets.cookTime,
+                        value: '${recipe.cookTimeMinutes} min',
+                        label: 'Cook time',
+                      ),
+                      const SizedBox(width: 8),
                       _StatBox(
-                          icon: Icons.local_fire_department_outlined,
-                          value: '${recipe.nutrition.calories}',
-                          unit: 'kcal',
-                          label: 'Calories',
-                          color: const Color(0xFFFF9800)),
-                      const SizedBox(width: 10),
+                        asset: _RecipeDetailAssets.calories,
+                        value: '${recipe.nutrition.calories} cal',
+                        label: 'Per serving',
+                      ),
+                      const SizedBox(width: 8),
                       _StatBox(
-                          icon: Icons.people_outline_rounded,
-                          value: '${recipe.servings}',
-                          unit: 'srv',
-                          label: 'Servings',
-                          color: const Color(0xFF4CAF50)),
-                      const SizedBox(width: 10),
+                        asset: _RecipeDetailAssets.servings,
+                        value: '${recipe.servings}',
+                        label: 'Servings',
+                      ),
+                      const SizedBox(width: 8),
                       _StatBox(
-                          icon: Icons.bar_chart_rounded,
-                          value: recipe.difficulty,
-                          unit: '',
-                          label: 'Difficulty',
-                          color: _difficultyColor(recipe.difficulty)),
+                        asset: _RecipeDetailAssets.difficulty,
+                        value: recipe.difficultyLabel,
+                        label: 'Difficulty',
+                      ),
                     ],
                   ),
                 ),
               ),
 
-              // ── Ingredients ───────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -194,26 +203,31 @@ class _GeneratedRecipeDetailPageState
                               fontWeight: FontWeight.w900,
                               color: AppColors.textDark,
                               fontFamily: 'Nunito')),
-                      Row(children: [
-                        _CounterBtn(
+                      Row(
+                        children: [
+                          _CounterBtn(
                             icon: Icons.remove_rounded,
                             onTap: () {
-                              if (_servings > 1) {
-                                setState(() => _servings--);
-                              }
-                            }),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Text('$_servings',
+                              if (_servings > 1) setState(() => _servings--);
+                            },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              '$_servings',
                               style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textDark)),
-                        ),
-                        _CounterBtn(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                          _CounterBtn(
                             icon: Icons.add_rounded,
-                            onTap: () => setState(() => _servings++)),
-                      ]),
+                            onTap: () => setState(() => _servings++),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -226,12 +240,21 @@ class _GeneratedRecipeDetailPageState
                     crossAxisCount: 2,
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
-                    childAspectRatio: 3.2,
+                    childAspectRatio: 2.6,
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (ctx, i) => _IngredientTile(
                       item: recipe.ingredientsUsed[i],
-                      servingMultiplier: _servings / recipe.servings,
+                      checked: _checkedIngredients.contains(i),
+                      onCheckChanged: (v) {
+                        setState(() {
+                          if (v) {
+                            _checkedIngredients.add(i);
+                          } else {
+                            _checkedIngredients.remove(i);
+                          }
+                        });
+                      },
                     ),
                     childCount: recipe.ingredientsUsed.length,
                   ),
@@ -244,34 +267,55 @@ class _GeneratedRecipeDetailPageState
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                     child: _MissingIngredientsCard(
-                        items: recipe.missingIngredients, color: color),
+                      items: recipe.missingIngredients,
+                      color: color,
+                    ),
                   ),
                 ),
 
-              // ── Instructions ──────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                  child: const Text('Instructions',
-                      style: TextStyle(
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Instructions',
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: AppColors.textDark,
-                          fontFamily: 'Nunito')),
+                          fontFamily: 'Nunito',
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {},
+                        child: const Text(
+                          'Video mode',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (ctx, i) =>
-                        _StepCard(step: recipe.steps[i], color: color),
+                    (ctx, i) => _StepCard(
+                      step: recipe.steps[i],
+                      accentColor: color,
+                    ),
                     childCount: recipe.steps.length,
                   ),
                 ),
               ),
 
-              // ── Nutrition ─────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -280,44 +324,53 @@ class _GeneratedRecipeDetailPageState
                     children: [
                       Row(
                         children: [
-                          const Text('Nutrition',
-                              style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textDark,
-                                  fontFamily: 'Nunito')),
+                          const Text(
+                            'Nutrition per serving',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textDark,
+                              fontFamily: 'Nunito',
+                            ),
+                          ),
                           const Spacer(),
-                          Text('per serving',
-                              style: const TextStyle(
-                                  fontSize: 12, color: AppColors.textLight)),
+                          GestureDetector(
+                            onTap: () {},
+                            child: const Text(
+                              'Full info',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 14),
-                      Row(children: [
-                        _NutBox(
-                            value: '${recipe.nutrition.calories}',
-                            unit: 'kcal',
+                      Row(
+                        children: [
+                          _NutBox(
+                            value: '${recipe.nutrition.calories} kcal',
                             label: 'Calories',
-                            color: const Color(0xFFFF9800)),
-                        const SizedBox(width: 10),
-                        _NutBox(
-                            value: '${recipe.nutrition.protein}g',
-                            unit: '',
-                            label: 'Protein',
-                            color: const Color(0xFF4CAF50)),
-                        const SizedBox(width: 10),
-                        _NutBox(
-                            value: '${recipe.nutrition.fat}g',
-                            unit: '',
-                            label: 'Fat',
-                            color: const Color(0xFFE91E63)),
-                        const SizedBox(width: 10),
-                        _NutBox(
-                            value: '${recipe.nutrition.carbs}g',
-                            unit: '',
+                          ),
+                          const SizedBox(width: 8),
+                          _NutBox(
+                            value: '${recipe.nutrition.carbs} g',
                             label: 'Carbs',
-                            color: color),
-                      ]),
+                          ),
+                          const SizedBox(width: 8),
+                          _NutBox(
+                            value: '${recipe.nutrition.protein} g',
+                            label: 'Protein',
+                          ),
+                          const SizedBox(width: 8),
+                          _NutBox(
+                            value: '${recipe.nutrition.fat} g',
+                            label: 'Fat',
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -326,6 +379,24 @@ class _GeneratedRecipeDetailPageState
               const SliverToBoxAdapter(child: SizedBox(height: 110)),
             ],
           ),
+
+          _buildFloatingNav(recipe, color, topInset),
+
+          if (_navHideT > 0.85)
+            Positioned(
+              top: topInset + 8,
+              left: 16,
+              child: IgnorePointer(
+                ignoring: _navHideT < 0.95,
+                child: Opacity(
+                  opacity: ((_navHideT - 0.85) / 0.15).clamp(0.0, 1.0),
+                  child: _HeroBtn(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ),
 
           // ── Sticky bottom CTA ─────────────────────────────────────────────
           Positioned(
@@ -344,52 +415,91 @@ class _GeneratedRecipeDetailPageState
                       offset: const Offset(0, -4))
                 ],
               ),
-              child: GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Happy cooking! 👨‍🍳'),
-                      backgroundColor: color,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {},
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.chipBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.timer_outlined,
+                        color: AppColors.textDark,
+                        size: 22,
+                      ),
                     ),
-                  );
-                },
-                child: Container(
-                  height: 54,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                        colors: [color, color.withValues(alpha: 0.75)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                          color: color.withValues(alpha: 0.35),
-                          blurRadius: 14,
-                          offset: const Offset(0, 5))
-                    ],
                   ),
-                  child: const Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('✦',
-                            style: TextStyle(
-                                fontSize: 14, color: Colors.white)),
-                        SizedBox(width: 8),
-                        Text('Start Cooking',
-                            style: TextStyle(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Happy cooking!'),
+                            backgroundColor: color,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              color,
+                              color.withValues(alpha: 0.72),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: color.withValues(alpha: 0.35),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Start Cooking',
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
                                 color: Colors.white,
-                                fontFamily: 'Nunito')),
-                      ],
+                                fontFamily: 'Nunito',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -400,61 +510,32 @@ class _GeneratedRecipeDetailPageState
 
   // ── Hero image builder ──────────────────────────────────────────────────────
 
-  Widget _buildHero(GeneratedRecipe recipe, Color color) {
-    final emoji = _emojiFor(recipe.title);
-    return SizedBox(
-      height: 300,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Image or emoji background
-          if (recipe.imageUrl != null)
-            Image.network(
-              recipe.imageUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: color.withValues(alpha: 0.15),
-                child: Center(
-                    child: Text(emoji,
-                        style: const TextStyle(fontSize: 90))),
-              ),
-            )
-          else
-            Container(
-              color: color.withValues(alpha: 0.12),
-              child: Center(
-                  child:
-                      Text(emoji, style: const TextStyle(fontSize: 90))),
-            ),
-          // Bottom gradient
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.55),
-                  ],
-                  stops: const [0.4, 1.0],
-                ),
-              ),
-            ),
-          ),
-          // Top action bar
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 16,
-            right: 16,
+  Widget _buildFloatingNav(
+    GeneratedRecipe recipe,
+    Color color,
+    double topInset,
+  ) {
+    final opacity = (1 - _navHideT).clamp(0.0, 1.0);
+    final slideUp = -16.0 * _navHideT;
+
+    return Positioned(
+      top: topInset + 10,
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        ignoring: opacity < 0.05,
+        child: Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, slideUp),
             child: Row(
               children: [
                 _HeroBtn(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    onTap: () => Navigator.of(context).pop()),
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
                 const Spacer(),
-                _HeroBtn(
-                    icon: Icons.share_rounded, onTap: () {}),
+                _HeroBtn(icon: Icons.share_rounded, onTap: () {}),
                 const SizedBox(width: 8),
                 _HeroBtn(
                   icon: _isSaved
@@ -467,27 +548,162 @@ class _GeneratedRecipeDetailPageState
               ],
             ),
           ),
-          // Bottom match badge
-          Positioned(
-            bottom: 14,
-            right: 16,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4CAF50),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text('Quillo Generated',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white)),
-            ),
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildHero(GeneratedRecipe recipe, Color color) {
+    final emoji = _emojiFor(recipe.title);
+    final parallax = (_scrollOffset * 0.45).clamp(0.0, 140.0);
+    final scale = 1.0 + (parallax / _heroHeight * 0.12);
+
+    return ClipRect(
+      child: SizedBox(
+        height: _heroHeight,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Transform.translate(
+              offset: Offset(0, parallax * 0.35),
+              child: Transform.scale(
+                scale: scale,
+                alignment: Alignment.center,
+                child: recipe.imageUrl != null
+                    ? Image.network(
+                        recipe.imageUrl!,
+                        fit: BoxFit.cover,
+                        height: _heroHeight,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: color.withValues(alpha: 0.15),
+                          child: Center(
+                            child: Text(emoji,
+                                style: const TextStyle(fontSize: 90)),
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: color.withValues(alpha: 0.12),
+                        child: Center(
+                          child: Text(emoji,
+                              style: const TextStyle(fontSize: 90)),
+                        ),
+                      ),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.12),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.55),
+                    ],
+                    stops: const [0.0, 0.35, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 14,
+              left: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star_rounded,
+                        size: 14, color: Color(0xFFFFB300)),
+                    const SizedBox(width: 4),
+                    Text(
+                      _displayRating(recipe),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 14,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.auto_awesome,
+                        size: 12, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      recipe.matchLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildTitleTags(GeneratedRecipe recipe) {
+    final cuisines = _cuisineTags(recipe.title);
+    final cuisineLabel = cuisines.first.toUpperCase();
+    return [
+      _PastelTag(
+        label: cuisineLabel,
+        background: const Color(0xFFFFF8E1),
+        foreground: const Color(0xFF8D6E00),
+      ),
+      _PastelTag(
+        label: recipe.difficultyLabel,
+        background: const Color(0xFFE8F5E9),
+        foreground: const Color(0xFF2E7D32),
+      ),
+      const _PastelTag(
+        label: 'Quillo Pick',
+        background: Color(0xFFEDE7FF),
+        foreground: AppColors.primary,
+      ),
+    ];
+  }
+
+  static String _displayRating(GeneratedRecipe recipe) {
+    final score =
+        (4.5 + (recipe.matchPercent.clamp(0, 100) / 100) * 0.4)
+            .toStringAsFixed(1);
+    final reviews = 80 + (recipe.id?.hashCode ?? recipe.title.hashCode).abs() % 200;
+    return '$score ($reviews)';
   }
 
   static List<String> _cuisineTags(String title) {
@@ -539,16 +755,6 @@ class _GeneratedRecipeDetailPageState
     return '🍽️';
   }
 
-  static Color _difficultyColor(String d) {
-    switch (d.toLowerCase()) {
-      case 'easy':
-        return const Color(0xFF4CAF50);
-      case 'hard':
-        return const Color(0xFFE53935);
-      default:
-        return const Color(0xFFFF9800);
-    }
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -590,60 +796,14 @@ class _HeroBtn extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI row
+// Recipe detail stat assets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AIRow extends StatelessWidget {
-  final Color color;
-  const _AIRow({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-                colors: [color, color.withValues(alpha: 0.6)]),
-            shape: BoxShape.circle,
-          ),
-          child: const Center(
-              child: Text('✨', style: TextStyle(fontSize: 18))),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Quillo AI',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark)),
-              const Text('AI-Generated Recipe',
-                  style: TextStyle(
-                      fontSize: 11, color: AppColors.textMedium)),
-            ],
-          ),
-        ),
-        Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text('Personalised',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: color)),
-        ),
-      ],
-    );
-  }
+abstract final class _RecipeDetailAssets {
+  static const cookTime = 'assets/recipe_detail/stat_cook_time.png';
+  static const calories = 'assets/recipe_detail/stat_calories.png';
+  static const servings = 'assets/recipe_detail/stat_servings.png';
+  static const difficulty = 'assets/recipe_detail/stat_difficulty.png';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -651,50 +811,66 @@ class _AIRow extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _StatBox extends StatelessWidget {
-  final IconData icon;
+  final String asset;
   final String value;
-  final String unit;
   final String label;
-  final Color color;
-  const _StatBox(
-      {required this.icon,
-      required this.value,
-      required this.unit,
-      required this.label,
-      required this.color});
+  const _StatBox({
+    required this.asset,
+    required this.value,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 4),
-            Text(value,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                    fontFamily: 'Nunito')),
-            if (unit.isNotEmpty)
-              Text(unit,
-                  style: TextStyle(
-                      fontSize: 9, color: color.withValues(alpha: 0.7))),
+            Image.asset(
+              asset,
+              width: 28,
+              height: 28,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.image_not_supported_outlined,
+                size: 22,
+                color: AppColors.textLight,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+                fontFamily: 'Nunito',
+              ),
+            ),
             const SizedBox(height: 2),
-            Text(label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.textMedium,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 9,
+                color: AppColors.textMedium,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -708,39 +884,67 @@ class _StatBox extends StatelessWidget {
 
 class _IngredientTile extends StatelessWidget {
   final RecipeIngredientUsed item;
-  final double servingMultiplier;
-  const _IngredientTile(
-      {required this.item, required this.servingMultiplier});
+  final bool checked;
+  final ValueChanged<bool>? onCheckChanged;
+  const _IngredientTile({
+    required this.item,
+    this.checked = false,
+    this.onCheckChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.chipBorder),
       ),
       child: Row(
         children: [
-          Text(_emojiFor(item.name),
-              style: const TextStyle(fontSize: 18)),
+          Text(_emojiFor(item.name), style: const TextStyle(fontSize: 20)),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(item.name,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark),
-                    overflow: TextOverflow.ellipsis),
-                Text(item.amount,
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.textMedium)),
+                Text(
+                  item.name,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  item.amount,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textMedium,
+                  ),
+                ),
               ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () => onCheckChanged?.call(!checked),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: checked ? AppColors.primary : const Color(0xFFF3F3F3),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: checked ? AppColors.primary : const Color(0xFFE0E0E0),
+                ),
+              ),
+              child: checked
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
             ),
           ),
         ],
@@ -819,84 +1023,71 @@ class _MissingIngredientsCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF8E1),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-                color: const Color(0xFFFFCC02).withValues(alpha: 0.5)),
+            border: Border.all(color: const Color(0xFFFFCDD2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                const Text('⚠️', style: TextStyle(fontSize: 16)),
-                const SizedBox(width: 8),
-                const Text('Almost there!',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark)),
-                const Spacer(),
-                Text('${items.length} to pick up',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textMedium)),
-              ]),
+              Row(
+                children: [
+                  Icon(Icons.shopping_bag_outlined,
+                      size: 18, color: color.withValues(alpha: 0.9)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Almost there! ${items.length} ingredients not in your pantry',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
-              ...items.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Row(children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Center(
-                          child: Text(_IngredientTile._emojiFor(item.name),
-                              style: const TextStyle(fontSize: 18)),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(item.name,
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textDark)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(item.amount,
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: color)),
-                      ),
-                    ]),
-                  )),
+              ...items.map(
+                (item) => Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEBEE),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${item.name} (${item.amount})',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFC62828),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 4),
               GestureDetector(
                 onTap: () {},
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
-                    border: Border.all(
-                        color:
-                            AppColors.primary.withValues(alpha: 0.4)),
+                    border: Border.all(color: const Color(0xFFE53935)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Center(
-                      child: Text('+ Add to Shopping List',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary))),
+                    child: Text(
+                      '+ Add to Shopping List',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFE53935),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -913,72 +1104,88 @@ class _MissingIngredientsCard extends StatelessWidget {
 
 class _StepCard extends StatelessWidget {
   final RecipeStep step;
-  final Color color;
-  const _StepCard({required this.step, required this.color});
+  final Color accentColor;
+  const _StepCard({required this.step, required this.accentColor});
+
+  static (String title, String body) _parts(RecipeStep step) {
+    final text = step.instruction.trim();
+    final dot = text.indexOf('.');
+    if (dot > 0 && dot < 55) {
+      return (
+        text.substring(0, dot),
+        text.substring(dot + 1).trim(),
+      );
+    }
+    return ('Step ${step.order}', text);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEEEEEE)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
+    final (title, body) = _parts(step);
+    final stepColor = step.order == 1
+        ? const Color(0xFF4CAF50)
+        : AppColors.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 32,
             height: 32,
-            decoration:
-                BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: stepColor, shape: BoxShape.circle),
             child: Center(
-                child: Text('${step.order}',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900))),
+              child: Text(
+                '${step.order}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(step.instruction,
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                if (body.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    body,
                     style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textDark,
-                        height: 1.55)),
+                      fontSize: 13,
+                      color: AppColors.textMedium,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
                 if (step.durationMinutes != null) ...[
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.timer_outlined,
-                            size: 12, color: color),
-                        const SizedBox(width: 4),
-                        Text('${step.durationMinutes} min',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: color)),
-                      ],
-                    ),
+                  Row(
+                    children: [
+                      Icon(Icons.timer_outlined,
+                          size: 13, color: AppColors.textLight),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${step.durationMinutes} min',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textLight,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -996,14 +1203,8 @@ class _StepCard extends StatelessWidget {
 
 class _NutBox extends StatelessWidget {
   final String value;
-  final String unit;
   final String label;
-  final Color color;
-  const _NutBox(
-      {required this.value,
-      required this.unit,
-      required this.label,
-      required this.color});
+  const _NutBox({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -1011,28 +1212,38 @@ class _NutBox extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           children: [
-            Text(value,
-                style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                    fontFamily: 'Nunito')),
-            if (unit.isNotEmpty)
-              Text(unit,
-                  style: TextStyle(
-                      fontSize: 9, color: color.withValues(alpha: 0.7))),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+                fontFamily: 'Nunito',
+              ),
+            ),
             const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.textMedium,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 9,
+                color: AppColors.textMedium,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -1041,26 +1252,36 @@ class _NutBox extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tag chip
+// Pastel tag
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _TagChip extends StatelessWidget {
+class _PastelTag extends StatelessWidget {
   final String label;
-  final Color color;
-  const _TagChip({required this.label, required this.color});
+  final Color background;
+  final Color foreground;
+  const _PastelTag({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8)),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: color)),
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: foreground,
+          letterSpacing: 0.3,
+        ),
+      ),
     );
   }
 }
