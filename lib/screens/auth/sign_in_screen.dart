@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
-import '../../widgets/quillo_button.dart';
 import '../../widgets/sso_button.dart';
 import '../../services/auth_service.dart';
 import '../Home/main_shell.dart';
@@ -119,185 +118,202 @@ class _SignInScreenState extends State<SignInScreen>
             position: _slideAnim,
             child: Column(
               children: [
-                // ── Illustration zone ────────────────────────────────
                 const AuthIllustration(type: IllustrationType.signIn),
-                // ── White card form ──────────────────────────────────
                 Expanded(
                   child: Container(
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 24,
+                          offset: Offset(0, -4),
+                        ),
+                      ],
                     ),
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 44),
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(height: 16),
                           Center(
                             child: RichText(
-                            text: const TextSpan(
-                              style: TextStyle(fontFamily: 'Nunito'),
-                              children: [
-                                TextSpan(
-                                  text: 'Welcome back ',
-                                  style: TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppColors.textDark,
+                              text: const TextSpan(
+                                style: TextStyle(fontFamily: 'Nunito'),
+                                children: [
+                                  TextSpan(
+                                    text: 'Welcome back ',
+                                    style: TextStyle(
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.textDark,
+                                    ),
                                   ),
-                                ),
-                                TextSpan(text: '🔍', style: TextStyle(fontSize: 24)),
-                              ],
+                                  TextSpan(text: '🍳', style: TextStyle(fontSize: 24)),
+                                ],
+                              ),
                             ),
                           ),
-                          ),
-                        const SizedBox(height: 6),
-                        Center(
-                          child: RichText(
-                            textAlign: TextAlign.center,
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMedium,
-                                fontFamily: 'Nunito',
+                          const SizedBox(height: 8),
+                          Center(
+                            child: RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMedium,
+                                  fontFamily: 'Nunito',
+                                  height: 1.4,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'Sign in to your QUILLO account. '),
+                                  WidgetSpan(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.of(context).pushReplacement(
+                                        MaterialPageRoute(
+                                          builder: (_) => const CreateAccountScreen(),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Create one?',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'Nunito',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              children: [
-                                const TextSpan(text: 'Sign in to your QUILLO account. '),
-                                WidgetSpan(
-                                  child: GestureDetector(
-                                    onTap: () => Navigator.of(context).pushReplacement(
-                                      MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
-                                    ),
-                                    child: const Text(
-                                      'Create one?',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontFamily: 'Nunito',
-                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          const _FieldLabel(label: 'EMAIL'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _emailController,
+                            hint: 'you@example.com',
+                            prefixIconAsset: 'assets/icons/email_icon.png',
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const _FieldLabel(label: 'PASSWORD'),
+                              GestureDetector(
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const ResetPasswordScreen(),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Forgot?',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _passwordController,
+                            hint: 'Your password',
+                            prefixIconAsset: 'assets/icons/lock_icon.png',
+                            obscureText: _obscurePassword,
+                            suffixIcon: _obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            onSuffixTap: () =>
+                                setState(() => _obscurePassword = !_obscurePassword),
                           ),
-                        ),
-                        const SizedBox(height: 24),
-                        const _FieldLabel(label: 'EMAIL'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _emailController,
-                          hint: 'you@example.com',
-                          prefixIcon: Icons.mail_outline_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const _FieldLabel(label: 'PASSWORD'),
-                            GestureDetector(
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const ResetPasswordScreen()),
-                              ),
-                              child: const Text(
-                                'Forgot?',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _passwordController,
-                          hint: 'Your password',
-                          prefixIcon: Icons.lock_outline_rounded,
-                          obscureText: _obscurePassword,
-                          suffixIcon: _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          onSuffixTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                        ),
-                        const SizedBox(height: 28),
-                        _isLoading
-                            ? _LoadingButton(color: AppColors.accent)
-                            : QuilloButton(
-                                label: 'Sign in',
-                                onTap: _handleSignIn,
-                                backgroundColor: AppColors.accent,
-                                textColor: AppColors.textDark,
-                              ),
-                        const SizedBox(height: 20),
-                        const _OrDivider(),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SsoButton(
-                                label: 'Google',
-                                icon: Image.asset(
-                                  'assets/icons/google.png',
-                                  width: 20, height: 20,
-                                  errorBuilder: (_, __, ___) => const Text('G',
-                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
-                                ),
-                                onTap: _handleGoogle,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: SsoButton(
-                                label: 'Apple',
-                                icon: Image.asset(
-                                  'assets/icons/apple.png',
-                                  width: 20, height: 20,
-                                  errorBuilder: (_, __, ___) => const Icon(Icons.apple, size: 20, color: Colors.black),
-                                ),
-                                onTap: _handleApple,
-                                dark: false,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Center(
-                          child: RichText(
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMedium,
-                                fontFamily: 'Nunito',
-                              ),
-                              children: [
-                                const TextSpan(text: "Don't have an account? "),
-                                WidgetSpan(
-                                  child: GestureDetector(
-                                    onTap: () => Navigator.of(context).pushReplacement(
-                                      MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
-                                    ),
-                                    child: const Text(
-                                      'Sign up free',
+                          const SizedBox(height: 24),
+                          _isLoading
+                              ? const _LoadingButton()
+                              : _SignInButton(onTap: _handleSignIn),
+                          const SizedBox(height: 18),
+                          const _OrDivider(),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SsoButton(
+                                  label: 'Google',
+                                  icon: Image.asset(
+                                    'assets/icons/google.png',
+                                    width: 20,
+                                    height: 20,
+                                    errorBuilder: (_, __, ___) => const Text(
+                                      'G',
                                       style: TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                        fontFamily: 'Nunito',
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF4285F4),
                                       ),
                                     ),
                                   ),
+                                  onTap: _handleGoogle,
                                 ),
-                              ],
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: SsoButton(
+                                  label: 'Apple',
+                                  icon: Image.asset(
+                                    'assets/icons/apple.png',
+                                    width: 20,
+                                    height: 20,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.apple,
+                                      size: 20,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                  onTap: _handleApple,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          Center(
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMedium,
+                                  fontFamily: 'Nunito',
+                                ),
+                                children: [
+                                  const TextSpan(text: "Don't have an account? "),
+                                  WidgetSpan(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.of(context).pushReplacement(
+                                        MaterialPageRoute(
+                                          builder: (_) => const CreateAccountScreen(),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Sign up free',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'Nunito',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                          const SizedBox(height: 28),
                         ],
                       ),
                     ),
@@ -351,9 +367,46 @@ class _OrDivider extends StatelessWidget {
   }
 }
 
+class _SignInButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SignInButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 54,
+        decoration: BoxDecoration(
+          color: AppColors.accent,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accent.withValues(alpha: 0.45),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text(
+            'Sign in',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LoadingButton extends StatelessWidget {
-  final Color color;
-  const _LoadingButton({required this.color});
+  const _LoadingButton();
 
   @override
   Widget build(BuildContext context) {
@@ -361,17 +414,19 @@ class _LoadingButton extends StatelessWidget {
       width: double.infinity,
       height: 54,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.accent.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(28),
       ),
-      child: Center(
+      child: const Center(
         child: SizedBox(
           width: 24,
           height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.textDark),
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: AppColors.textDark,
+          ),
         ),
       ),
     );
   }
 }
-

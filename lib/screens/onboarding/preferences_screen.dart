@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/preference_chip_icons.dart';
 import '../../widgets/quillo_button.dart';
 import 'skill_level_screen.dart';
 
@@ -36,21 +37,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   };
 
   static const List<_ChipData> _lifestyleChips = [
-    _ChipData(label: 'Low-carb', emoji: '🥩', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Keto', emoji: '🧈', color: Color(0xFFF5F5F5)),
-    _ChipData(label: 'Paleo', emoji: '🍖', color: Color(0xFFFCE4EC)),
-    _ChipData(label: 'Whole30', emoji: '📅', color: Color(0xFFE8EAF6)),
-    _ChipData(label: 'Raw food', emoji: '🥑', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Mediterranean', emoji: '🫒', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Sugar-free', emoji: '🍬', color: Color(0xFFFCE4EC)),
-    _ChipData(label: 'High-protein', emoji: '💪', color: Color(0xFFE3F2FD)),
-    _ChipData(label: 'High-fibre', emoji: '🌾', color: Color(0xFFF1F8E9)),
-    _ChipData(label: 'Low-sodium', emoji: '🧂', color: Color(0xFFE0F7FA)),
-    _ChipData(label: 'Calorie-conscious', emoji: '⚖️', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Anti-inflammatory', emoji: '🫐', color: Color(0xFFE8EAF6)),
-    _ChipData(label: 'Carnivore', emoji: '🥓', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Intermittent fasting', emoji: '⏱️', color: Color(0xFFECEFF1)),
-    _ChipData(label: 'DASH diet', emoji: '🥬', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Low-carb', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Keto', color: Color(0xFFF5F5F5)),
+    _ChipData(label: 'Paleo', color: Color(0xFFFCE4EC)),
+    _ChipData(label: 'Whole30', color: Color(0xFFE8EAF6)),
+    _ChipData(label: 'Raw food', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Mediterranean', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Sugar-free', color: Color(0xFFFCE4EC)),
+    _ChipData(label: 'High-protein', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'High-fibre', color: Color(0xFFF1F8E9)),
+    _ChipData(label: 'Low-sodium', color: Color(0xFFE0F7FA)),
+    _ChipData(label: 'Calorie-conscious', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Anti-inflammatory', color: Color(0xFFE8EAF6)),
+    _ChipData(label: 'Carnivore', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Intermittent fasting', color: Color(0xFFECEFF1)),
+    _ChipData(label: 'DASH diet', color: Color(0xFFE8F5E9)),
   ];
 
   @override
@@ -64,77 +65,77 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   // Each chip has a unique pastel background colour
   final List<_ChipData> _dietaryOptions = const [
-    _ChipData(label: 'Vegan', emoji: '🌱', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Vegetarian', emoji: '🥬', color: Color(0xFFE8F8F0)),
-    _ChipData(label: 'Pescatarian', emoji: '🐟', color: Color(0xFFE0F7FA)),
-    _ChipData(label: 'Flexitarian', emoji: '🥗', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Halal', emoji: '🕌', color: Color(0xFFFFF8E1)),
-    _ChipData(label: 'Kosher', emoji: '🕎', color: Color(0xFFFFFDE7)),
-    _ChipData(label: 'Gluten-free', emoji: '🌾', color: Color(0xFFFBE9E7)),
-    _ChipData(label: 'Wheat-free', emoji: '🍞', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Dairy-free', emoji: '🥛', color: Color(0xFFE3F2FD)),
-    _ChipData(label: 'Lactose-free', emoji: '🧀', color: Color(0xFFF1F8E9)),
-    _ChipData(label: 'Egg-free', emoji: '🥚', color: Color(0xFFFFF8E1)),
-    _ChipData(label: 'Nut-free', emoji: '🛡️', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Peanut-free', emoji: '🫘', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Tree nut-free', emoji: '🌰', color: Color(0xFFFCE4EC)),
-    _ChipData(label: 'Soy-free', emoji: '🫛', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Sesame-free', emoji: '🌿', color: Color(0xFFF1F8E9)),
-    _ChipData(label: 'Shellfish-free', emoji: '🦐', color: Color(0xFFE0F2F1)),
-    _ChipData(label: 'Fish-free', emoji: '🐠', color: Color(0xFFE1F5FE)),
-    _ChipData(label: 'No alcohol', emoji: '🚫', color: Color(0xFFF5F5F5)),
-    _ChipData(label: 'No red meat', emoji: '🥩', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'No pork', emoji: '🐖', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Low FODMAP', emoji: '🥒', color: Color(0xFFE8EAF6)),
-    _ChipData(label: 'Diabetic-friendly', emoji: '🩺', color: Color(0xFFE3F2FD)),
-    _ChipData(label: 'Heart-healthy', emoji: '❤️', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Organic-first', emoji: '🌿', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Vegan', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Vegetarian', color: Color(0xFFE8F8F0)),
+    _ChipData(label: 'Pescatarian', color: Color(0xFFE0F7FA)),
+    _ChipData(label: 'Flexitarian', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Halal', color: Color(0xFFFFF8E1)),
+    _ChipData(label: 'Kosher', color: Color(0xFFFFFDE7)),
+    _ChipData(label: 'Gluten-free', color: Color(0xFFFBE9E7)),
+    _ChipData(label: 'Wheat-free', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Dairy-free', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'Lactose-free', color: Color(0xFFF1F8E9)),
+    _ChipData(label: 'Egg-free', color: Color(0xFFFFF8E1)),
+    _ChipData(label: 'Nut-free', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Peanut-free', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Tree nut-free', color: Color(0xFFFCE4EC)),
+    _ChipData(label: 'Soy-free', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Sesame-free', color: Color(0xFFF1F8E9)),
+    _ChipData(label: 'Shellfish-free', color: Color(0xFFE0F2F1)),
+    _ChipData(label: 'Fish-free', color: Color(0xFFE1F5FE)),
+    _ChipData(label: 'No alcohol', color: Color(0xFFF5F5F5)),
+    _ChipData(label: 'No red meat', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'No pork', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Low FODMAP', color: Color(0xFFE8EAF6)),
+    _ChipData(label: 'Diabetic-friendly', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'Heart-healthy', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Organic-first', color: Color(0xFFE8F5E9)),
   ];
 
   final List<_ChipData> _cuisineOptions = const [
-    _ChipData(label: 'Italian', emoji: '🍝', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'French', emoji: '🥐', color: Color(0xFFE8F8F0)),
-    _ChipData(label: 'Spanish', emoji: '🥘', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Greek', emoji: '🫕', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Turkish', emoji: '🥙', color: Color(0xFFFBE9E7)),
-    _ChipData(label: 'Lebanese', emoji: '🧆', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Middle Eastern', emoji: '🫓', color: Color(0xFFFFF8E1)),
-    _ChipData(label: 'Moroccan', emoji: '🍲', color: Color(0xFFFFE0B2)),
-    _ChipData(label: 'Persian', emoji: '🍚', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Indian', emoji: '🍛', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Pakistani', emoji: '🍛', color: Color(0xFFE8EAF6)),
-    _ChipData(label: 'Bangladeshi', emoji: '🍛', color: Color(0xFFE3F2FD)),
-    _ChipData(label: 'Thai', emoji: '🍜', color: Color(0xFFE0F7FA)),
-    _ChipData(label: 'Vietnamese', emoji: '🍜', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Chinese', emoji: '🥡', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Japanese', emoji: '🍱', color: Color(0xFFFCE4EC)),
-    _ChipData(label: 'Korean', emoji: '🍲', color: Color(0xFFE8F8F0)),
-    _ChipData(label: 'Indonesian', emoji: '🍛', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Malaysian', emoji: '🍜', color: Color(0xFFE0F2F1)),
-    _ChipData(label: 'Filipino', emoji: '🍚', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Singaporean', emoji: '🦀', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Mexican', emoji: '🌮', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Tex-Mex', emoji: '🌯', color: Color(0xFFFFE0B2)),
-    _ChipData(label: 'Caribbean', emoji: '🥥', color: Color(0xFFFFF8E1)),
-    _ChipData(label: 'Brazilian', emoji: '🥩', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'Peruvian', emoji: '🦙', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Argentinian', emoji: '🥩', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'American', emoji: '🍔', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Southern US', emoji: '🍗', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'Cajun / Creole', emoji: '🦞', color: Color(0xFFFFE0B2)),
-    _ChipData(label: 'British', emoji: '🫖', color: Color(0xFFECEFF1)),
-    _ChipData(label: 'Irish', emoji: '🥔', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'German', emoji: '🥨', color: Color(0xFFFFF8E1)),
-    _ChipData(label: 'Scandinavian', emoji: '🐟', color: Color(0xFFE3F2FD)),
-    _ChipData(label: 'Polish', emoji: '🥟', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'Russian', emoji: '🥣', color: Color(0xFFE8EAF6)),
-    _ChipData(label: 'Hungarian', emoji: '🍲', color: Color(0xFFFFEBEE)),
-    _ChipData(label: 'Ethiopian', emoji: '🫓', color: Color(0xFFFFF3E0)),
-    _ChipData(label: 'West African', emoji: '🍚', color: Color(0xFFE8F5E9)),
-    _ChipData(label: 'South African', emoji: '🥩', color: Color(0xFFFBE9E7)),
-    _ChipData(label: 'Australian', emoji: '🦘', color: Color(0xFFE0F7FA)),
-    _ChipData(label: 'Fusion', emoji: '✨', color: Color(0xFFF3E5F5)),
-    _ChipData(label: 'International', emoji: '🌍', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'Italian', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'French', color: Color(0xFFE8F8F0)),
+    _ChipData(label: 'Spanish', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Greek', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Turkish', color: Color(0xFFFBE9E7)),
+    _ChipData(label: 'Lebanese', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Middle Eastern', color: Color(0xFFFFF8E1)),
+    _ChipData(label: 'Moroccan', color: Color(0xFFFFE0B2)),
+    _ChipData(label: 'Persian', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Indian', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Pakistani', color: Color(0xFFE8EAF6)),
+    _ChipData(label: 'Bangladeshi', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'Thai', color: Color(0xFFE0F7FA)),
+    _ChipData(label: 'Vietnamese', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Chinese', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Japanese', color: Color(0xFFFCE4EC)),
+    _ChipData(label: 'Korean', color: Color(0xFFE8F8F0)),
+    _ChipData(label: 'Indonesian', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Malaysian', color: Color(0xFFE0F2F1)),
+    _ChipData(label: 'Filipino', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Singaporean', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Mexican', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Tex-Mex', color: Color(0xFFFFE0B2)),
+    _ChipData(label: 'Caribbean', color: Color(0xFFFFF8E1)),
+    _ChipData(label: 'Brazilian', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'Peruvian', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Argentinian', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'American', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Southern US', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'Cajun / Creole', color: Color(0xFFFFE0B2)),
+    _ChipData(label: 'British', color: Color(0xFFECEFF1)),
+    _ChipData(label: 'Irish', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'German', color: Color(0xFFFFF8E1)),
+    _ChipData(label: 'Scandinavian', color: Color(0xFFE3F2FD)),
+    _ChipData(label: 'Polish', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'Russian', color: Color(0xFFE8EAF6)),
+    _ChipData(label: 'Hungarian', color: Color(0xFFFFEBEE)),
+    _ChipData(label: 'Ethiopian', color: Color(0xFFFFF3E0)),
+    _ChipData(label: 'West African', color: Color(0xFFE8F5E9)),
+    _ChipData(label: 'South African', color: Color(0xFFFBE9E7)),
+    _ChipData(label: 'Australian', color: Color(0xFFE0F7FA)),
+    _ChipData(label: 'Fusion', color: Color(0xFFF3E5F5)),
+    _ChipData(label: 'International', color: Color(0xFFE3F2FD)),
   ];
 
   int get _totalSelected =>
@@ -403,7 +404,7 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Two-column grid of selectable chips
+// Flow layout — chip width follows label content
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TwoColGrid extends StatelessWidget {
@@ -414,38 +415,18 @@ class _TwoColGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build rows of 2
-    final rows = <Widget>[];
-    for (var i = 0; i < items.length; i += 2) {
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: _PastelChip(
-                  data: items[i],
-                  isSelected: selected.contains(items[i].label),
-                  onTap: () => onToggle(items[i].label),
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (i + 1 < items.length)
-                Expanded(
-                  child: _PastelChip(
-                    data: items[i + 1],
-                    isSelected: selected.contains(items[i + 1].label),
-                    onTap: () => onToggle(items[i + 1].label),
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-            ],
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        for (final item in items)
+          _PastelChip(
+            data: item,
+            isSelected: selected.contains(item.label),
+            onTap: () => onToggle(item.label),
           ),
-        ),
-      );
-    }
-    return Column(children: rows);
+      ],
+    );
   }
 }
 
@@ -480,17 +461,18 @@ class _PastelChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(data.emoji, style: const TextStyle(fontSize: 16)),
+            Icon(
+              preferenceChipIcon(data.label),
+              size: 16,
+              color: isSelected ? Colors.white : AppColors.textDark,
+            ),
             const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                data.label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected ? Colors.white : AppColors.textDark,
-                ),
+            Text(
+              data.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? Colors.white : AppColors.textDark,
               ),
             ),
           ],
@@ -506,9 +488,8 @@ class _PastelChip extends StatelessWidget {
 
 class _ChipData {
   final String label;
-  final String emoji;
   final Color color;
-  const _ChipData({required this.label, required this.emoji, required this.color});
+  const _ChipData({required this.label, required this.color});
 }
 
 class _CircleBack extends StatelessWidget {

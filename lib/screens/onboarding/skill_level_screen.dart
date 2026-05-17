@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/quillo_button.dart';
 import 'household_size_screen.dart';
+
+const _boltIconAsset = 'assets/onboarding/bolt_icon.png';
 
 class SkillLevelScreen extends StatefulWidget {
   const SkillLevelScreen({super.key});
@@ -20,26 +22,22 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
     _SkillOption(
       title: 'Beginner',
       subtitle: 'Simple recipes, basic techniques. I\'m just getting started',
-      emoji: '🥚',
-      color: AppColors.beginnerColor,
+      iconAsset: 'assets/onboarding/skill_beginner.png',
     ),
     _SkillOption(
       title: 'Home Cook',
       subtitle: 'Comfortable with everyday meals, learning new dishes',
-      emoji: '🍳',
-      color: AppColors.homeCookColor,
+      iconAsset: 'assets/onboarding/skill_home_cook.png',
     ),
     _SkillOption(
       title: 'Confident Cook',
       subtitle: 'At ease with complex recipes, love to experiment',
-      emoji: '🔪',
-      color: AppColors.confidentColor,
+      iconAsset: 'assets/onboarding/skill_confident.png',
     ),
     _SkillOption(
       title: 'Pro Chef',
-      subtitle: 'Professional or advanced, bring on the challenge',
-      emoji: '👨‍🍳',
-      color: AppColors.proChefColor,
+      subtitle: 'Professional or advanced, bring on the challenge!',
+      iconAsset: 'assets/onboarding/skill_pro_chef.png',
     ),
   ];
 
@@ -60,6 +58,15 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
     super.dispose();
   }
 
+  Future<void> _handleContinue() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('onboarding_skill_level', _selected);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HouseholdSizeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,45 +77,62 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                 child: Row(
                   children: [
-                    _BackButton(onTap: () => Navigator.of(context).pop()),
+                    _CircleBack(onTap: () => Navigator.of(context).pop()),
                     const Spacer(),
-                    _StepPill(label: '✦ Step 5 of 5'),
+                    const _StepPill(),
                     const Spacer(),
                     TextButton(
-                      onPressed: () => _handleContinue(),
-                      child: Text('Skip',
-                          style: TextStyle(fontSize: 14, color: AppColors.textMedium, fontWeight: FontWeight.w600)),
+                      onPressed: _handleContinue,
+                      child: const Text(
+                        'Skip',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textMedium,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Text(
-                          'ALMOST THERE!',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.accentDark,
-                            letterSpacing: 1.2,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Divider(
+                              color: AppColors.divider,
+                              thickness: 1,
+                            ),
                           ),
-                        ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 10),
+                            child: Text(
+                              'ALMOST THERE!',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Divider(
+                              color: AppColors.divider,
+                              thickness: 1,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       RichText(
                         text: const TextSpan(
                           style: TextStyle(fontFamily: 'Nunito'),
@@ -116,7 +140,7 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                             TextSpan(
                               text: 'Cooking ',
                               style: TextStyle(
-                                fontSize: 28,
+                                fontSize: 30,
                                 fontWeight: FontWeight.w900,
                                 color: AppColors.textDark,
                               ),
@@ -124,20 +148,20 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                             TextSpan(
                               text: 'Skill Level',
                               style: TextStyle(
-                                fontSize: 28,
+                                fontSize: 30,
                                 fontWeight: FontWeight.w900,
                                 color: AppColors.primary,
                               ),
                             ),
                             TextSpan(
-                              text: ' 🏆',
-                              style: TextStyle(fontSize: 26),
+                              text: ' 👨‍🍳',
+                              style: TextStyle(fontSize: 28),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
+                      const Text(
                         "We'll match recipes to your experience so every meal feels just right.",
                         style: TextStyle(
                           fontSize: 13,
@@ -145,7 +169,7 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                           height: 1.5,
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       ..._options.asMap().entries.map((entry) {
                         final i = entry.key;
                         final option = entry.value;
@@ -157,7 +181,7 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                             return Opacity(
                               opacity: value,
                               child: Transform.translate(
-                                offset: Offset(0, 20 * (1 - value)),
+                                offset: Offset(0, 16 * (1 - value)),
                                 child: child,
                               ),
                             );
@@ -172,28 +196,17 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                           ),
                         );
                       }),
-                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
                 child: Column(
                   children: [
-                    QuilloButton(
-                      label: '✦  Let\'s Start Cooking!',
-                      onTap: _handleContinue,
-                      backgroundColor: AppColors.primary,
-                      textColor: Colors.white,
-                    ),
+                    _PrimaryCta(onTap: _handleContinue),
                     const SizedBox(height: 12),
-                    QuilloButton(
-                      label: 'Skip for now',
-                      onTap: _handleContinue,
-                      backgroundColor: AppColors.textDark,
-                      textColor: Colors.white,
-                    ),
+                    _SecondaryCta(onTap: _handleContinue),
                   ],
                 ),
               ),
@@ -203,24 +216,16 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
       ),
     );
   }
-
-  void _handleContinue() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HouseholdSizeScreen()),
-    );
-  }
 }
 
 class _SkillOption {
   final String title;
   final String subtitle;
-  final String emoji;
-  final Color color;
+  final String iconAsset;
   const _SkillOption({
     required this.title,
     required this.subtitle,
-    required this.emoji,
-    required this.color,
+    required this.iconAsset,
   });
 }
 
@@ -242,84 +247,166 @@ class _SkillCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? option.color.withValues(alpha: 0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? option.color : AppColors.chipBorder,
-            width: isSelected ? 2 : 1.5,
+            color: isSelected ? AppColors.primary : AppColors.chipBorder,
+            width: isSelected ? 2 : 1,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: option.color.withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  )
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ],
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.05),
+              blurRadius: isSelected ? 14 : 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isSelected)
+                  Container(
+                    width: 4,
+                    color: AppColors.primary,
+                  ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          option.iconAsset,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                option.title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textDark,
+                                  fontFamily: 'Nunito',
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                option.subtitle,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textMedium,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        _RadioDot(selected: isSelected),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadioDot extends StatelessWidget {
+  final bool selected;
+  const _RadioDot({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? AppColors.primary : AppColors.chipBorder,
+          width: 2,
+        ),
+        color: selected ? AppColors.primary : Colors.transparent,
+      ),
+      child: selected
+          ? Center(
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _PrimaryCta extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PrimaryCta({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 54,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7B74FF), Color(0xFF6C63FF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.35),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: option.color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(option.emoji, style: const TextStyle(fontSize: 22)),
-              ),
+            Image.asset(
+              _boltIconAsset,
+              width: 20,
+              height: 20,
+              color: Colors.white,
+              colorBlendMode: BlendMode.srcIn,
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    option.title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: isSelected ? option.color : AppColors.textDark,
-                      fontFamily: 'Nunito',
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    option.subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMedium,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 8),
+            const Text(
+              "Let's Start Cooking!",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                fontFamily: 'Nunito',
               ),
-            ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isSelected ? option.color : AppColors.chipBorder,
-                  width: 2,
-                ),
-                color: isSelected ? option.color : Colors.transparent,
-              ),
-              child: isSelected
-                  ? const Icon(Icons.check_rounded, size: 14, color: Colors.white)
-                  : null,
             ),
           ],
         ),
@@ -328,9 +415,47 @@ class _SkillCard extends StatelessWidget {
   }
 }
 
-class _BackButton extends StatelessWidget {
+class _SecondaryCta extends StatelessWidget {
   final VoidCallback onTap;
-  const _BackButton({required this.onTap});
+  const _SecondaryCta({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 54,
+        decoration: BoxDecoration(
+          color: AppColors.textDark,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.textDark.withValues(alpha: 0.25),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text(
+            'Skip for now',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleBack extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CircleBack({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -350,16 +475,18 @@ class _BackButton extends StatelessWidget {
             ),
           ],
         ),
-        child: const Icon(Icons.arrow_back_ios_new_rounded,
-            size: 16, color: AppColors.textDark),
+        child: const Icon(
+          Icons.arrow_back_ios_new_rounded,
+          size: 16,
+          color: AppColors.textDark,
+        ),
       ),
     );
   }
 }
 
 class _StepPill extends StatelessWidget {
-  final String label;
-  const _StepPill({required this.label});
+  const _StepPill();
 
   @override
   Widget build(BuildContext context) {
@@ -369,13 +496,36 @@ class _StepPill extends StatelessWidget {
         color: AppColors.primary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: AppColors.primary,
-        ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StepDot(),
+          SizedBox(width: 6),
+          Text(
+            'Step 5 of 5',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  const _StepDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: const BoxDecoration(
+        color: AppColors.primary,
+        shape: BoxShape.circle,
       ),
     );
   }

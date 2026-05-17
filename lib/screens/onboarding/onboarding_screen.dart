@@ -5,6 +5,34 @@ import 'preferences_screen.dart';
 
 const _onboardingBg = Color(0xFFF5F6FF);
 const _onboardingGrey = Color(0xFF6B7280);
+const _boltIconAsset = 'assets/onboarding/bolt_icon.png';
+
+const _onboardingFeatures = [
+  _Feature('assets/onboarding/feature_instant_scan.png', 'Instant scan'),
+  _Feature('assets/onboarding/feature_ai_powered.png', 'AI-powered'),
+  _Feature('assets/onboarding/feature_smart_meals.png', 'Smart meals'),
+];
+
+const _onboardingStats = [
+  _StatItem(
+    iconAsset: 'assets/onboarding/stat_time_saved.png',
+    value: '3.2',
+    unit: ' hrs',
+    label: 'saved per week',
+  ),
+  _StatItem(
+    iconAsset: 'assets/onboarding/stat_less_waste.png',
+    value: '42%',
+    unit: '',
+    label: 'less food waste',
+  ),
+  _StatItem(
+    iconAsset: 'assets/onboarding/stat_meals.png',
+    value: '14+',
+    unit: '',
+    label: 'meals per month',
+  ),
+];
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -27,11 +55,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       titleEnd: ' Recipe',
       subtitle:
           'We turn your grocery list into smart, delicious meal ideas',
-      features: [
-        _Feature(Icons.document_scanner_outlined, 'Instant scan'),
-        _Feature(Icons.auto_awesome_outlined, 'AI-powered'),
-        _Feature(Icons.restaurant_outlined, 'Smart meals'),
-      ],
+      features: _onboardingFeatures,
       triangleFeatures: true,
       illustrationAsset: 'assets/onboarding/step1_illustration.png',
       illustrationStyle: _IllustrationStyle.scan,
@@ -45,11 +69,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       titleSparkles: true,
       subtitle:
           'Point your camera at any receipt. Our AI does the rest instantly.',
-      features: [
-        _Feature(Icons.camera_alt_outlined, 'Instant scan'),
-        _Feature(Icons.auto_awesome_outlined, 'AI-powered'),
-        _Feature(Icons.restaurant_outlined, 'Smart meals'),
-      ],
+      features: _onboardingFeatures,
       triangleFeatures: true,
       illustrationAsset: 'assets/onboarding/step2_illustration.png',
       illustrationStyle: _IllustrationStyle.camera,
@@ -60,16 +80,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       title: 'Cook ',
       highlight: 'Smarter',
       titleEnd: '\nEvery Day',
-      subtitle: 'Save time, reduce waste,\nand eat better effortlessly',
+      subtitle:
+          'Save time, reduce waste, and eat better effortlessly',
       features: [],
-      stats: [
-        _StatItem('🔄', '3.2', 'hrs', 'saved per week'),
-        _StatItem('♻️', '42%', '', 'less food waste'),
-        _StatItem('🍽️', '14+', '', 'meals per month'),
-      ],
+      stats: _onboardingStats,
       illustrationAsset: 'assets/onboarding/step3_illustration.png',
       illustrationStyle: _IllustrationStyle.stats,
-      illustrationBg: Color(0xFFFFF8DC),
+      figmaIllustration: true,
+      filledStepPill: true,
       isLast: true,
     ),
   ];
@@ -155,15 +173,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       vertical: 7,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
+                      color: page.filledStepPill
+                          ? AppColors.primary
+                          : AppColors.primaryLight,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '• ${page.step}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+                        color: page.filledStepPill
+                            ? Colors.white
+                            : AppColors.primary,
                         fontFamily: 'Nunito',
                       ),
                     ),
@@ -200,12 +222,16 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                         .toList(),
                                   ),
                           if (page.stats.isNotEmpty)
-                            Row(
-                              children: page.stats
-                                  .map(
-                                    (s) => Expanded(child: _StatCard(stat: s)),
-                                  )
-                                  .toList(),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                children: page.stats
+                                    .map(
+                                      (s) =>
+                                          Expanded(child: _StatCard(stat: s)),
+                                    )
+                                    .toList(),
+                              ),
                             ),
                           const Spacer(),
                           SizedBox(
@@ -224,14 +250,37 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                   borderRadius: BorderRadius.circular(28),
                                 ),
                               ),
-                              child: Text(
-                                isLast ? 'Start Now  →' : 'Next  →',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  fontFamily: 'Nunito',
-                                ),
-                              ),
+                              child: isLast
+                                  ? Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Image.asset(
+                                          _boltIconAsset,
+                                          width: 20,
+                                          height: 20,
+                                          color: Colors.white,
+                                          colorBlendMode: BlendMode.srcIn,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'Start Now',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            fontFamily: 'Nunito',
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : const Text(
+                                      'Next  →',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        fontFamily: 'Nunito',
+                                      ),
+                                    ),
                             ),
                           ),
                           if (isLast) ...[
@@ -492,7 +541,12 @@ class _FeatureChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(feature.icon, size: 16, color: AppColors.primary),
+          Image.asset(
+            feature.iconAsset,
+            width: 28,
+            height: 28,
+            fit: BoxFit.contain,
+          ),
           const SizedBox(width: 8),
           Text(
             feature.label,
@@ -826,20 +880,22 @@ class _StatFloatCard extends StatelessWidget {
   final String value;
   final String subtitle;
   final String emoji;
+  final Color tint;
   const _StatFloatCard({
     required this.title,
     required this.value,
     required this.subtitle,
     required this.emoji,
+    this.tint = Colors.white,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 110,
+      width: 108,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tint,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -888,33 +944,109 @@ class _StatsIllustration extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       alignment: Alignment.center,
+      clipBehavior: Clip.none,
       children: [
         Container(
-          width: 140,
-          height: 140,
+          width: 148,
+          height: 250,
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: AppColors.chipBorder, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          child: const Center(
-            child: Text('📊', style: TextStyle(fontSize: 68)),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RECIPE',
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text('🥗', style: TextStyle(fontSize: 28)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         const Positioned(
-          top: 10,
-          right: 20,
-          child: Text('⏱️', style: TextStyle(fontSize: 28)),
+          top: 8,
+          left: 4,
+          child: _StatFloatCard(
+            title: 'TIME SAVED',
+            value: '3.2 hrs',
+            subtitle: 'per week',
+            emoji: '⏰',
+            tint: Color(0xFFE3F2FD),
+          ),
         ),
         const Positioned(
-          bottom: 10,
-          left: 20,
-          child: Text('♻️', style: TextStyle(fontSize: 28)),
+          bottom: 24,
+          left: 0,
+          child: _StatFloatCard(
+            title: 'LESS WASTE',
+            value: '42%',
+            subtitle: 'food saved',
+            emoji: '♻️',
+            tint: Color(0xFFE8F5E9),
+          ),
         ),
         const Positioned(
-          top: 20,
-          left: 20,
-          child: Text('🥗', style: TextStyle(fontSize: 24)),
+          top: 28,
+          right: 0,
+          child: _StatFloatCard(
+            title: 'MEALS PLANNED',
+            value: '14+',
+            subtitle: 'this month',
+            emoji: '🍽️',
+            tint: Color(0xFFEDE7F6),
+          ),
         ),
+        const Positioned(
+          bottom: 8,
+          right: 8,
+          child: _StatFloatCard(
+            title: 'CALORIES',
+            value: '1840',
+            subtitle: 'avg / day',
+            emoji: '💪',
+            tint: Color(0xFFFCE4EC),
+          ),
+        ),
+        const Positioned(top: 0, left: 55, child: Text('🌽', style: TextStyle(fontSize: 20))),
+        const Positioned(top: 16, right: 50, child: Text('🍓', style: TextStyle(fontSize: 18))),
+        const Positioned(bottom: 50, left: 40, child: Text('🥑', style: TextStyle(fontSize: 20))),
+        const Positioned(bottom: 40, right: 45, child: Text('🫐', style: TextStyle(fontSize: 18))),
       ],
     );
   }
@@ -960,17 +1092,31 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F5FF),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.chipBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(stat.emoji, style: const TextStyle(fontSize: 20)),
-          const SizedBox(height: 4),
+          if (stat.iconAsset != null)
+            Image.asset(
+              stat.iconAsset!,
+              width: 24,
+              height: 24,
+              fit: BoxFit.contain,
+            )
+          else if (stat.icon != null)
+            Icon(stat.icon, size: 24, color: AppColors.textDark),
+          const SizedBox(height: 8),
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
@@ -978,7 +1124,7 @@ class _StatCard extends StatelessWidget {
                 TextSpan(
                   text: stat.value,
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 17,
                     fontWeight: FontWeight.w900,
                     color: AppColors.textDark,
                     fontFamily: 'Nunito',
@@ -988,22 +1134,24 @@ class _StatCard extends StatelessWidget {
                   TextSpan(
                     text: stat.unit,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMedium,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textDark,
                       fontFamily: 'Nunito',
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Text(
             stat.label,
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 10,
-              color: AppColors.textLight,
-              height: 1.3,
+              color: _onboardingGrey,
+              height: 1.25,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -1015,17 +1163,25 @@ class _StatCard extends StatelessWidget {
 enum _IllustrationStyle { scan, camera, stats }
 
 class _Feature {
-  final IconData icon;
+  final String iconAsset;
   final String label;
-  const _Feature(this.icon, this.label);
+  const _Feature(this.iconAsset, this.label);
 }
 
 class _StatItem {
-  final String emoji;
+  final String? iconAsset;
+  final IconData? icon;
   final String value;
   final String unit;
   final String label;
-  const _StatItem(this.emoji, this.value, this.unit, this.label);
+
+  const _StatItem({
+    this.iconAsset,
+    this.icon,
+    required this.value,
+    required this.unit,
+    required this.label,
+  });
 }
 
 class _OnboardingData {
@@ -1042,6 +1198,7 @@ class _OnboardingData {
   final bool triangleFeatures;
   final bool figmaIllustration;
   final bool titleSparkles;
+  final bool filledStepPill;
   final bool isLast;
 
   const _OnboardingData({
@@ -1058,6 +1215,7 @@ class _OnboardingData {
     this.triangleFeatures = false,
     this.figmaIllustration = false,
     this.titleSparkles = false,
+    this.filledStepPill = false,
     this.isLast = false,
   });
 }

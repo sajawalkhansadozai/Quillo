@@ -67,8 +67,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       _showError('Passwords do not match.');
       return;
     }
-    if (password.length < 6) {
-      _showError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      _showError('Password must be at least 8 characters.');
       return;
     }
     setState(() => _isLoading = true);
@@ -196,15 +196,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 24,
+                          offset: Offset(0, -4),
+                        ),
+                      ],
                     ),
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 44),
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const SizedBox(height: 28),
-                          // Title — centred
                           Center(
                             child: RichText(
                               text: const TextSpan(
@@ -223,8 +228,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          // Subtitle — centred
+                          const SizedBox(height: 8),
                           Center(
                             child: RichText(
                               textAlign: TextAlign.center,
@@ -233,6 +237,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                   fontSize: 13,
                                   color: AppColors.textMedium,
                                   fontFamily: 'Nunito',
+                                  height: 1.4,
                                 ),
                                 children: [
                                   const TextSpan(text: 'Join QUILLO already cooking? '),
@@ -256,63 +261,60 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                               ),
                             ),
                           ),
+                          const SizedBox(height: 22),
+                          const _FieldLabel(label: 'FULL NAME'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _fullNameController,
+                            hint: 'Your full name',
+                            prefixIcon: Icons.person_outline_rounded,
+                            keyboardType: TextInputType.name,
+                            textCapitalization: TextCapitalization.words,
+                          ),
+                          const SizedBox(height: 14),
+                          const _FieldLabel(label: 'EMAIL'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _emailController,
+                            hint: 'you@example.com',
+                            prefixIconAsset: 'assets/icons/email_icon.png',
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 14),
+                          const _FieldLabel(label: 'PASSWORD'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _passwordController,
+                            hint: 'Min. 8 characters',
+                            prefixIconAsset: 'assets/icons/lock_icon.png',
+                            obscureText: _obscurePassword,
+                            suffixIcon: _obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            onSuffixTap: () =>
+                                setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                          const SizedBox(height: 14),
+                          const _FieldLabel(label: 'CONFIRM PASSWORD'),
+                          const SizedBox(height: 8),
+                          AuthTextField(
+                            controller: _confirmController,
+                            hint: 'Repeat your password',
+                            prefixIconAsset: 'assets/icons/lock_icon.png',
+                            obscureText: _obscureConfirm,
+                            suffixIcon: _obscureConfirm
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            onSuffixTap: () =>
+                                setState(() => _obscureConfirm = !_obscureConfirm),
+                          ),
                           const SizedBox(height: 24),
-                        const _FieldLabel(label: 'FULL NAME'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _fullNameController,
-                          hint: 'Your full name',
-                          prefixIcon: Icons.person_outline_rounded,
-                          keyboardType: TextInputType.name,
-                          textCapitalization: TextCapitalization.words,
-                        ),
-                        const SizedBox(height: 16),
-                        const _FieldLabel(label: 'EMAIL'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _emailController,
-                          hint: 'you@example.com',
-                          prefixIcon: Icons.mail_outline_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 16),
-                        const _FieldLabel(label: 'PASSWORD'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _passwordController,
-                          hint: 'Min. 8 characters',
-                          prefixIcon: Icons.lock_outline_rounded,
-                          obscureText: _obscurePassword,
-                          suffixIcon: _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          onSuffixTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                        ),
-                        const SizedBox(height: 16),
-                        const _FieldLabel(label: 'CONFIRM PASSWORD'),
-                        const SizedBox(height: 8),
-                        AuthTextField(
-                          controller: _confirmController,
-                          hint: 'Repeat your password',
-                          prefixIcon: Icons.lock_outline_rounded,
-                          obscureText: _obscureConfirm,
-                          suffixIcon: _obscureConfirm
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          onSuffixTap: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                        ),
-                        const SizedBox(height: 28),
-                        _isLoading
-                            ? const _LoadingButton()
-                            : QuilloButton(
-                                label: 'Create Account',
-                                onTap: _handleCreate,
-                                backgroundColor: AppColors.accent,
-                                textColor: AppColors.textDark,
-                              ),
-                        const SizedBox(height: 20),
-                        const _OrDivider(),
-                        const SizedBox(height: 16),
+                          _isLoading
+                              ? const _LoadingButton()
+                              : _CreateAccountButton(onTap: _handleCreate),
+                          const SizedBox(height: 18),
+                          const _OrDivider(),
+                          const SizedBox(height: 14),
                           Row(
                             children: [
                               Expanded(
@@ -320,9 +322,16 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                   label: 'Google',
                                   icon: Image.asset(
                                     'assets/icons/google.png',
-                                    width: 20, height: 20,
-                                    errorBuilder: (_, __, ___) => const Text('G',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+                                    width: 20,
+                                    height: 20,
+                                    errorBuilder: (_, __, ___) => const Text(
+                                      'G',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF4285F4),
+                                      ),
+                                    ),
                                   ),
                                   onTap: _handleGoogle,
                                 ),
@@ -333,50 +342,57 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                   label: 'Apple',
                                   icon: Image.asset(
                                     'assets/icons/apple.png',
-                                    width: 20, height: 20,
-                                    errorBuilder: (_, __, ___) => const Icon(Icons.apple, size: 20, color: AppColors.textDark),
+                                    width: 20,
+                                    height: 20,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.apple,
+                                      size: 20,
+                                      color: AppColors.textDark,
+                                    ),
                                   ),
                                   onTap: _handleApple,
                                 ),
                               ),
                             ],
                           ),
-                        const SizedBox(height: 20),
-                        Center(
-                          child: RichText(
-                            textAlign: TextAlign.center,
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textLight,
-                                fontFamily: 'Nunito',
+                          const SizedBox(height: 18),
+                          Center(
+                            child: RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textLight,
+                                  fontFamily: 'Nunito',
+                                  height: 1.45,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'By signing up you agree to our '),
+                                  TextSpan(
+                                    text: 'Terms',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    recognizer: TapGestureRecognizer()
+                                      ..onTap = () =>
+                                          _openLink(context, 'https://quillo.app/terms'),
+                                  ),
+                                  const TextSpan(text: ' & '),
+                                  TextSpan(
+                                    text: 'Conditions',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    recognizer: TapGestureRecognizer()
+                                      ..onTap = () =>
+                                          _openLink(context, 'https://quillo.app/terms'),
+                                  ),
+                                ],
                               ),
-                              children: [
-                                const TextSpan(text: 'By signing up you agree to our '),
-                                TextSpan(
-                                  text: 'Terms',
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  recognizer: TapGestureRecognizer()
-                                    ..onTap = () => _openLink(context, 'https://quillo.app/terms'),
-                                ),
-                                const TextSpan(text: ' &\n'),
-                                TextSpan(
-                                  text: 'Conditions',
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  recognizer: TapGestureRecognizer()
-                                    ..onTap = () => _openLink(context, 'https://quillo.app/terms'),
-                                ),
-                              ],
                             ),
                           ),
-                        ),
-                          const SizedBox(height: 28),
                         ],
                       ),
                     ),
@@ -430,6 +446,44 @@ class _OrDivider extends StatelessWidget {
   }
 }
 
+class _CreateAccountButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CreateAccountButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 54,
+        decoration: BoxDecoration(
+          color: AppColors.accent,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accent.withValues(alpha: 0.45),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text(
+            'Create Account',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LoadingButton extends StatelessWidget {
   const _LoadingButton();
 
@@ -440,7 +494,7 @@ class _LoadingButton extends StatelessWidget {
       height: 54,
       decoration: BoxDecoration(
         color: AppColors.accent.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: const Center(
         child: SizedBox(

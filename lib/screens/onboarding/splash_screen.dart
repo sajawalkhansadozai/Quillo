@@ -7,6 +7,7 @@ import 'onboarding_screen.dart';
 const _splashBg = Color(0xFFF5F6FF);
 const _splashYellow = Color(0xFFFFCC00);
 const _splashGrey = Color(0xFF6B7280);
+const _boltIconAsset = 'assets/onboarding/bolt_icon.png';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -309,12 +310,18 @@ class _GetStartedButtonState extends State<_GetStartedButton>
               ),
             ],
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.bolt_rounded, size: 20, color: AppColors.textDark),
-              SizedBox(width: 8),
-              Text(
+              Image.asset(
+                _boltIconAsset,
+                width: 20,
+                height: 20,
+                color: AppColors.textDark,
+                colorBlendMode: BlendMode.srcIn,
+              ),
+              const SizedBox(width: 8),
+              const Text(
                 'Get Started',
                 style: TextStyle(
                   fontSize: 16,

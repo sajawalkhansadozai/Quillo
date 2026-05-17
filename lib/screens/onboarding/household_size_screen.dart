@@ -19,15 +19,15 @@ class _HouseholdSizeScreenState extends State<HouseholdSizeScreen>
   late Animation<double> _fade;
   late Animation<Offset> _slide;
 
-  final _sizes = [
-    _SizeOption(count: 1, emoji: '🧍', label: 'Just me'),
-    _SizeOption(count: 2, emoji: '👫', label: 'Two of us'),
-    _SizeOption(count: 3, emoji: '👨‍👩‍👦', label: 'Small family'),
-    _SizeOption(count: 4, emoji: '👨‍👩‍👧‍👦', label: 'Family of 4'),
-    _SizeOption(count: 5, emoji: '🏠', label: 'Bigger family'),
-    _SizeOption(count: 6, emoji: '🏘️', label: 'Large family'),
-    _SizeOption(count: 7, emoji: '🎉', label: 'Big household'),
-    _SizeOption(count: 8, emoji: '🏟️', label: '8 or more'),
+  final _sizes = const [
+    _SizeOption(count: 1, icon: Icons.person_outline, label: 'Just me'),
+    _SizeOption(count: 2, icon: Icons.people_outline, label: 'Two of us'),
+    _SizeOption(count: 3, icon: Icons.family_restroom_outlined, label: 'Small family'),
+    _SizeOption(count: 4, icon: Icons.groups_outlined, label: 'Family of 4'),
+    _SizeOption(count: 5, icon: Icons.home_outlined, label: 'Bigger family'),
+    _SizeOption(count: 6, icon: Icons.apartment_outlined, label: 'Large family'),
+    _SizeOption(count: 7, icon: Icons.celebration_outlined, label: 'Big household'),
+    _SizeOption(count: 8, icon: Icons.groups_3_outlined, label: '8 or more'),
   ];
 
   @override
@@ -170,8 +170,13 @@ class _HouseholdSizeScreenState extends State<HouseholdSizeScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(size.emoji,
-                                    style: const TextStyle(fontSize: 28)),
+                                Icon(
+                                  size.icon,
+                                  size: 28,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.primary,
+                                ),
                                 const SizedBox(height: 4),
                                 Text(
                                   size.count == 8
@@ -254,9 +259,13 @@ class _HouseholdSizeScreenState extends State<HouseholdSizeScreen>
 
 class _SizeOption {
   final int count;
-  final String emoji;
+  final IconData icon;
   final String label;
-  const _SizeOption({required this.count, required this.emoji, required this.label});
+  const _SizeOption({
+    required this.count,
+    required this.icon,
+    required this.label,
+  });
 }
 
 class _StepDots extends StatelessWidget {

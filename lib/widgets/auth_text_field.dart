@@ -4,7 +4,8 @@ import '../theme/app_theme.dart';
 class AuthTextField extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
-  final IconData prefixIcon;
+  final IconData? prefixIcon;
+  final String? prefixIconAsset;
   final bool obscureText;
   final IconData? suffixIcon;
   final VoidCallback? onSuffixTap;
@@ -15,13 +16,14 @@ class AuthTextField extends StatefulWidget {
     super.key,
     required this.controller,
     required this.hint,
-    required this.prefixIcon,
+    this.prefixIcon,
+    this.prefixIconAsset,
     this.obscureText = false,
     this.suffixIcon,
     this.onSuffixTap,
     this.keyboardType = TextInputType.text,
     this.textCapitalization = TextCapitalization.none,
-  });
+  }) : assert(prefixIcon != null || prefixIconAsset != null);
 
   @override
   State<AuthTextField> createState() => _AuthTextFieldState();
@@ -30,6 +32,25 @@ class AuthTextField extends StatefulWidget {
 class _AuthTextFieldState extends State<AuthTextField> {
   bool _isFocused = false;
 
+  Widget? _buildPrefix() {
+    if (widget.prefixIconAsset != null) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 14, right: 6),
+        child: Image.asset(
+          widget.prefixIconAsset!,
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+        ),
+      );
+    }
+    return Icon(
+      widget.prefixIcon,
+      size: 18,
+      color: _isFocused ? AppColors.primary : AppColors.textLight,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -37,7 +58,7 @@ class _AuthTextFieldState extends State<AuthTextField> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: _isFocused ? AppColors.primaryLight : const Color(0xFFF6F6FA),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: _isFocused ? AppColors.primary : AppColors.chipBorder,
@@ -46,10 +67,10 @@ class _AuthTextFieldState extends State<AuthTextField> {
           boxShadow: _isFocused
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: AppColors.primary.withValues(alpha: 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
-                  )
+                  ),
                 ]
               : [],
         ),
@@ -65,15 +86,12 @@ class _AuthTextFieldState extends State<AuthTextField> {
           ),
           decoration: InputDecoration(
             hintText: widget.hint,
-            hintStyle: TextStyle(
+            hintStyle: const TextStyle(
               fontSize: 14,
               color: AppColors.textLight,
             ),
-            prefixIcon: Icon(
-              widget.prefixIcon,
-              size: 18,
-              color: _isFocused ? AppColors.primary : AppColors.textLight,
-            ),
+            prefixIcon: _buildPrefix(),
+            prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             suffixIcon: widget.suffixIcon != null
                 ? GestureDetector(
                     onTap: widget.onSuffixTap,
