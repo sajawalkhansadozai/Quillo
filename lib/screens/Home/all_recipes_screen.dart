@@ -56,10 +56,15 @@ class _AllRecipesScreenState extends State<AllRecipesScreen> {
           .eq('user_id', uid);
 
       if (!mounted) return;
-      final recipes = (data as List).map<GeneratedRecipe?>((r) {
-        try { return GeneratedRecipe.fromJson(Map<String, dynamic>.from(r)); }
-        catch (_) { return null; }
-      }).whereType<GeneratedRecipe>().toList();
+      final recipes = GeneratedRecipe.sortedByIngredientMatch(
+        (data as List).map<GeneratedRecipe?>((r) {
+          try {
+            return GeneratedRecipe.fromJson(Map<String, dynamic>.from(r));
+          } catch (_) {
+            return null;
+          }
+        }).whereType<GeneratedRecipe>().toList(),
+      );
 
       setState(() {
         _recipes = recipes;
@@ -99,6 +104,7 @@ class _AllRecipesScreenState extends State<AllRecipesScreen> {
           default: return true;
         }
       }).toList();
+      _filtered.sort(GeneratedRecipe.compareByIngredientMatch);
     });
   }
 

@@ -80,12 +80,22 @@ class _GeneratedRecipeDetailPageState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Cuisine tags
+                      // Match + cuisine tags
                       Wrap(
                         spacing: 6,
-                        children: _cuisineTags(recipe.title)
-                            .map((t) => _TagChip(label: t, color: color))
-                            .toList(),
+                        runSpacing: 6,
+                        children: [
+                          _TagChip(
+                            label: recipe.matchLabel,
+                            color: recipe.matchPercent >= 100
+                                ? const Color(0xFF4CAF50)
+                                : recipe.matchPercent >= 80
+                                    ? color
+                                    : const Color(0xFFFF9800),
+                          ),
+                          ..._cuisineTags(recipe.title)
+                              .map((t) => _TagChip(label: t, color: color)),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       // Title

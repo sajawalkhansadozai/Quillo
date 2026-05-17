@@ -15,9 +15,10 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  final _homeKey = GlobalKey<HomeScreenState>();
 
   late final List<Widget> _screens = [
-    HomeScreen(onExploreTap: () => setState(() => _currentIndex = 1)),
+    HomeScreen(key: _homeKey, onExploreTap: () => setState(() => _currentIndex = 1)),
     const ExploreScreen(),
     const ScanPlaceholderScreen(),
     const SavedScreen(),
@@ -39,6 +40,7 @@ class _MainShellState extends State<MainShell> {
             _showScanSheet(context);
             return;
           }
+          if (i == 0) _homeKey.currentState?.refreshName();
           setState(() => _currentIndex = i);
         },
       ),

@@ -16,10 +16,10 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onExploreTap;
   const HomeScreen({super.key, this.onExploreTap});
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
+class HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -57,16 +57,42 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  /// Called by MainShell when the user taps back to the Home tab.
+  Future<void> refreshName() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final row = await _client
+          .from('users')
+          .select('email, full_name')
+          .eq('id', uid)
+          .maybeSingle();
+      final email = (row?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
+      final dbFullName = (row?['full_name'] as String?)?.trim() ?? '';
+      final ssoName = (_client.auth.currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
+      if (!mounted) return;
+      setState(() {
+        _userName = dbFullName.isNotEmpty
+            ? dbFullName
+            : ssoName.isNotEmpty
+                ? ssoName
+                : _firstName(email);
+      });
+    } catch (_) {}
+  }
+
   Future<void> _loadData() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) { setState(() => _loading = false); return; }
     try {
       final userRow = await _client
           .from('users')
-          .select('email, scan_streak, last_scan_date')
+          .select('email, full_name, scan_streak, last_scan_date')
           .eq('id', uid)
           .maybeSingle();
       final email = (userRow?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
+      final dbFullName = (userRow?['full_name'] as String?)?.trim() ?? '';
+      final ssoName = (_client.auth.currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
       final rawStreak = await StreakService.getCurrentStreak();
 
       final scansData = await _client
@@ -87,7 +113,11 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (!mounted) return;
       setState(() {
-        _userName = _firstName(email);
+        _userName = dbFullName.isNotEmpty
+            ? dbFullName
+            : ssoName.isNotEmpty
+                ? ssoName
+                : _firstName(email);
         _streak = rawStreak;
         _recentScans = List<Map<String, dynamic>>.from(scansData);
         _recentRecipes = _parseRecipes(recipesData);
@@ -107,11 +137,19 @@ class _HomeScreenState extends State<HomeScreen>
     return name[0].toUpperCase() + name.substring(1).toLowerCase();
   }
 
-  List<GeneratedRecipe> _parseRecipes(List data) => data
-      .map<GeneratedRecipe?>((r) {
-        try { return GeneratedRecipe.fromJson(Map<String, dynamic>.from(r)); }
-        catch (_) { return null; }
-      }).whereType<GeneratedRecipe>().toList();
+  List<GeneratedRecipe> _parseRecipes(List data) =>
+      GeneratedRecipe.sortedByIngredientMatch(
+        data
+            .map<GeneratedRecipe?>((r) {
+              try {
+                return GeneratedRecipe.fromJson(Map<String, dynamic>.from(r));
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<GeneratedRecipe>()
+            .toList(),
+      );
 
   List<GeneratedRecipe> _parseSavedRecipes(List data) {
     final recipes = <GeneratedRecipe>[];
@@ -166,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 4),
               const Text('Scan a receipt or enter ingredients manually.', style: TextStyle(fontSize: 13, color: Color(0xFF8B8B9E))),
               const SizedBox(height: 20),
-              _ScanOption(icon: Icons.qr_code_scanner_rounded, color: AppColors.primary, title: 'Scan Receipt', subtitle: 'Take a photo — AI reads it instantly', onTap: () {
+              _ScanOption(icon: Icons.qr_code_scanner_rounded, color: AppColors.primary, title: 'Scan Receipt', subtitle: 'Take a photo — Quilloreads it instantly', onTap: () {
                 Navigator.pop(ctx);
                 Navigator.of(context).push(PageRouteBuilder(
                   pageBuilder: (_, anim, __) => const ScanScreen(),
@@ -581,7 +619,7 @@ class _HomeScreenState extends State<HomeScreen>
           SizedBox(height: 8),
           Text('No recipes yet', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark)),
           SizedBox(height: 4),
-          Text('Scan a receipt to get AI-generated recipes!',
+          Text('Scan a receipt to get recipes!',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textMedium)),
         ]),
       ),
@@ -859,7 +897,7 @@ class _SuggestedTileState extends State<_SuggestedTile> {
     final recipe = widget.recipe;
     final color = _diffColor(recipe.difficulty);
     final badge = _badge(recipe);
-    final emoji = _HomeScreenState._emojiFor(recipe.title);
+    final emoji = HomeScreenState._emojiFor(recipe.title);
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -966,7 +1004,7 @@ class _SavedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = _HomeScreenState._emojiFor(recipe.title);
+    final emoji = HomeScreenState._emojiFor(recipe.title);
     return GestureDetector(
       onTap: onTap,
       child: Container(

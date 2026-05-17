@@ -26,11 +26,24 @@ class _ExploreScreenState extends State<ExploreScreen>
   final _searchController = TextEditingController();
 
   String _selectedCategory = 'All';
-  final List<String> _categories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
+  static const _baseCategories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
 
   List<GeneratedRecipe> _allRecipes = [];
   List<GeneratedRecipe> _filteredRecipes = [];
   bool _loading = true;
+
+  // User preferences for personalisation
+  List<String> _userDietary = [];
+  List<String> _userCuisines = [];
+
+  List<String> get _categories {
+    // Append saved cuisines as extra filter chips
+    final extras = _userCuisines
+        .where((c) => !_baseCategories.any(
+            (b) => b.toLowerCase() == c.toLowerCase()))
+        .toList();
+    return [..._baseCategories, ...extras];
+  }
 
   // ── Curated collections with keyword filters ───────────────────────────────
   static const _collections = [
@@ -87,7 +100,7 @@ class _ExploreScreenState extends State<ExploreScreen>
     _fadeAnim =
         CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
-    _loadRecipes();
+    _loadData();
     _searchController.addListener(_applyFilters);
   }
 
@@ -98,30 +111,53 @@ class _ExploreScreenState extends State<ExploreScreen>
     super.dispose();
   }
 
-  Future<void> _loadRecipes() async {
+  Future<void> _loadData() async {
+    final uid = _client.auth.currentUser?.id;
     try {
-      final data = await _client
-          .from('recipes')
-          .select(
-              'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url')
-          .order('created_at', ascending: false)
-          .limit(100);
+      // Load preferences and recipes in parallel
+      final futures = await Future.wait([
+        _client
+            .from('recipes')
+            .select('id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url')
+            .order('created_at', ascending: false)
+            .limit(100),
+        if (uid != null)
+          _client
+              .from('user_preferences')
+              .select('dietary_labels')
+              .eq('user_id', uid)
+              .maybeSingle(),
+        if (uid != null)
+          _client
+              .from('users')
+              .select('preferred_cuisine')
+              .eq('id', uid)
+              .maybeSingle(),
+      ]);
 
-      final recipes = (data as List)
-          .map<GeneratedRecipe?>((r) {
-            try {
-              return GeneratedRecipe.fromJson(
-                  Map<String, dynamic>.from(r));
-            } catch (_) {
-              return null;
-            }
-          })
-          .whereType<GeneratedRecipe>()
-          .toList();
+      final recipeData = futures[0] as List;
+      final prefsRow = uid != null ? futures[1] : null;
+      final userRow = uid != null ? futures[2] : null;
+
+      final recipes = GeneratedRecipe.sortedByIngredientMatch(
+        recipeData
+            .map<GeneratedRecipe?>((r) {
+              try {
+                return GeneratedRecipe.fromJson(
+                    Map<String, dynamic>.from(r as Map));
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<GeneratedRecipe>()
+            .toList(),
+      );
 
       if (mounted) {
         setState(() {
           _allRecipes = recipes;
+          _userDietary = List<String>.from((prefsRow as Map?)?['dietary_labels'] ?? []);
+          _userCuisines = List<String>.from((userRow as Map?)?['preferred_cuisine'] ?? []);
           _loading = false;
         });
         _applyFilters();
@@ -137,17 +173,33 @@ class _ExploreScreenState extends State<ExploreScreen>
     final featuredId = _featured?.id;
     setState(() {
       _filteredRecipes = _allRecipes.where((r) {
-        // Don't show the featured recipe again in the grid
         if (r.id != null && r.id == featuredId) return false;
         final matchesSearch = query.isEmpty ||
-            r.title.toLowerCase().contains(query);
-        final matchesCategory = _selectedCategory == 'All' ||
-            (_selectedCategory == 'Quick' && r.cookTimeMinutes <= 20) ||
-            r.difficulty.toLowerCase() ==
-                _selectedCategory.toLowerCase();
+            r.title.toLowerCase().contains(query) ||
+            r.ingredientsUsed.any(
+                (i) => i.name.toLowerCase().contains(query));
+        final cat = _selectedCategory;
+        final matchesCategory = cat == 'All' ||
+            (cat == 'Quick' && r.cookTimeMinutes <= 20) ||
+            r.difficulty.toLowerCase() == cat.toLowerCase() ||
+            r.title.toLowerCase().contains(cat.toLowerCase());
         return matchesSearch && matchesCategory;
       }).toList();
+      _filteredRecipes.sort(GeneratedRecipe.compareByIngredientMatch);
     });
+  }
+
+  /// Recipes that match the user's dietary labels or cuisine preferences.
+  List<GeneratedRecipe> get _forYouRecipes {
+    if (_userDietary.isEmpty && _userCuisines.isEmpty) return [];
+    final keywords = [
+      ..._userDietary.map((d) => d.toLowerCase()),
+      ..._userCuisines.map((c) => c.toLowerCase()),
+    ];
+    return _allRecipes.where((r) {
+      final t = r.title.toLowerCase();
+      return keywords.any((k) => t.contains(k));
+    }).toList();
   }
 
   void _selectCategory(String cat) {
@@ -185,7 +237,7 @@ class _ExploreScreenState extends State<ExploreScreen>
         opacity: _fadeAnim,
         child: SafeArea(
           child: RefreshIndicator(
-            onRefresh: _loadRecipes,
+            onRefresh: _loadData,
             color: AppColors.primary,
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(
@@ -218,12 +270,23 @@ class _ExploreScreenState extends State<ExploreScreen>
                     child: Padding(
                       padding:
                           const EdgeInsets.fromLTRB(20, 18, 20, 10),
-                      child: Text(
-                        '${_filteredRecipes.length} result${_filteredRecipes.length == 1 ? '' : 's'} for "${_searchController.text}"',
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${_filteredRecipes.length} recipe${_filteredRecipes.length == 1 ? '' : 's'} for "${_searchController.text}"',
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark),
+                          ),
+                          if (_filteredRecipes.isNotEmpty)
+                            const Text(
+                              'Tap a recipe to see what ingredients you need',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppColors.textMedium),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -251,12 +314,48 @@ class _ExploreScreenState extends State<ExploreScreen>
                       ),
                     ),
                 ] else ...[
+                  // ── For You ────────────────────────────────────────────
+                  if (_forYouRecipes.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: _SectionHeader(
+                        title: 'For You',
+                        action: _forYouRecipes.length > 6 ? 'See all' : '',
+                        onAction: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AllRecipesScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 1.35,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (ctx, i) => _RecipeCard(
+                            recipe: _forYouRecipes[i],
+                            onTap: () => _openRecipe(_forYouRecipes[i]),
+                          ),
+                          childCount: _forYouRecipes.length > 6
+                              ? 6
+                              : _forYouRecipes.length,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   // ── Featured Today ─────────────────────────────────────
                   SliverToBoxAdapter(
                     child: _SectionHeader(
                       title: 'Featured Today',
                       action: 'Refresh',
-                      onAction: _loadRecipes,
+                      onAction: _loadData,
                     ),
                   ),
                   SliverToBoxAdapter(
@@ -267,7 +366,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                               recipe: _featured!,
                               onTap: () => _openRecipe(_featured!),
                             )
-                          : _FeaturedPlaceholder(),
+                          : const _FeaturedPlaceholder(),
                     ),
                   ),
 
@@ -306,11 +405,11 @@ class _ExploreScreenState extends State<ExploreScreen>
                     ),
                   ),
 
-                  // ── Your Recipes grid ──────────────────────────────────
+                  // ── All Recipes grid ───────────────────────────────────
                   SliverToBoxAdapter(
                     child: _SectionHeader(
                       title: _selectedCategory == 'All'
-                          ? 'Your Quillo Recipes 🔥'
+                          ? 'All Recipes'
                           : '$_selectedCategory Recipes',
                       action: _filteredRecipes.length > 6 ? 'See all' : '',
                       onAction: () => Navigator.of(context).push(
@@ -359,7 +458,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                   if (_quickRecipes.isNotEmpty) ...[
                     SliverToBoxAdapter(
                       child: _SectionHeader(
-                        title: 'Quick & Easy ⚡',
+                        title: 'Quick & Easy',
                         action: 'See all',
                         onAction: () => Navigator.of(context).push(
                           MaterialPageRoute(
@@ -420,7 +519,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                         color: AppColors.textLight,
                         letterSpacing: 1.4)),
                 const SizedBox(height: 2),
-                const Text('Explore 🌍',
+                const Text('Explore',
                     style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
@@ -450,30 +549,54 @@ class _ExploreScreenState extends State<ExploreScreen>
 
   Widget _buildEmptyRecipes() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Container(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20)),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10)
+            ]),
         child: Column(
           children: [
-            const Text('🍽️', style: TextStyle(fontSize: 44)),
-            const SizedBox(height: 12),
-            const Text('No recipes yet',
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.restaurant_menu_rounded,
+                  size: 28, color: AppColors.primary),
+            ),
+            const SizedBox(height: 14),
+            const Text('Your recipes will appear here',
                 style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textDark,
                     fontFamily: 'Nunito')),
             const SizedBox(height: 6),
             Text(
-              'Scan a grocery receipt to generate your first Quillo recipes!',
+              'Scan a grocery receipt and Quillo will generate recipes personalised to what you have at home.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 12,
                   color: AppColors.textMedium,
                   height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _EmptyTip(icon: Icons.eco_rounded, color: const Color(0xFF4CAF50), label: 'Dietary preferences'),
+                const SizedBox(width: 8),
+                _EmptyTip(icon: Icons.public_rounded, color: const Color(0xFF5C6BC0), label: 'Your cuisines'),
+                const SizedBox(width: 8),
+                _EmptyTip(icon: Icons.timer_outlined, color: const Color(0xFF009688), label: 'Cook time'),
+              ],
             ),
           ],
         ),
@@ -482,21 +605,33 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   Widget _buildEmptySearch() {
+    final query = _searchController.text;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
       child: Column(
         children: [
-          const Text('🔍', style: TextStyle(fontSize: 40)),
-          const SizedBox(height: 12),
-          const Text('No matches found',
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.search_off_rounded,
+                size: 28, color: AppColors.primary),
+          ),
+          const SizedBox(height: 14),
+          const Text('No recipes found',
               style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textDark)),
+                  color: AppColors.textDark,
+                  fontFamily: 'Nunito')),
           const SizedBox(height: 6),
           Text(
-            'Try a different recipe name or ingredient',
-            style: TextStyle(fontSize: 12, color: AppColors.textMedium),
+            'No results for "$query". Try scanning a receipt with those ingredients — Quillo will generate matching recipes.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5),
           ),
         ],
       ),
@@ -571,7 +706,7 @@ class _SearchBar extends StatelessWidget {
               style: const TextStyle(
                   fontSize: 14, color: AppColors.textDark),
               decoration: const InputDecoration(
-                hintText: 'Search your recipes...',
+                hintText: 'Search recipes to plan your shop...',
                 hintStyle: TextStyle(
                     fontSize: 14, color: AppColors.textLight),
                 border: InputBorder.none,
@@ -780,6 +915,7 @@ class _FeaturedCard extends StatelessWidget {
 }
 
 class _FeaturedPlaceholder extends StatelessWidget {
+  const _FeaturedPlaceholder();
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -787,18 +923,56 @@ class _FeaturedPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: const LinearGradient(
-              colors: [Color(0xFF1A1A2E), Color(0xFF16213E)])),
+              colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight)),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('🍽️', style: TextStyle(fontSize: 44)),
+            Icon(Icons.restaurant_menu_rounded, size: 44, color: Colors.white38),
             SizedBox(height: 10),
-            Text('Scan a receipt to get recipes',
+            Text('Your featured recipe will appear here',
                 style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
+                    fontSize: 13,
+                    color: Colors.white54,
                     fontWeight: FontWeight.w600)),
+            SizedBox(height: 4),
+            Text('Scan a receipt to get started',
+                style: TextStyle(fontSize: 11, color: Colors.white38)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyTip extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  const _EmptyTip({required this.icon, required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 4),
+            Text(label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: color)),
           ],
         ),
       ),

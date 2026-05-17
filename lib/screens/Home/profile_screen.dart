@@ -1,4 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
@@ -22,6 +25,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _client = Supabase.instance.client;
   String _userEmail = '';
   String _userName = '';
+  String? _avatarUrl;
+  bool _uploadingAvatar = false;
   bool _isPremium = false;
   List<_PrefChip> _dietChips = [];
   List<_PrefChip> _cuisineChips = [];
@@ -68,7 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final userRow = await _client
           .from('users')
-          .select('email, subscription_status, household_size, preferred_cuisine')
+          .select('email, full_name, avatar_url, subscription_status, household_size, preferred_cuisine')
           .eq('id', uid)
           .maybeSingle();
 
@@ -86,10 +91,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final identities = _client.auth.currentUser?.identities ?? [];
       final providers = identities.map((i) => i.provider).toSet();
 
+      // Resolve display name: DB full_name → SSO display name → email-derived
+      final dbFullName = (userRow?['full_name'] as String?)?.trim() ?? '';
+      final ssoName = (_client.auth.currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
+      final resolvedName = dbFullName.isNotEmpty
+          ? dbFullName
+          : ssoName.isNotEmpty
+              ? ssoName
+              : '';
+
       if (!mounted) return;
       setState(() {
         _userEmail = (userRow?['email'] as String?) ?? email;
-        _userName = _firstName(_userEmail);
+        _userName = resolvedName.isNotEmpty ? resolvedName : _firstName(_userEmail);
+        _avatarUrl = userRow?['avatar_url'] as String?;
         _isPremium = status == 'premium';
         _householdSize = (userRow?['household_size'] as int?) ?? 2;
         _cookingSkill = (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate';
@@ -201,6 +216,300 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _uploadAvatar() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 20),
+              const Text('Profile Photo',
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textDark,
+                      fontFamily: 'Nunito')),
+              const SizedBox(height: 16),
+              _PhotoOption(
+                icon: Icons.camera_alt_rounded,
+                label: 'Take Photo',
+                color: AppColors.primary,
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              const SizedBox(height: 10),
+              _PhotoOption(
+                icon: Icons.photo_library_outlined,
+                label: 'Choose from Library',
+                color: const Color(0xFF5C6BC0),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              if (_avatarUrl != null) ...[
+                const SizedBox(height: 10),
+                _PhotoOption(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Remove Photo',
+                  color: const Color(0xFFE53935),
+                  onTap: () => Navigator.pop(ctx, null),
+                ),
+              ],
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // null returned only when user tapped "Remove Photo"
+    if (source == null && _avatarUrl != null) {
+      await _removeAvatar();
+      return;
+    }
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 90,
+    );
+    if (picked == null) return;
+
+    setState(() => _uploadingAvatar = true);
+    try {
+      final uid = _client.auth.currentUser?.id;
+      if (uid == null) return;
+
+      final rawBytes = await picked.readAsBytes();
+      final Uint8List compressed = await FlutterImageCompress.compressWithList(
+        rawBytes,
+        minWidth: 400,
+        minHeight: 400,
+        quality: 82,
+        format: CompressFormat.jpeg,
+      );
+
+      final filePath = '$uid/avatar.jpg';
+      await _client.storage.from('avatars').uploadBinary(
+        filePath,
+        compressed,
+        fileOptions: const FileOptions(upsert: true, contentType: 'image/jpeg'),
+      );
+
+      // Bust cache by appending a timestamp query param
+      final publicUrl =
+          '${_client.storage.from('avatars').getPublicUrl(filePath)}?t=${DateTime.now().millisecondsSinceEpoch}';
+
+      await _client
+          .from('users')
+          .update({'avatar_url': publicUrl})
+          .eq('id', uid);
+
+      if (!mounted) return;
+      setState(() => _avatarUrl = publicUrl);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Profile photo updated!'),
+          backgroundColor: AppColors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: const Color(0xFFE53935),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  Future<void> _removeAvatar() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _client.storage.from('avatars').remove(['$uid/avatar.jpg']);
+      await _client.from('users').update({'avatar_url': null}).eq('id', uid);
+      if (!mounted) return;
+      setState(() => _avatarUrl = null);
+    } catch (_) {}
+  }
+
+  Future<void> _editDisplayName() async {
+    final controller = TextEditingController(text: _userName);
+    bool loading = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 36,
+        ),
+        child: StatefulBuilder(
+          builder: (ctx, setS) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Edit Name',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textDark,
+                  fontFamily: 'Nunito',
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'This is how your name appears across Quillo',
+                style: TextStyle(fontSize: 13, color: AppColors.textMedium),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Your full name',
+                  hintStyle: const TextStyle(color: AppColors.textLight),
+                  prefixIcon: const Icon(Icons.person_outline_rounded,
+                      size: 20, color: AppColors.textLight),
+                  filled: true,
+                  fillColor: const Color(0xFFF6F6FA),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                        color: AppColors.primary, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      vertical: 14, horizontal: 4),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  onPressed: loading
+                      ? null
+                      : () async {
+                          final name = controller.text.trim();
+                          if (name.isEmpty) return;
+                          setS(() => loading = true);
+                          final uid = _client.auth.currentUser?.id;
+                          String? errorMsg;
+                          try {
+                            if (uid != null) {
+                              await _client
+                                  .from('users')
+                                  .update({'full_name': name})
+                                  .eq('id', uid);
+                            }
+                            await _client.auth.updateUser(
+                              UserAttributes(data: {'full_name': name}),
+                            );
+                          } catch (e) {
+                            errorMsg = e.toString();
+                          }
+                          // Always dismiss the sheet first so snackbars
+                          // are visible on the parent scaffold.
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          if (!mounted) return;
+                          if (errorMsg != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to save: $errorMsg'),
+                                backgroundColor: const Color(0xFFE53935),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                          } else {
+                            setState(() => _userName = name);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Name updated!'),
+                                backgroundColor: AppColors.green,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                          }
+                        },
+                  child: loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.5, color: Colors.white),
+                        )
+                      : const Text(
+                          'Save',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Preference editors ───────────────────────────────────────────────────────
 
   Future<void> _editMeasurementUnit() async {
@@ -209,13 +518,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Metric',
         description: 'Grams, millilitres, Celsius',
         examples: '250g • 200ml • 180°C',
-        emoji: '🌍',
+        icon: Icons.straighten_rounded,
+        iconColor: Color(0xFF4CAF50),
       ),
       _UnitOption(
         label: 'Imperial',
         description: 'Ounces, cups, Fahrenheit',
         examples: '8oz • 1 cup • 350°F',
-        emoji: '🇺🇸',
+        icon: Icons.flag_outlined,
+        iconColor: Color(0xFF2196F3),
       ),
     ];
 
@@ -277,8 +588,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   child: Row(
                     children: [
-                      Text(u.emoji,
-                          style: const TextStyle(fontSize: 28)),
+                      _IconBox(icon: u.icon, color: u.iconColor),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -780,63 +1090,153 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         child: Row(
           children: [
-            // Avatar
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFD54F), Color(0xFFFF8A65)],
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  _userName.isNotEmpty ? _userName[0].toUpperCase() : 'Q',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
+            // ── Avatar with camera badge ──────────────────────────────
+            GestureDetector(
+              onTap: _uploadingAvatar ? null : _uploadAvatar,
+              child: SizedBox(
+                width: 62,
+                height: 62,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
+                        gradient: _avatarUrl == null
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFFD54F), Color(0xFFFF8A65)],
+                              )
+                            : null,
+                        color: _avatarUrl != null ? Colors.transparent : null,
+                      ),
+                      child: ClipOval(
+                        child: _uploadingAvatar
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                ),
+                              )
+                            : _avatarUrl != null
+                                ? Image.network(
+                                    _avatarUrl!,
+                                    fit: BoxFit.cover,
+                                    width: 60,
+                                    height: 60,
+                                    errorBuilder: (_, __, ___) => Center(
+                                      child: Text(
+                                        _userName.isNotEmpty ? _userName[0].toUpperCase() : 'Q',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 22),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      _userName.isNotEmpty ? _userName[0].toUpperCase() : 'Q',
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 22),
+                                    ),
+                                  ),
+                      ),
+                    ),
+                    // Camera badge
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                              width: 1.5),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            size: 12, color: AppColors.primary),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             const SizedBox(width: 14),
-            // Name & email
+            // ── Name & email ──────────────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _userName.isNotEmpty ? _userName : 'Chef',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _userName.isNotEmpty ? _userName : 'Your Name',
+                          style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              fontFamily: 'Nunito'),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     _userEmail,
-                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8)),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.8)),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _isPremium ? AppColors.accent : Colors.white.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _isPremium ? '✨ All Pro' : 'Free Plan',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _isPremium
+                              ? AppColors.accent
+                              : Colors.white.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _isPremium ? 'All Pro' : 'Free Plan',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            // Edit button
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
+            // ── Edit name button ──────────────────────────────────────
+            GestureDetector(
+              onTap: _editDisplayName,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.edit_outlined,
+                    color: Colors.white, size: 18),
               ),
-              child: const Icon(Icons.edit_outlined, color: Colors.white, size: 18),
             ),
           ],
         ),
@@ -865,8 +1265,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 // ── Dietary ────────────────────────────────────────────
                 _PrefEditRow(
-                  emoji: '🥗',
-                  emojiColor: const Color(0xFF4CAF50),
+                  icon: Icons.eco_rounded,
+                  iconColor: const Color(0xFF4CAF50),
                   title: 'Dietary & Lifestyle',
                   chips: _dietChips,
                   emptyLabel: 'Tap to set dietary restrictions',
@@ -875,8 +1275,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Divider(height: 1, color: AppColors.divider),
                 // ── Cuisine ────────────────────────────────────────────
                 _PrefEditRow(
-                  emoji: '🌍',
-                  emojiColor: const Color(0xFF5C6BC0),
+                  icon: Icons.public_rounded,
+                  iconColor: const Color(0xFF5C6BC0),
                   title: 'Favourite Cuisines',
                   chips: _cuisineChips,
                   emptyLabel: 'Tap to set favourite cuisines',
@@ -885,8 +1285,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Divider(height: 1, color: AppColors.divider),
                 // ── Household Size ─────────────────────────────────────
                 _PrefSettingRow(
-                  emoji: '👥',
-                  emojiColor: const Color(0xFF5C6BC0),
+                  icon: Icons.people_outline_rounded,
+                  iconColor: const Color(0xFF5C6BC0),
                   title: 'Household Size',
                   subtitle: 'How many people you cook for',
                   value: '$_householdSize ${_householdSize == 1 ? "person" : "people"}',
@@ -895,8 +1295,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Divider(height: 1, indent: 54, color: AppColors.divider),
                 // ── Cooking Skill ──────────────────────────────────────
                 _PrefSettingRow(
-                  emoji: '🍳',
-                  emojiColor: const Color(0xFFFF9800),
+                  icon: Icons.outdoor_grill_outlined,
+                  iconColor: const Color(0xFFFF9800),
                   title: 'Cooking Skill',
                   subtitle: 'Your experience in the kitchen',
                   value: _cookingSkill,
@@ -906,8 +1306,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Divider(height: 1, indent: 54, color: AppColors.divider),
                 // ── Max Cook Time ──────────────────────────────────────
                 _PrefSettingRow(
-                  emoji: '⏱️',
-                  emojiColor: const Color(0xFF009688),
+                  icon: Icons.timer_outlined,
+                  iconColor: const Color(0xFF009688),
                   title: 'Max Cook Time',
                   subtitle: 'Limit recipes to this duration',
                   value: '$_maxCookTime min',
@@ -993,12 +1393,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               children: [
                 const Text(
-                  '£43.99',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
+                  '£4.99',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
                 ),
                 Text(
-                  '/year · or £5.99/mo',
-                  style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75)),
+                  '/mo · or £43.99/yr',
+                  style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75), fontFamily: 'Nunito'),
                 ),
                 const Spacer(),
                 GestureDetector(
@@ -1293,16 +1693,16 @@ class _PrefChip {
 // ── Dietary / Cuisine edit row ────────────────────────────────────────────────
 
 class _PrefEditRow extends StatelessWidget {
-  final String emoji;
-  final Color emojiColor;
+  final IconData icon;
+  final Color iconColor;
   final String title;
   final List<_PrefChip> chips;
   final String emptyLabel;
   final VoidCallback onTap;
 
   const _PrefEditRow({
-    required this.emoji,
-    required this.emojiColor,
+    required this.icon,
+    required this.iconColor,
     required this.title,
     required this.chips,
     required this.emptyLabel,
@@ -1319,14 +1719,7 @@ class _PrefEditRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(
-                color: emojiColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
-            ),
+            _IconBox(icon: icon, color: iconColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1412,8 +1805,8 @@ class _CounterBtn extends StatelessWidget {
 }
 
 class _PrefSettingRow extends StatelessWidget {
-  final String emoji;
-  final Color emojiColor;
+  final IconData icon;
+  final Color iconColor;
   final String title;
   final String subtitle;
   final String value;
@@ -1421,8 +1814,8 @@ class _PrefSettingRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _PrefSettingRow({
-    required this.emoji,
-    required this.emojiColor,
+    required this.icon,
+    required this.iconColor,
     required this.title,
     required this.subtitle,
     required this.value,
@@ -1439,14 +1832,7 @@ class _PrefSettingRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(
-                color: emojiColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
-            ),
+            _IconBox(icon: icon, color: iconColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1784,16 +2170,67 @@ class _ConnectBadge extends StatelessWidget {
   }
 }
 
+class _PhotoOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _PhotoOption({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: color),
+            ),
+            const SizedBox(width: 14),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: color)),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded, size: 18, color: color.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _UnitOption {
   final String label;
   final String description;
   final String examples;
-  final String emoji;
+  final IconData icon;
+  final Color iconColor;
   const _UnitOption({
     required this.label,
     required this.description,
     required this.examples,
-    required this.emoji,
+    required this.icon,
+    required this.iconColor,
   });
 }
 

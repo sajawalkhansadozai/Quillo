@@ -73,9 +73,10 @@ class RecipeService {
 
     final data = response.data as Map<String, dynamic>;
     final rawList = data['recipes'] as List<dynamic>? ?? [];
-    return rawList
+    final recipes = rawList
         .map((r) => GeneratedRecipe.fromJson(r as Map<String, dynamic>))
         .toList();
+    return GeneratedRecipe.sortedByIngredientMatch(recipes);
   }
 
   // ── Save a recipe to saved_recipes ─────────────────────────────────────────

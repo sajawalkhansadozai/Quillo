@@ -19,6 +19,7 @@ class CreateAccountScreen extends StatefulWidget {
 
 class _CreateAccountScreenState extends State<CreateAccountScreen>
     with SingleTickerProviderStateMixin {
+  final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
@@ -45,6 +46,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
 
   @override
   void dispose() {
+    _fullNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -53,10 +55,11 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   }
 
   Future<void> _handleCreate() async {
+    final fullName = _fullNameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirm = _confirmController.text;
-    if (email.isEmpty || password.isEmpty || confirm.isEmpty) {
+    if (fullName.isEmpty || email.isEmpty || password.isEmpty || confirm.isEmpty) {
       _showError('Please fill in all fields.');
       return;
     }
@@ -69,7 +72,11 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       return;
     }
     setState(() => _isLoading = true);
-    final result = await AuthService.signUp(email: email, password: password);
+    final result = await AuthService.signUp(
+      email: email,
+      password: password,
+      fullName: fullName,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.needsEmailVerification) {
@@ -143,10 +150,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     final householdSize = prefs.getInt('onboarding_household_size') ?? 2;
     final dietary = prefs.getStringList('onboarding_dietary') ?? [];
     final cuisines = prefs.getStringList('onboarding_cuisines') ?? [];
-    final email = AuthService.currentUser?.email ?? '';
+    final user = AuthService.currentUser;
+    final email = user?.email ?? '';
+    final fullName = user?.userMetadata?['full_name'] as String? ?? '';
 
     await AuthService.initUserProfile(
       email: email,
+      fullName: fullName,
       gdprConsent: gdprConsent,
       householdSize: householdSize,
       preferredCuisines: cuisines,
@@ -247,6 +257,16 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                             ),
                           ),
                           const SizedBox(height: 24),
+                        const _FieldLabel(label: 'FULL NAME'),
+                        const SizedBox(height: 8),
+                        AuthTextField(
+                          controller: _fullNameController,
+                          hint: 'Your full name',
+                          prefixIcon: Icons.person_outline_rounded,
+                          keyboardType: TextInputType.name,
+                          textCapitalization: TextCapitalization.words,
+                        ),
+                        const SizedBox(height: 16),
                         const _FieldLabel(label: 'EMAIL'),
                         const SizedBox(height: 8),
                         AuthTextField(

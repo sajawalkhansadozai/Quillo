@@ -46,11 +46,15 @@ class AuthService {
   static Future<AuthResult> signUp({
     required String email,
     required String password,
+    String? fullName,
   }) async {
     try {
       final res = await _client.auth.signUp(
         email: email.trim(),
         password: password,
+        data: fullName != null && fullName.isNotEmpty
+            ? {'full_name': fullName}
+            : null,
       );
       if (res.user != null && res.session == null) {
         return AuthResult.verifyEmail();
@@ -198,6 +202,7 @@ class AuthService {
   /// Seeds the users row with email, GDPR consent, and default values.
   static Future<void> initUserProfile({
     required String email,
+    String fullName = '',
     bool gdprConsent = false,
     int householdSize = 2,
     List<String> preferredCuisines = const [],
@@ -208,6 +213,7 @@ class AuthService {
       await _client.from('users').upsert({
         'id': uid,
         'email': email,
+        if (fullName.isNotEmpty) 'full_name': fullName,
         'subscription_status': 'free',
         'scan_streak': 0,
         'household_size': householdSize,

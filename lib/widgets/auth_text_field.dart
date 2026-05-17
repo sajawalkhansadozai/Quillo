@@ -9,6 +9,7 @@ class AuthTextField extends StatefulWidget {
   final IconData? suffixIcon;
   final VoidCallback? onSuffixTap;
   final TextInputType keyboardType;
+  final TextCapitalization textCapitalization;
 
   const AuthTextField({
     super.key,
@@ -19,6 +20,7 @@ class AuthTextField extends StatefulWidget {
     this.suffixIcon,
     this.onSuffixTap,
     this.keyboardType = TextInputType.text,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   @override
@@ -55,6 +57,7 @@ class _AuthTextFieldState extends State<AuthTextField> {
           controller: widget.controller,
           obscureText: widget.obscureText,
           keyboardType: widget.keyboardType,
+          textCapitalization: widget.textCapitalization,
           style: const TextStyle(
             fontSize: 14,
             color: AppColors.textDark,

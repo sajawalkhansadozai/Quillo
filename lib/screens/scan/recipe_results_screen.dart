@@ -25,7 +25,7 @@ class RecipeResultsScreen extends StatefulWidget {
 class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
   final Set<String> _savedIds = {};
   bool _selectAll = false;
-  String _sort = 'Default'; // Default | Quick | Easy | Hard
+  String _sort = 'Best Match'; // Best Match | Quick | Easy | Hard
 
   Future<void> _toggleSave(GeneratedRecipe recipe) async {
     if (recipe.id == null) return;
@@ -55,15 +55,19 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
       case 'Easy':
         list.sort((a, b) {
           const order = {'Easy': 0, 'Medium': 1, 'Hard': 2};
-          return (order[a.difficulty] ?? 1).compareTo(order[b.difficulty] ?? 1);
+          return (order[a.difficultyLabel] ?? 1)
+              .compareTo(order[b.difficultyLabel] ?? 1);
         });
         break;
       case 'Hard':
         list.sort((a, b) {
           const order = {'Easy': 0, 'Medium': 1, 'Hard': 2};
-          return (order[b.difficulty] ?? 1).compareTo(order[a.difficulty] ?? 1);
+          return (order[b.difficultyLabel] ?? 1)
+              .compareTo(order[a.difficultyLabel] ?? 1);
         });
         break;
+      default:
+        list.sort(GeneratedRecipe.compareByIngredientMatch);
     }
     return list;
   }
@@ -162,9 +166,9 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
           GestureDetector(
             onTap: _showSortSheet,
             child: _FilterChip(
-              label: _sort == 'Default' ? 'Sort' : _sort,
+              label: _sort == 'Best Match' ? 'Sort' : _sort,
               icon: Icons.sort_rounded,
-              selected: _sort != 'Default',
+              selected: _sort != 'Best Match',
             ),
           ),
         ],
@@ -178,7 +182,7 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) {
-        final options = ['Default', 'Quick', 'Easy', 'Hard'];
+        final options = ['Best Match', 'Quick', 'Easy', 'Hard'];
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
           child: Column(
@@ -399,7 +403,7 @@ class RecipeListCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       _StatPill(icon: Icons.people_outline_rounded, label: '${recipe.servings} srv'),
                       const SizedBox(width: 8),
-                      _StatPill(icon: Icons.bar_chart_rounded, label: recipe.difficulty),
+                      _StatPill(icon: Icons.bar_chart_rounded, label: recipe.difficultyLabel),
                       const Spacer(),
                       GestureDetector(
                         onTap: onTap,
@@ -424,28 +428,13 @@ class RecipeListCard extends StatelessWidget {
     );
   }
 
-  static String _badgeLabel(GeneratedRecipe r) {
-    final t = r.title.toLowerCase();
-    if (r.cookTimeMinutes <= 20) return 'QUICK';
-    if (t.contains('salad') || t.contains('vegan') || t.contains('avocado')) return 'VEGAN';
-    if (t.contains('chicken') || t.contains('beef') || t.contains('salmon') || t.contains('steak')) return 'DINNER';
-    if (t.contains('egg') || t.contains('pancake') || t.contains('toast') || t.contains('omelette')) return 'BREAKFAST';
-    if (t.contains('cake') || t.contains('dessert') || t.contains('sweet') || t.contains('mousse')) return 'DESSERT';
-    if (t.contains('soup') || t.contains('stew')) return 'LUNCH';
-    return r.difficulty.toUpperCase();
-  }
+  static String _badgeLabel(GeneratedRecipe r) => r.matchLabel.toUpperCase();
 
   static Color _badgeColor(GeneratedRecipe r) {
-    final label = _badgeLabel(r);
-    switch (label) {
-      case 'QUICK': return const Color(0xFF4CAF50);
-      case 'VEGAN': return const Color(0xFF43A047);
-      case 'DINNER': return const Color(0xFF6C63FF);
-      case 'BREAKFAST': return const Color(0xFFFF9800);
-      case 'DESSERT': return const Color(0xFFE91E63);
-      case 'LUNCH': return const Color(0xFF00BCD4);
-      default: return AppColors.primary;
-    }
+    if (r.matchPercent >= 100) return const Color(0xFF4CAF50);
+    if (r.matchPercent >= 80) return AppColors.primary;
+    if (r.matchPercent >= 70) return const Color(0xFFFF9800);
+    return const Color(0xFFE53935);
   }
 
   static String _emojiFor(String title) {

@@ -3,6 +3,9 @@ import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
 import 'preferences_screen.dart';
 
+const _onboardingBg = Color(0xFFF5F6FF);
+const _onboardingGrey = Color(0xFF6B7280);
+
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
   @override
@@ -21,31 +24,36 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       step: 'Step 1 of 5',
       title: 'Scan & ',
       highlight: 'Discover',
-      titleEnd: '\nRecipe',
-      subtitle: 'We turn your grocery list into\nsmart, delicious meal ideas',
+      titleEnd: ' Recipe',
+      subtitle:
+          'We turn your grocery list into smart, delicious meal ideas',
       features: [
-        _Feature('📋', 'Instant scan'),
-        _Feature('✦', 'AI-powered'),
-        _Feature('🍽️', 'Smart meals'),
+        _Feature(Icons.document_scanner_outlined, 'Instant scan'),
+        _Feature(Icons.auto_awesome_outlined, 'AI-powered'),
+        _Feature(Icons.restaurant_outlined, 'Smart meals'),
       ],
+      triangleFeatures: true,
       illustrationAsset: 'assets/onboarding/step1_illustration.png',
       illustrationStyle: _IllustrationStyle.scan,
-      illustrationBg: Color(0xFFEDECFF),
+      figmaIllustration: true,
     ),
     _OnboardingData(
       step: 'Step 2 of 5',
-      title: 'Recipes in\n',
+      title: 'Recipes in',
       highlight: 'Seconds',
-      titleEnd: ' ✨',
-      subtitle: 'Point your camera at any receipt.\nOur AI does the rest instantly',
+      titleEnd: '',
+      titleSparkles: true,
+      subtitle:
+          'Point your camera at any receipt. Our AI does the rest instantly.',
       features: [
-        _Feature('📋', 'Instant scan'),
-        _Feature('✦', 'AI-powered'),
-        _Feature('🍽️', 'Smart meals'),
+        _Feature(Icons.camera_alt_outlined, 'Instant scan'),
+        _Feature(Icons.auto_awesome_outlined, 'AI-powered'),
+        _Feature(Icons.restaurant_outlined, 'Smart meals'),
       ],
+      triangleFeatures: true,
       illustrationAsset: 'assets/onboarding/step2_illustration.png',
       illustrationStyle: _IllustrationStyle.camera,
-      illustrationBg: Color(0xFFEDECFF),
+      figmaIllustration: true,
     ),
     _OnboardingData(
       step: 'Step 3 of 5',
@@ -103,190 +111,173 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final isLast = page.isLast;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnim,
-          child: Column(
-            children: [
-              // ── Illustration area ─────────────────────────────────────
-              Expanded(
-                flex: 52,
-                child: PageView.builder(
-                  controller: _pageController,
-                  onPageChanged: (i) {
-                    setState(() => _currentPage = i);
-                    _animController.reset();
-                    _animController.forward();
-                  },
-                  itemCount: _pages.length,
-                  itemBuilder: (_, i) => _IllustrationArea(data: _pages[i]),
-                ),
-              ),
-
-              // ── Step pill ─────────────────────────────────────────────
-              Container(
-                margin: const EdgeInsets.only(top: 16, bottom: 18),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7, height: 7,
-                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+      backgroundColor: _onboardingBg,
+      body: Stack(
+        children: [
+          Positioned(
+            top: -50,
+            left: -70,
+            child: _Blob(
+              size: 200,
+              color: AppColors.primary.withValues(alpha: 0.08),
+            ),
+          ),
+          Positioned(
+            top: 80,
+            right: -40,
+            child: _Blob(
+              size: 120,
+              color: AppColors.primaryLight.withValues(alpha: 0.7),
+            ),
+          ),
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fadeAnim,
+              child: Column(
+                children: [
+                  Expanded(
+                    flex: 48,
+                    child: PageView.builder(
+                      controller: _pageController,
+                      onPageChanged: (i) {
+                        setState(() => _currentPage = i);
+                        _animController.reset();
+                        _animController.forward();
+                      },
+                      itemCount: _pages.length,
+                      itemBuilder: (_, i) => _IllustrationArea(data: _pages[i]),
                     ),
-                    const SizedBox(width: 6),
-                    Text(page.step,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
-                  ],
-                ),
-              ),
-
-              // ── Text + actions ────────────────────────────────────────
-              Expanded(
-                flex: 48,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Column(
-                    children: [
-                      // Title
-                      RichText(
-                        textAlign: TextAlign.center,
-                        text: TextSpan(
-                          style: const TextStyle(
-                            fontSize: 34, fontWeight: FontWeight.w900,
-                            color: AppColors.textDark, fontFamily: 'Nunito', height: 1.15,
-                          ),
-                          children: [
-                            TextSpan(text: page.title),
-                            TextSpan(text: page.highlight,
-                                style: const TextStyle(color: AppColors.primary)),
-                            TextSpan(text: page.titleEnd),
-                          ],
-                        ),
+                  ),
+                  Container(
+                    margin: const EdgeInsets.only(top: 8, bottom: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '• ${page.step}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                        fontFamily: 'Nunito',
                       ),
-                      const SizedBox(height: 12),
-                      // Subtitle
-                      Text(page.subtitle,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 14, color: AppColors.textMedium, height: 1.6)),
-                      const SizedBox(height: 16),
-                      // Feature chips or stat cards
-                      if (page.features.isNotEmpty)
-                        Wrap(
-                          spacing: 10, runSpacing: 10,
-                          alignment: WrapAlignment.center,
-                          children: page.features.map((f) => _FeatureChip(f)).toList(),
-                        ),
-                      if (page.stats.isNotEmpty)
-                        Row(
-                          children: page.stats
-                              .map((s) => Expanded(child: _StatCard(stat: s)))
-                              .toList(),
-                        ),
-                      const Spacer(),
-                      // CTA button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _nextPage,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18)),
-                          ),
-                          child: Text(
-                            isLast ? '⚡  Start Now' : 'Next  →',
+                    ),
+                  ),
+                  Expanded(
+                    flex: 52,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: Column(
+                        children: [
+                          _OnboardingTitle(data: page),
+                          const SizedBox(height: 12),
+                          Text(
+                            page.subtitle,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w800, fontFamily: 'Nunito'),
-                          ),
-                        ),
-                      ),
-                      // Sign-in link on last page
-                      if (isLast) ...[
-                        const SizedBox(height: 10),
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pushReplacement(
-                            MaterialPageRoute(builder: (_) => const SignInScreen()),
-                          ),
-                          child: RichText(
-                            text: TextSpan(
-                              text: 'Already have an account?  ',
-                              style: const TextStyle(fontSize: 13, color: AppColors.textMedium),
-                              children: [
-                                TextSpan(text: 'Sign in',
-                                    style: const TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                        decoration: TextDecoration.underline)),
-                              ],
+                              fontSize: 15,
+                              color: _onboardingGrey,
+                              height: 1.55,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Nunito',
                             ),
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      // Dots
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          _pages.length,
-                          (i) => _StepDot(active: i == _currentPage),
-                        ),
+                          const SizedBox(height: 18),
+                          if (page.features.isNotEmpty)
+                            page.triangleFeatures
+                                ? _FeatureTriangle(features: page.features)
+                                : Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    alignment: WrapAlignment.center,
+                                    children: page.features
+                                        .map((f) => _FeatureChip(f))
+                                        .toList(),
+                                  ),
+                          if (page.stats.isNotEmpty)
+                            Row(
+                              children: page.stats
+                                  .map(
+                                    (s) => Expanded(child: _StatCard(stat: s)),
+                                  )
+                                  .toList(),
+                            ),
+                          const Spacer(),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: _nextPage,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shadowColor: AppColors.primary.withValues(
+                                  alpha: 0.35,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
+                              ),
+                              child: Text(
+                                isLast ? 'Start Now  →' : 'Next  →',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Nunito',
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (isLast) ...[
+                            const SizedBox(height: 12),
+                            GestureDetector(
+                              onTap: () => Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (_) => const SignInScreen(),
+                                ),
+                              ),
+                              child: RichText(
+                                text: const TextSpan(
+                                  text: 'Already have an account?  ',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: _onboardingGrey,
+                                    fontFamily: 'Nunito',
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: 'Sign in',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              _pages.length,
+                              (i) => _StepDot(active: i == _currentPage),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Illustration area — shows asset image or fallback widget
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _IllustrationArea extends StatelessWidget {
-  final _OnboardingData data;
-  const _IllustrationArea({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      decoration: BoxDecoration(
-        color: data.illustrationBg,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: Stack(
-        children: [
-          // Subtle blobs inside the coloured zone
-          Positioned(
-            top: -30, right: -40,
-            child: _Blob(size: 180, color: Colors.white.withValues(alpha: 0.25)),
-          ),
-          Positioned(
-            bottom: -20, left: -30,
-            child: _Blob(size: 150, color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          // Illustration: asset first, fallback widget if missing
-          Center(
-            child: Image.asset(
-              data.illustrationAsset,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => _FallbackIllustration(style: data.illustrationStyle),
             ),
           ),
         ],
@@ -296,7 +287,230 @@ class _IllustrationArea extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fallback Flutter-drawn illustrations (shown until real assets are provided)
+// Title block
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OnboardingTitle extends StatelessWidget {
+  final _OnboardingData data;
+  const _OnboardingTitle({required this.data});
+
+  static const _titleStyle = TextStyle(
+    fontSize: 34,
+    fontWeight: FontWeight.w900,
+    color: AppColors.textDark,
+    fontFamily: 'Nunito',
+    height: 1.15,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.titleSparkles) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(data.title, textAlign: TextAlign.center, style: _titleStyle),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                data.highlight,
+                style: _titleStyle.copyWith(color: AppColors.primary),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.auto_awesome,
+                size: 22,
+                color: AppColors.textDark,
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.auto_awesome,
+                size: 22,
+                color: AppColors.textDark,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return RichText(
+      textAlign: TextAlign.center,
+      text: TextSpan(
+        style: _titleStyle,
+        children: [
+          TextSpan(text: data.title),
+          TextSpan(
+            text: data.highlight,
+            style: const TextStyle(color: AppColors.primary),
+          ),
+          TextSpan(text: data.titleEnd),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Illustration area
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _IllustrationArea extends StatelessWidget {
+  final _OnboardingData data;
+  const _IllustrationArea({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.figmaIllustration) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              top: 20,
+              left: 30,
+              child: _Blob(
+                size: 140,
+                color: AppColors.primary.withValues(alpha: 0.06),
+              ),
+            ),
+            Positioned(
+              bottom: 10,
+              right: 20,
+              child: _Blob(
+                size: 100,
+                color: AppColors.primaryLight.withValues(alpha: 0.5),
+              ),
+            ),
+            Image.asset(
+              data.illustrationAsset,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) =>
+                  _FallbackIllustration(style: data.illustrationStyle),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      decoration: BoxDecoration(
+        color: data.illustrationBg,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Stack(
+        children: [
+          Positioned(
+            top: -30,
+            right: -40,
+            child: _Blob(
+              size: 180,
+              color: Colors.white.withValues(alpha: 0.25),
+            ),
+          ),
+          Positioned(
+            bottom: -20,
+            left: -30,
+            child: _Blob(
+              size: 150,
+              color: Colors.white.withValues(alpha: 0.18),
+            ),
+          ),
+          Center(
+            child: Image.asset(
+              data.illustrationAsset,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) =>
+                  _FallbackIllustration(style: data.illustrationStyle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature chips — Figma triangle layout (step 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FeatureTriangle extends StatelessWidget {
+  final List<_Feature> features;
+  const _FeatureTriangle({required this.features});
+
+  @override
+  Widget build(BuildContext context) {
+    if (features.length < 3) {
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        alignment: WrapAlignment.center,
+        children: features.map((f) => _FeatureChip(f)).toList(),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: Center(child: _FeatureChip(features[0]))),
+            const SizedBox(width: 12),
+            Expanded(child: Center(child: _FeatureChip(features[1]))),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Center(child: _FeatureChip(features[2])),
+      ],
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  final _Feature feature;
+  const _FeatureChip(this.feature);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(feature.icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Text(
+            feature.label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fallback illustrations
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FallbackIllustration extends StatelessWidget {
@@ -323,103 +537,194 @@ class _ScanIllustration extends StatelessWidget {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Receipt card (tilted left)
         Positioned(
-          top: 30, left: 20,
+          top: 30,
+          left: 20,
           child: Transform.rotate(
             angle: -0.12,
-            child: _ReceiptCard(),
+            child: const _ReceiptCard(),
           ),
         ),
-        // Recipe card (tilted right)
         Positioned(
-          top: 55, right: 20,
+          top: 55,
+          right: 20,
           child: Transform.rotate(
             angle: 0.08,
-            child: _RecipeCard(),
+            child: const _RecipeCard(),
           ),
         ),
-        // Magic circle in center
         Container(
-          width: 56, height: 56,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: AppColors.primary,
             shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 16)],
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35),
+                blurRadius: 16,
+              ),
+            ],
           ),
-          child: const Center(child: Text('✦', style: TextStyle(fontSize: 22, color: Colors.white))),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.auto_fix_high_rounded, color: Colors.white, size: 20),
+              Text(
+                'AI MAGIC',
+                style: TextStyle(
+                  fontSize: 7,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
         ),
-        // Floating food items
-        const Positioned(top: 10, left: 10, child: Text('🌿', style: TextStyle(fontSize: 22))),
-        const Positioned(top: 10, right: 20, child: Text('🫑', style: TextStyle(fontSize: 20))),
-        const Positioned(bottom: 30, left: 15, child: Text('🍑', style: TextStyle(fontSize: 20))),
-        const Positioned(bottom: 35, right: 35, child: Text('🍋', style: TextStyle(fontSize: 18))),
+        const Positioned(
+          top: 10,
+          left: 10,
+          child: Text('🌿', style: TextStyle(fontSize: 22)),
+        ),
+        const Positioned(
+          top: 10,
+          right: 20,
+          child: Text('🫑', style: TextStyle(fontSize: 20)),
+        ),
+        const Positioned(
+          bottom: 30,
+          left: 15,
+          child: Text('🧅', style: TextStyle(fontSize: 20)),
+        ),
+        const Positioned(
+          bottom: 35,
+          right: 35,
+          child: Text('🍋', style: TextStyle(fontSize: 18)),
+        ),
       ],
     );
   }
 }
 
 class _ReceiptCard extends StatelessWidget {
+  const _ReceiptCard();
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 130, height: 155,
+      width: 130,
+      height: 155,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(6)),
-            child: const Text('GROCERY RECEIPT', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-          ),
-          const SizedBox(height: 10),
-          ...List.generate(4, (_) => Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Container(height: 6, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(3))),
-          )),
-          Row(children: [
-            Container(width: 30, height: 6, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(3))),
-            const Spacer(),
-            Container(width: 20, height: 6, decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(3))),
-          ]),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'GROCERY RECEIPT',
+                style: TextStyle(
+                  fontSize: 7,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...List.generate(
+              4,
+              (_) => Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: AppColors.divider,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _RecipeCard extends StatelessWidget {
+  const _RecipeCard();
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 115, height: 100,
+      width: 115,
+      height: 100,
       decoration: BoxDecoration(
         color: const Color(0xFFFFF9E3),
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 14, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(5)),
-            child: const Text('RECIPE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-          ),
-          const SizedBox(height: 8),
-          const Text('🥗🍅', style: TextStyle(fontSize: 24)),
-          const SizedBox(height: 6),
-          Row(children: [
-            const Icon(Icons.timer_outlined, size: 11, color: AppColors.textMedium),
-            const SizedBox(width: 3),
-            const Text('25 min', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMedium)),
-          ]),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: const Text(
+                'RECIPE',
+                style: TextStyle(
+                  fontSize: 7,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text('🥗🍅', style: TextStyle(fontSize: 24)),
+            const SizedBox(height: 6),
+            const Row(
+              children: [
+                Icon(Icons.timer_outlined, size: 11, color: AppColors.textMedium),
+                SizedBox(width: 3),
+                Text(
+                  '25 min',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -431,20 +736,148 @@ class _CameraIllustration extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       alignment: Alignment.center,
+      clipBehavior: Clip.none,
       children: [
+        // Phone frame
         Container(
-          width: 140, height: 140,
+          width: 150,
+          height: 260,
           decoration: BoxDecoration(
-            color: AppColors.accent.withValues(alpha: 0.15),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: AppColors.chipBorder, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          child: const Center(child: Text('📸', style: TextStyle(fontSize: 68))),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E3),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RECIPE',
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text('🥗', style: TextStyle(fontSize: 32)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        Positioned(top: 15, right: 25,
-          child: _FloatChip(color: Colors.white, emoji: '⚡')),
-        Positioned(bottom: 15, left: 25,
-          child: _FloatChip(color: AppColors.primaryLight, emoji: '🤖')),
+        const Positioned(
+          top: 20,
+          left: 0,
+          child: _StatFloatCard(
+            title: 'TIME SAVED',
+            value: '3.2 hrs',
+            subtitle: 'per week',
+            emoji: '⏰',
+          ),
+        ),
+        const Positioned(
+          top: 40,
+          right: 0,
+          child: _StatFloatCard(
+            title: 'MEALS PLANNED',
+            value: '14+',
+            subtitle: 'this month',
+            emoji: '🍽️',
+          ),
+        ),
+        const Positioned(top: 0, left: 50, child: Text('🌽', style: TextStyle(fontSize: 22))),
+        const Positioned(bottom: 20, left: 30, child: Text('🥑', style: TextStyle(fontSize: 22))),
+        const Positioned(top: 10, right: 40, child: Text('🍓', style: TextStyle(fontSize: 20))),
+        const Positioned(bottom: 30, right: 25, child: Text('🫐', style: TextStyle(fontSize: 20))),
       ],
+    );
+  }
+}
+
+class _StatFloatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final String emoji;
+  const _StatFloatCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.emoji,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 110,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 7,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textLight,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(emoji, style: const TextStyle(fontSize: 18)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 9, color: AppColors.textMedium),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -457,35 +890,32 @@ class _StatsIllustration extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         Container(
-          width: 140, height: 140,
+          width: 140,
+          height: 140,
           decoration: BoxDecoration(
             color: AppColors.primary.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
-          child: const Center(child: Text('📊', style: TextStyle(fontSize: 68))),
+          child: const Center(
+            child: Text('📊', style: TextStyle(fontSize: 68)),
+          ),
         ),
-        const Positioned(top: 10, right: 20, child: Text('⏱️', style: TextStyle(fontSize: 28))),
-        const Positioned(bottom: 10, left: 20, child: Text('♻️', style: TextStyle(fontSize: 28))),
-        const Positioned(top: 20, left: 20, child: Text('🥗', style: TextStyle(fontSize: 24))),
+        const Positioned(
+          top: 10,
+          right: 20,
+          child: Text('⏱️', style: TextStyle(fontSize: 28)),
+        ),
+        const Positioned(
+          bottom: 10,
+          left: 20,
+          child: Text('♻️', style: TextStyle(fontSize: 28)),
+        ),
+        const Positioned(
+          top: 20,
+          left: 20,
+          child: Text('🥗', style: TextStyle(fontSize: 24)),
+        ),
       ],
-    );
-  }
-}
-
-class _FloatChip extends StatelessWidget {
-  final Color color;
-  final String emoji;
-  const _FloatChip({required this.color, required this.emoji});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 48, height: 48,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 10)],
-      ),
-      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
     );
   }
 }
@@ -497,46 +927,12 @@ class _Blob extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Feature chip
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FeatureChip extends StatelessWidget {
-  final _Feature feature;
-  const _FeatureChip(this.feature);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.chipBorder),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(feature.emoji, style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 6),
-          Text(feature.label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textDark)),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Step dot indicator
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _StepDot extends StatelessWidget {
   final bool active;
@@ -549,16 +945,12 @@ class _StepDot extends StatelessWidget {
       width: active ? 22 : 8,
       height: 8,
       decoration: BoxDecoration(
-        color: active ? AppColors.primary : AppColors.chipBorder,
+        color: active ? AppColors.primary : const Color(0xFFD1D5DB),
         borderRadius: BorderRadius.circular(4),
       ),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stat card (Step 3)
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final _StatItem stat;
@@ -586,38 +978,46 @@ class _StatCard extends StatelessWidget {
                 TextSpan(
                   text: stat.value,
                   style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w900,
-                      color: AppColors.textDark, fontFamily: 'Nunito'),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textDark,
+                    fontFamily: 'Nunito',
+                  ),
                 ),
                 if (stat.unit.isNotEmpty)
                   TextSpan(
                     text: stat.unit,
                     style: const TextStyle(
-                        fontSize: 12, color: AppColors.textMedium, fontFamily: 'Nunito'),
+                      fontSize: 12,
+                      color: AppColors.textMedium,
+                      fontFamily: 'Nunito',
+                    ),
                   ),
               ],
             ),
           ),
           const SizedBox(height: 3),
-          Text(stat.label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 10, color: AppColors.textLight, height: 1.3)),
+          Text(
+            stat.label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppColors.textLight,
+              height: 1.3,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Data models
-// ─────────────────────────────────────────────────────────────────────────────
-
 enum _IllustrationStyle { scan, camera, stats }
 
 class _Feature {
-  final String emoji;
+  final IconData icon;
   final String label;
-  const _Feature(this.emoji, this.label);
+  const _Feature(this.icon, this.label);
 }
 
 class _StatItem {
@@ -639,6 +1039,9 @@ class _OnboardingData {
   final String illustrationAsset;
   final _IllustrationStyle illustrationStyle;
   final Color illustrationBg;
+  final bool triangleFeatures;
+  final bool figmaIllustration;
+  final bool titleSparkles;
   final bool isLast;
 
   const _OnboardingData({
@@ -650,8 +1053,11 @@ class _OnboardingData {
     required this.features,
     required this.illustrationAsset,
     required this.illustrationStyle,
-    required this.illustrationBg,
     this.stats = const [],
+    this.illustrationBg = _onboardingBg,
+    this.triangleFeatures = false,
+    this.figmaIllustration = false,
+    this.titleSparkles = false,
     this.isLast = false,
   });
 }

@@ -63,17 +63,19 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           .order('created_at', ascending: false)
           .limit(50);
 
-      final recipes = (data as List)
-          .map<GeneratedRecipe?>((r) {
-            try {
-              return GeneratedRecipe.fromJson(
-                  Map<String, dynamic>.from(r));
-            } catch (_) {
-              return null;
-            }
-          })
-          .whereType<GeneratedRecipe>()
-          .toList();
+      final recipes = GeneratedRecipe.sortedByIngredientMatch(
+        (data as List)
+            .map<GeneratedRecipe?>((r) {
+              try {
+                return GeneratedRecipe.fromJson(
+                    Map<String, dynamic>.from(r));
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<GeneratedRecipe>()
+            .toList(),
+      );
 
       if (mounted) {
         setState(() {

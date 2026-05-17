@@ -81,6 +81,30 @@ class GeneratedRecipe {
     final m = cookTimeMinutes % 60;
     return m == 0 ? '${h}h' : '${h}h ${m}m';
   }
+
+  /// Total ingredients in the recipe (from scan + still needed).
+  int get ingredientCount =>
+      ingredientsUsed.length + missingIngredients.length;
+
+  /// Share of recipe ingredients already covered by the user's scan (0–100).
+  int get matchPercent {
+    if (ingredientCount == 0) return 100;
+    return ((ingredientsUsed.length / ingredientCount) * 100).round();
+  }
+
+  String get matchLabel =>
+      matchPercent >= 100 ? '100% match' : '$matchPercent% match';
+
+  static int compareByIngredientMatch(GeneratedRecipe a, GeneratedRecipe b) =>
+      b.matchPercent.compareTo(a.matchPercent);
+
+  static List<GeneratedRecipe> sortedByIngredientMatch(
+    List<GeneratedRecipe> recipes,
+  ) {
+    final list = List<GeneratedRecipe>.from(recipes);
+    list.sort(compareByIngredientMatch);
+    return list;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

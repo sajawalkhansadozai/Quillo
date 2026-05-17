@@ -5,7 +5,8 @@
 // Saves all 3 to the recipes table.
 //
 // Secrets required (set via Supabase Dashboard → Edge Functions → Secrets):
-//   ANTHROPIC_API_KEY  — your Anthropic / Claude API key
+//   ANTHROPIC_API_KEY     — Anthropic / Claude API key (OCR + recipe generation)
+//   SPOONACULAR_API_KEY   — Spoonacular API key (recipe images only)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
@@ -67,6 +68,10 @@ STRICT RULES:
 5. Vary difficulty: aim for at least one easy, one medium recipe
 6. For missing_ingredients: only include truly essential items not in the available list
 7. Nutrition values are per serving estimates
+8. Vary ingredient coverage across the 3 recipes (list every ingredient in ingredients_used OR missing_ingredients):
+   - Recipe 1: 100% match — missing_ingredients must be []
+   - Recipe 2: ~80–90% match — at most 1–2 essential missing items
+   - Recipe 3: ~70–80% match — 2–4 essential missing items
 
 Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
 [
@@ -94,26 +99,43 @@ Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
 ]`;
 }
 
-// ── Fetch a food image from TheMealDB (free, no API key required) ─────────────
-async function fetchFoodImage(title: string): Promise<string | null> {
-  // Try progressively shorter queries: full title → first 2 words → first word
-  const candidates = [
-    title,
-    title.split(' ').slice(0, 2).join(' '),
-    title.split(' ')[0],
-  ];
+function ingredientMatchPercent(recipe: Record<string, unknown>): number {
+  const used = Array.isArray(recipe.ingredients_used) ? recipe.ingredients_used.length : 0;
+  const missing = Array.isArray(recipe.missing_ingredients) ? recipe.missing_ingredients.length : 0;
+  const total = used + missing;
+  if (total === 0) return 100;
+  return Math.round((used / total) * 100);
+}
 
-  for (const q of candidates) {
+function titleSearchCandidates(title: string): string[] {
+  const words = title.trim().split(/\s+/).filter(Boolean);
+  const candidates = [
+    title.trim(),
+    words.slice(0, 2).join(' '),
+    words[0] ?? '',
+  ].filter((q) => q.length > 0);
+  return [...new Set(candidates)];
+}
+
+// ── Fetch a recipe image from Spoonacular (search by generated title) ─────────
+async function fetchSpoonacularImage(title: string, apiKey: string): Promise<string | null> {
+  for (const query of titleSearchCandidates(title)) {
     try {
-      const res = await fetch(
-        `https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`,
-        { signal: AbortSignal.timeout(4000) },
-      );
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.meals && data.meals.length > 0) {
-        return `${data.meals[0].strMealThumb}/preview`; // /preview = 320px thumbnail
+      const url = new URL('https://api.spoonacular.com/recipes/complexSearch');
+      url.searchParams.set('query', query);
+      url.searchParams.set('number', '1');
+      url.searchParams.set('addRecipeInformation', 'false');
+      url.searchParams.set('apiKey', apiKey);
+
+      const res = await fetch(url.toString(), { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) {
+        if (res.status === 402) console.error('Spoonacular daily point quota exceeded');
+        continue;
       }
+
+      const data = await res.json() as { results?: Array<{ image?: string }> };
+      const image = data.results?.[0]?.image;
+      if (image) return image;
     } catch {
       continue;
     }
@@ -130,10 +152,18 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const spoonacularKey = Deno.env.get('SPOONACULAR_API_KEY');
 
     if (!anthropicKey) {
       return new Response(
         JSON.stringify({ error: 'Anthropic API key not configured. Add ANTHROPIC_API_KEY to Edge Function secrets.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (!spoonacularKey) {
+      return new Response(
+        JSON.stringify({ error: 'Spoonacular API key not configured. Add SPOONACULAR_API_KEY to Edge Function secrets.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -224,11 +254,18 @@ serve(async (req: Request) => {
       );
     }
 
-    // ── Fetch images + save recipes to DB ────────────────────────────────────
+    // Highest ingredient match first (100% → 90% → 80% → …)
+    recipes.sort((a, b) => ingredientMatchPercent(b) - ingredientMatchPercent(a));
+
+    // ── Fetch images (Spoonacular) + save recipes to DB ─────────────────────
+    const imageUrls = await Promise.all(
+      recipes.map((recipe) => fetchSpoonacularImage(recipe.title as string, spoonacularKey)),
+    );
+
     const savedRecipes = [];
-    for (const recipe of recipes) {
-      // Fetch food image concurrently with DB insert
-      const imageUrl = await fetchFoodImage(recipe.title as string);
+    for (let i = 0; i < recipes.length; i++) {
+      const recipe = recipes[i];
+      const imageUrl = imageUrls[i];
 
       const { data: saved, error: saveErr } = await supabase
         .from('recipes')
