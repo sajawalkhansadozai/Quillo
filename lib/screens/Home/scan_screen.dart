@@ -32,6 +32,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // Camera
   CameraController? _cameraCtrl;
   bool _cameraReady = false;
+  bool _flashOn = false;
+  bool _isCapturing = false;
 
   // Scan line animation
   late AnimationController _scanLineCtrl;
@@ -115,14 +117,43 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // ── Shutter: capture from camera ────────────────────────────────────────────
+  // ── Shutter: capture in-place from live preview ─────────────────────────────
 
   Future<void> _onShutter() async {
-    if (_state != _ScanState.idle) return;
+    if (_state != _ScanState.idle || _isCapturing) return;
     if (!await _checkLimit()) return;
-    final file = await ScanService.pickFromCamera();
-    if (file == null) return;
-    await _processScan(file);
+
+    final ctrl = _cameraCtrl;
+    if (ctrl == null || !_cameraReady || !ctrl.value.isInitialized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera is still starting — please wait a moment.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isCapturing = true);
+    try {
+      final file = await ctrl.takePicture();
+      await _processScan(file);
+    } catch (_) {
+      if (mounted) {
+        _showError('Could not capture photo. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
+    }
+  }
+
+  Future<void> _toggleFlash() async {
+    final ctrl = _cameraCtrl;
+    if (ctrl == null || !_cameraReady || !ctrl.value.isInitialized) return;
+    final next = _flashOn ? FlashMode.off : FlashMode.torch;
+    try {
+      await ctrl.setFlashMode(next);
+      if (mounted) setState(() => _flashOn = !_flashOn);
+    } catch (_) {}
   }
 
   // ── Gallery: pick existing photo ────────────────────────────────────────────
@@ -243,6 +274,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       body: Stack(
         children: [
           _CameraBackground(controller: _cameraReady ? _cameraCtrl : null),
+          if (_cameraReady)
+            const Positioned.fill(child: CustomPaint(painter: _GridPainter())),
           SafeArea(
             child: Column(
               children: [
@@ -266,9 +299,12 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _DarkCircleBtn(
-            icon: Icons.arrow_back_ios_new_rounded,
+          _ScanToolbarButton(
             onTap: () => Navigator.of(context).pop(),
+            child: const CustomPaint(
+              size: Size(20, 20),
+              painter: _BackArrowPainter(),
+            ),
           ),
           RichText(
             text: const TextSpan(
@@ -280,11 +316,20 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ),
               children: [
                 TextSpan(text: 'QUILL', style: TextStyle(color: Colors.white)),
-                TextSpan(text: 'O', style: TextStyle(color: Color(0xFF6C63FF))),
+                TextSpan(text: 'O', style: TextStyle(color: Color(0xFFFFC107))),
               ],
             ),
           ),
-          const SizedBox(width: 38),
+          _ScanToolbarButton(
+            onTap: _toggleFlash,
+            active: _flashOn,
+            child: CustomPaint(
+              size: const Size(18, 22),
+              painter: _FlashIconPainter(
+                color: _flashOn ? Colors.white : Colors.white.withValues(alpha: 0.55),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -322,15 +367,29 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           const SizedBox(height: 20),
           if (_state == _ScanState.idle)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
-              child: const Text(
-                'Align receipt within the frame',
-                style: TextStyle(fontSize: 12, color: Colors.white70),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4DA3FF),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Align receipt within the frame',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
               ),
             ),
         ],
@@ -341,11 +400,12 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // ── Bottom bar ──────────────────────────────────────────────────────────────
 
   Widget _buildBottomBar() {
-    final isActive = _state == _ScanState.idle;
+    final isActive = _state == _ScanState.idle && !_isCapturing;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 16, 40, 28),
+      padding: const EdgeInsets.fromLTRB(32, 16, 32, 28),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AnimatedOpacity(
             duration: const Duration(milliseconds: 300),
@@ -356,26 +416,48 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFC107),
+                  color: const Color(0xFFE8DCC8),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.photo_library_outlined,
-                    color: Colors.white, size: 24),
+                child: const Icon(Icons.receipt_long_rounded,
+                    color: Color(0xFF5C5348), size: 26),
               ),
             ),
           ),
           GestureDetector(
-            onTap: _onShutter,
-            child: AnimatedContainer(
+            onTap: isActive ? _onShutter : null,
+            child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  width: 3,
+              opacity: isActive ? 1.0 : 0.45,
+              child: Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    width: 2.5,
+                  ),
+                ),
+                child: Center(
+                  child: Container(
+                    width: 62,
+                    height: 62,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF2A2A38),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -383,23 +465,27 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           AnimatedOpacity(
             duration: const Duration(milliseconds: 300),
             opacity: isActive ? 1.0 : 0.4,
-            child: GestureDetector(
-              onTap: isActive ? _onGallery : null,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                ),
-                child: const Text(
-                  'Library',
-                  style: TextStyle(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.flag_outlined, color: Colors.black, size: 14),
+                  SizedBox(width: 6),
+                  Text(
+                    'AUTO',
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700),
-                ),
+                      color: Colors.black,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -819,15 +905,15 @@ class _ScanLine extends StatelessWidget {
         gradient: const LinearGradient(
           colors: [
             Colors.transparent,
-            Color(0xFF6C63FF),
-            Color(0xFFAA9FFF),
-            Color(0xFF6C63FF),
+            Color(0xFF4DA3FF),
+            Color(0xFF8CC4FF),
+            Color(0xFF4DA3FF),
             Colors.transparent,
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.8),
+            color: const Color(0xFF4DA3FF).withValues(alpha: 0.8),
             blurRadius: 12,
             spreadRadius: 2,
           ),
@@ -885,28 +971,113 @@ class _PulsingDotState extends State<_PulsingDot>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dark circle button
+// Viewfinder grid
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DarkCircleBtn extends StatelessWidget {
-  final IconData icon;
+class _GridPainter extends CustomPainter {
+  const _GridPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 0.5;
+
+    for (var i = 1; i < 3; i++) {
+      final x = size.width * i / 3;
+      final y = size.height * i / 3;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scan toolbar buttons (matches design squircles)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ScanToolbarButton extends StatelessWidget {
   final VoidCallback onTap;
-  const _DarkCircleBtn({required this.icon, required this.onTap});
+  final Widget child;
+  final bool active;
+
+  const _ScanToolbarButton({
+    required this.onTap,
+    required this.child,
+    this.active = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          color: active ? const Color(0xFF35373D) : const Color(0xFF2C2E33),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF3A3D44), width: 1),
         ),
-        child: Icon(icon, size: 16, color: Colors.white),
+        child: Center(child: child),
       ),
     );
   }
+}
+
+class _BackArrowPainter extends CustomPainter {
+  const _BackArrowPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final tip = Offset(cx - 5, cy);
+    canvas.drawLine(Offset(cx + 1, cy - 6), tip, paint);
+    canvas.drawLine(tip, Offset(cx + 1, cy + 6), paint);
+    canvas.drawLine(tip, Offset(cx + 7, cy), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+class _FlashIconPainter extends CustomPainter {
+  final Color color;
+  const _FlashIconPainter({this.color = Colors.white});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final w = size.width;
+    final h = size.height;
+    final path = Path()
+      ..moveTo(w * 0.54, h * 0.08)
+      ..lineTo(w * 0.28, h * 0.52)
+      ..lineTo(w * 0.48, h * 0.52)
+      ..lineTo(w * 0.34, h * 0.94)
+      ..lineTo(w * 0.72, h * 0.38)
+      ..lineTo(w * 0.52, h * 0.38);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FlashIconPainter old) => old.color != color;
 }

@@ -351,7 +351,7 @@ class _PaywallScreenState extends State<PaywallScreen>
             icon: '📅',
             title: 'Yearly',
             subtitle: 'Less than £0.85/week',
-            price: '£43.99',
+            price: '£44.99',
             badgeText: 'SAVE 27%',
             badgeColor: const Color(0xFFE53935),
             isSelected: _selected == _Plan.yearly,

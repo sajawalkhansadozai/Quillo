@@ -1397,7 +1397,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
                 ),
                 Text(
-                  '/mo · or £43.99/yr',
+                  '/mo · or £44.99/yr',
                   style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75), fontFamily: 'Nunito'),
                 ),
                 const Spacer(),
