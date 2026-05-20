@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/generated_recipe.dart';
 import '../../services/recipe_service.dart';
+import '../../services/shopping_list_service.dart';
 import '../../theme/app_theme.dart';
+import '../cooking/cooking_mode_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GeneratedRecipeDetailPage — full-screen detail view matching design reference
@@ -75,6 +77,56 @@ class _GeneratedRecipeDetailPageState
     } else {
       if (mounted) setState(() => _checkingStatus = false);
     }
+  }
+
+  Future<void> _addToShoppingList(GeneratedRecipe recipe) async {
+    try {
+      final hadExisting = recipe.id != null &&
+          (await ShoppingListService.getAll())
+              .any((l) => l.recipeId == recipe.id);
+      await ShoppingListService.saveFromRecipe(recipe);
+      if (!mounted) return;
+      final wasUpdate = hadExisting;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasUpdate
+                ? 'Shopping list updated for "${recipe.title}"'
+                : 'Added "${recipe.title}" to your shopping list',
+          ),
+          backgroundColor: widget.accentColor,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } on StateError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save shopping list. Try again.')),
+      );
+    }
+  }
+
+  void _openCookingMode(GeneratedRecipe recipe, Color color) {
+    if (recipe.steps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This recipe has no cooking steps yet.'),
+        ),
+      );
+      return;
+    }
+    HapticFeedback.lightImpact();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CookingModeScreen(recipe: recipe, accentColor: color),
+      ),
+    );
   }
 
   Future<void> _toggleSave() async {
@@ -269,6 +321,35 @@ class _GeneratedRecipeDetailPageState
                     child: _MissingIngredientsCard(
                       items: recipe.missingIngredients,
                       color: color,
+                      onAddToList: () => _addToShoppingList(recipe),
+                    ),
+                  ),
+                ),
+
+              if (recipe.missingIngredients.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: GestureDetector(
+                      onTap: () => _addToShoppingList(recipe),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: color),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '+ Add to Shopping List',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: color,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -418,7 +499,7 @@ class _GeneratedRecipeDetailPageState
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () => _openCookingMode(recipe, color),
                     child: Container(
                       width: 52,
                       height: 52,
@@ -443,19 +524,7 @@ class _GeneratedRecipeDetailPageState
                   const SizedBox(width: 12),
                   Expanded(
                     child: GestureDetector(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Happy cooking!'),
-                            backgroundColor: color,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        );
-                      },
+                      onTap: () => _openCookingMode(recipe, color),
                       child: Container(
                         height: 52,
                         decoration: BoxDecoration(
@@ -988,8 +1057,12 @@ class _IngredientTile extends StatelessWidget {
 class _MissingIngredientsCard extends StatelessWidget {
   final List<MissingIngredient> items;
   final Color color;
-  const _MissingIngredientsCard(
-      {required this.items, required this.color});
+  final VoidCallback onAddToList;
+  const _MissingIngredientsCard({
+    required this.items,
+    required this.color,
+    required this.onAddToList,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1070,7 +1143,7 @@ class _MissingIngredientsCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               GestureDetector(
-                onTap: () {},
+                onTap: onAddToList,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 12),

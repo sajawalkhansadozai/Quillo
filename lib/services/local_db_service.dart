@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/generated_recipe.dart';
+import '../models/shopping_list.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LocalDbService — SQLite cache for offline saved recipes
@@ -19,17 +20,39 @@ class LocalDbService {
     final dbPath = join(await getDatabasesPath(), 'quillo.db');
     return openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS saved_recipes (
-            id        TEXT PRIMARY KEY,
-            data      TEXT NOT NULL,
-            saved_at  TEXT NOT NULL
-          )
-        ''');
+        await _createSavedRecipesTable(db);
+        await _createShoppingListsTable(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createShoppingListsTable(db);
+        }
       },
     );
+  }
+
+  static Future<void> _createSavedRecipesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS saved_recipes (
+        id        TEXT PRIMARY KEY,
+        data      TEXT NOT NULL,
+        saved_at  TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createShoppingListsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS shopping_lists (
+        id          TEXT PRIMARY KEY,
+        recipe_name TEXT NOT NULL,
+        recipe_id   TEXT,
+        data        TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      )
+    ''');
   }
 
   // ── Upsert a recipe into local cache ────────────────────────────────────────
@@ -102,5 +125,84 @@ class LocalDbService {
   static Future<void> clearAll() async {
     final db = await _database;
     await db.delete('saved_recipes');
+  }
+
+  // ── Shopping lists ──────────────────────────────────────────────────────────
+
+  static Future<void> saveShoppingList(ShoppingList list) async {
+    final db = await _database;
+    await db.insert(
+      'shopping_lists',
+      {
+        'id': list.id,
+        'recipe_name': list.recipeName,
+        'recipe_id': list.recipeId,
+        'data': jsonEncode(list.toJson()),
+        'created_at': list.createdAt.toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<ShoppingList?> findShoppingListByRecipeId(String recipeId) async {
+    try {
+      final db = await _database;
+      final rows = await db.query(
+        'shopping_lists',
+        where: 'recipe_id = ?',
+        whereArgs: [recipeId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return _shoppingListFromRow(rows.first);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<ShoppingList?> loadShoppingList(String id) async {
+    try {
+      final db = await _database;
+      final rows = await db.query(
+        'shopping_lists',
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return _shoppingListFromRow(rows.first);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<ShoppingList>> loadAllShoppingLists() async {
+    try {
+      final db = await _database;
+      final rows = await db.query(
+        'shopping_lists',
+        orderBy: 'created_at DESC',
+      );
+      return rows
+          .map(_shoppingListFromRow)
+          .whereType<ShoppingList>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static ShoppingList? _shoppingListFromRow(Map<String, Object?> row) {
+    try {
+      final json = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+      return ShoppingList.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> deleteShoppingList(String id) async {
+    final db = await _database;
+    await db.delete('shopping_lists', where: 'id = ?', whereArgs: [id]);
   }
 }

@@ -68,7 +68,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       titleEnd: '',
       titleSparkles: true,
       subtitle:
-          'Point your camera at any receipt. Our AI does the rest instantly.',
+          'Point your camera at any receipt. Quillo does the rest instantly.',
       features: _onboardingFeatures,
       triangleFeatures: true,
       illustrationAsset: 'assets/onboarding/step2_illustration.png',
@@ -625,7 +625,7 @@ class _ScanIllustration extends StatelessWidget {
             children: [
               Icon(Icons.auto_fix_high_rounded, color: Colors.white, size: 20),
               Text(
-                'AI MAGIC',
+                'Quillo MAGIC',
                 style: TextStyle(
                   fontSize: 7,
                   fontWeight: FontWeight.w900,

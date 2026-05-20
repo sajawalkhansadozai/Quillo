@@ -687,7 +687,7 @@ class HomeScreenState extends State<HomeScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AI found ${_recentRecipes.length} new recipes',
+                    'Quillo found ${_recentRecipes.length} new recipes',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -989,7 +989,7 @@ class HomeScreenState extends State<HomeScreen>
           ),
           const SizedBox(height: 6),
           const Text(
-            'Scan your first grocery receipt and let\nQUILLO work its AI magic on your meals.',
+            'Scan your first grocery receipt and let\nQUILLO work its magic on your meals.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5),
           ),

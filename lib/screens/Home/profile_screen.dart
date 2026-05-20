@@ -4,21 +4,29 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../models/shopping_list.dart';
 import '../../services/auth_service.dart';
+import '../../services/shopping_list_service.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
 import '../onboarding/preferences_screen.dart';
 import '../paywall_screen.dart';
+import '../shopping/shopping_list_detail_screen.dart';
+import '../../constants/legal_urls.dart';
+import '../../utils/external_link.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class ProfileScreenState extends State<ProfileScreen> {
+
+  void refreshShoppingLists() => _loadShoppingLists();
+
   bool _pushNotifications = true;
 
   // ── Real user data ──────────────────────────────────────────────────────────
@@ -37,6 +45,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _appleConnected = false;
   bool _isEmailLogin = true;
   String _measurementUnit = 'Metric'; // 'Metric' | 'Imperial'
+  List<ShoppingList> _shoppingLists = [];
 
   static const _dietColors = [
     Color(0xFF4CAF50), Color(0xFF5C6BC0), Color(0xFFFF7043),
@@ -53,6 +62,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loadUserData();
     _loadLocalSettings();
+    _loadShoppingLists();
+  }
+
+  Future<void> _loadShoppingLists() async {
+    final lists = await ShoppingListService.getAll();
+    if (mounted) setState(() => _shoppingLists = lists);
+  }
+
+  Future<void> _openShoppingList(ShoppingList list) async {
+    final deleted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ShoppingListDetailScreen(listId: list.id),
+      ),
+    );
+    if (deleted == true || mounted) await _loadShoppingLists();
   }
 
   Future<void> _loadLocalSettings() async {
@@ -920,16 +944,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _launchUrl(String url) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Opening: $url'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
+  Future<void> _launchUrl(String url) => openExternalUrl(context, url);
 
   Future<void> _confirmPauseAccount() async {
     final confirmed = await showDialog<bool>(
@@ -1034,6 +1049,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             SliverToBoxAdapter(child: _buildHeader()),
             SliverToBoxAdapter(child: _buildProfileCard()),
             SliverToBoxAdapter(child: _buildPreferences()),
+            SliverToBoxAdapter(child: _buildShoppingListsSection()),
             SliverToBoxAdapter(child: _buildProCard()),
             SliverToBoxAdapter(child: _buildSettingsSection()),
             SliverToBoxAdapter(child: _buildAccountSection()),
@@ -1421,6 +1437,123 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ── Shopping lists ──────────────────────────────────────────────────────────
+
+  Widget _buildShoppingListsSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionLabel('Shopping Lists'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: _shoppingLists.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.shopping_bag_outlined,
+                              color: AppColors.primary, size: 22),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            'Add ingredients from a recipe to build your shopping list.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMedium.withValues(alpha: 0.9),
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: [
+                      for (int i = 0; i < _shoppingLists.length; i++) ...[
+                        if (i > 0) _SettingDivider(),
+                        GestureDetector(
+                          onTap: () => _openShoppingList(_shoppingLists[i]),
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryLight,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.receipt_long_outlined,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _shoppingLists[i].recipeName,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textDark,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${_shoppingLists[i].totalCount} items · ${_shoppingLists[i].checkedCount} checked',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.textMedium,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right_rounded,
+                                    color: AppColors.textLight, size: 20),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Settings section ────────────────────────────────────────────────────────
 
   Widget _buildSettingsSection() {
@@ -1529,14 +1662,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   badge: _googleConnected ? _ConnectedBadge() : _ConnectBadge(),
                 ),
                 _SettingDivider(),
-                // Apple ID
+                // Apple ID — light tile so black apple asset is visible
                 _AccountRow(
                   iconWidget: Image.asset(
                     'assets/icons/apple.png',
-                    width: 18, height: 18,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.apple_rounded, size: 18, color: Colors.white),
+                    width: 18,
+                    height: 18,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.apple_rounded,
+                      size: 18,
+                      color: AppColors.textDark,
+                    ),
                   ),
-                  iconBg: const Color(0xFF212121),
+                  iconBg: const Color(0xFFF2F2F7),
                   title: 'Apple ID',
                   subtitle: _appleConnected ? shortEmail : 'Not connected',
                   badge: _appleConnected ? _ConnectedBadge() : _ConnectBadge(),
@@ -1604,12 +1742,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(
-                  icon: Icons.article_outlined,
+                  icon: Icons.description_outlined,
                   iconColor: const Color(0xFFFF9800),
-                  title: 'Content Register',
-                  subtitle: 'View terms and privacy policy',
+                  title: 'Terms & Conditions',
+                  subtitle: 'Rules for using Quillo',
                   trailing: '',
-                  onTap: () => _launchUrl('https://quillo.app/terms'),
+                  onTap: () => _launchUrl(LegalUrls.termsAndConditions),
+                ),
+                _SettingDivider(),
+                _SettingArrowRow(
+                  icon: Icons.privacy_tip_outlined,
+                  iconColor: const Color(0xFF6C63FF),
+                  title: 'Privacy Policy',
+                  subtitle: 'How we handle your data',
+                  trailing: '',
+                  onTap: () => _launchUrl(LegalUrls.privacyPolicy),
                 ),
               ],
             ),
