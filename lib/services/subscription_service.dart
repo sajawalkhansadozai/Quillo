@@ -1,48 +1,67 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/iap_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SubscriptionService — RevenueCat integration
-//
-// SETUP REQUIRED (client):
-//   1. Create RevenueCat account at https://app.revenuecat.com
-//   2. Add $5.99/month and $49.99/year products in App Store Connect & Google Play
-//   3. Replace the API keys below with your real RevenueCat public keys
-//   4. Set entitlement identifier to 'premium' in RevenueCat dashboard
+// SubscriptionService — RevenueCat in-app purchases & subscriptions
 // ─────────────────────────────────────────────────────────────────────────────
 
 class SubscriptionService {
-  // ── Replace these with your RevenueCat public API keys ─────────────────────
-  static const String _iosApiKey = 'appl_REPLACE_WITH_YOUR_IOS_KEY';
-  static const String _androidApiKey = 'goog_REPLACE_WITH_YOUR_ANDROID_KEY';
-
-  static const String _premiumEntitlement = 'premium';
-
   static final _client = Supabase.instance.client;
+  static bool _configured = false;
 
-  // ── Configure RevenueCat (call from main.dart) ──────────────────────────────
+  /// Set when [getOfferings] fails or returns no purchasable packages.
+  static String? lastOfferingsError;
 
   static Future<void> configure() async {
-    await Purchases.setLogLevel(LogLevel.error);
+    if (kIsWeb) return;
 
-    final config = Platform.isIOS
-        ? PurchasesConfiguration(_iosApiKey)
-        : PurchasesConfiguration(_androidApiKey);
+    final apiKey = Platform.isIOS
+        ? IapConfig.iosApiKey
+        : IapConfig.androidApiKey;
 
-    await Purchases.configure(config);
+    await Purchases.setLogLevel(kDebugMode ? LogLevel.debug : LogLevel.warn);
 
-    // Set user ID to match Supabase user
+    await Purchases.configure(PurchasesConfiguration(apiKey));
+    _configured = true;
+
+    Purchases.addCustomerInfoUpdateListener(_onCustomerInfoUpdated);
+
     final uid = _client.auth.currentUser?.id;
     if (uid != null) {
       await Purchases.logIn(uid);
     }
   }
 
-  // ── Check if current user is premium ────────────────────────────────────────
+  static void _onCustomerInfoUpdated(CustomerInfo info) {
+    final isPrem =
+        info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
+    _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+  }
+
+  /// Call after every successful sign-in / sign-up.
+  static Future<void> linkUserAfterAuth() async {
+    if (!_configured || kIsWeb) return;
+    try {
+      final uid = _client.auth.currentUser?.id;
+      if (uid == null) return;
+      await Purchases.logIn(uid);
+      await syncOnLaunch();
+    } catch (_) {}
+  }
+
+  /// Call on sign-out.
+  static Future<void> logOut() async {
+    if (!_configured || kIsWeb) return;
+    try {
+      await Purchases.logOut();
+    } catch (_) {}
+  }
 
   static Future<bool> isPremium() async {
-    // Fast path: check local Supabase cache first
     try {
       final uid = _client.auth.currentUser?.id;
       if (uid == null) return false;
@@ -55,85 +74,185 @@ class SubscriptionService {
 
       if (row?['subscription_status'] == 'premium') return true;
 
-      // Also verify with RevenueCat (authoritative)
+      if (!_configured) return false;
+
       final info = await Purchases.getCustomerInfo();
-      return info.entitlements.active.containsKey(_premiumEntitlement);
+      return info.entitlements.active
+          .containsKey(IapConfig.premiumEntitlement);
     } catch (_) {
       return false;
     }
   }
 
-  // ── Get available offerings ──────────────────────────────────────────────────
-
   static Future<Offerings?> getOfferings() async {
+    lastOfferingsError = null;
+    if (!_configured) {
+      lastOfferingsError = 'RevenueCat did not initialise. Restart the app.';
+      return null;
+    }
     try {
-      return await Purchases.getOfferings();
-    } catch (_) {
+      final offerings = await Purchases.getOfferings();
+      final offering = _currentOffering(offerings);
+      if (offering == null) {
+        lastOfferingsError =
+            'No offering is marked Current in RevenueCat, or it has no packages.';
+        return offerings;
+      }
+      if (monthlyPackage(offerings) == null && yearlyPackage(offerings) == null) {
+        final ids = offering.availablePackages
+            .map((p) => p.storeProduct.identifier)
+            .join(', ');
+        lastOfferingsError = ids.isEmpty
+            ? 'App Store did not return subscription products yet. Complete subscription metadata in App Store Connect, link App Store Connect in RevenueCat, and wait up to a few hours after saving.'
+            : 'Could not match monthly/yearly packages. Found: $ids. Expected ${IapConfig.monthlyProductId} and ${IapConfig.yearlyProductId}.';
+      }
+      return offerings;
+    } on PlatformException catch (e) {
+      lastOfferingsError = _offeringsErrorMessage(e);
+      debugPrint('RevenueCat getOfferings failed: ${e.code} ${e.message}');
+      return null;
+    } catch (e) {
+      lastOfferingsError = 'Could not load subscription plans. Please try again.';
+      debugPrint('RevenueCat getOfferings failed: $e');
       return null;
     }
   }
 
-  // ── Purchase a package ───────────────────────────────────────────────────────
+  static String _offeringsErrorMessage(PlatformException e) {
+    final code = e.code;
+    final msg = e.message ?? '';
+    if (code == '23' ||
+        msg.contains('CONFIGURATION') ||
+        msg.contains('could not be fetched from App Store')) {
+      return 'App Store products could not be loaded. Check: subscriptions are not '
+          '"Missing Metadata" in App Store Connect; RevenueCat is linked to App Store '
+          'Connect (API key); product IDs match; Paid Apps agreement is active; test on '
+          'a real iPhone with a Sandbox account (or run from Xcode with Quillo.storekit).';
+    }
+    if (msg.length > 120) return msg.substring(0, 120);
+    return msg.isNotEmpty ? msg : 'Could not load subscription plans.';
+  }
+
+  static String get offeringsUnavailableMessage =>
+      lastOfferingsError ??
+      'Subscription plans are not available yet. Check RevenueCat and App Store Connect, then try again.';
+
+  static const String offeringsSnackBarMessage =
+      'Plans not loaded — see setup steps on this screen.';
+
+  static Offering? _currentOffering(Offerings? offerings) {
+    if (offerings == null) return null;
+    final current = offerings.current;
+    if (current != null && current.availablePackages.isNotEmpty) {
+      return current;
+    }
+    for (final o in offerings.all.values) {
+      if (o.availablePackages.isNotEmpty) return o;
+    }
+    return current;
+  }
+
+  static Package? _packageByProductId(Offering? offering, String productId) {
+    if (offering == null) return null;
+    for (final pkg in offering.availablePackages) {
+      if (pkg.storeProduct.identifier == productId) return pkg;
+    }
+    return null;
+  }
+
+  static Package? monthlyPackage(Offerings? offerings) {
+    final offering = _currentOffering(offerings);
+    return offering?.monthly ??
+        _packageByProductId(offering, IapConfig.monthlyProductId);
+  }
+
+  static Package? yearlyPackage(Offerings? offerings) {
+    final offering = _currentOffering(offerings);
+    return offering?.annual ??
+        _packageByProductId(offering, IapConfig.yearlyProductId);
+  }
 
   static Future<PurchaseResult> purchase(Package package) async {
+    if (!_configured) {
+      return const PurchaseResult(
+        success: false,
+        error: 'Subscriptions are not configured yet. Add RevenueCat API keys.',
+      );
+    }
     try {
       final result = await Purchases.purchase(
         PurchaseParams.package(package),
       );
-      final info = result.customerInfo;
-      final isPrem = info.entitlements.active.containsKey(_premiumEntitlement);
+      final isPrem = result.customerInfo.entitlements.active
+          .containsKey(IapConfig.premiumEntitlement);
       if (isPrem) {
         await _syncStatusToSupabase('premium');
       }
       return PurchaseResult(success: isPrem);
-    } on PurchasesErrorCode catch (e) {
-      if (e == PurchasesErrorCode.purchaseCancelledError) {
-        return PurchaseResult(success: false, cancelled: true);
+    } on PlatformException catch (e) {
+      final code = PurchasesErrorHelper.getErrorCode(e);
+      if (code == PurchasesErrorCode.purchaseCancelledError) {
+        return const PurchaseResult(success: false, cancelled: true);
       }
-      return PurchaseResult(success: false, error: _friendlyError(e));
+      return PurchaseResult(success: false, error: _friendlyError(code));
     } catch (e) {
-      return PurchaseResult(success: false, error: 'Purchase failed. Please try again.');
+      return PurchaseResult(
+        success: false,
+        error: 'Purchase failed. Please try again.',
+      );
     }
   }
 
-  // ── Restore purchases ────────────────────────────────────────────────────────
-
   static Future<PurchaseResult> restorePurchases() async {
+    if (!_configured) {
+      return const PurchaseResult(
+        success: false,
+        error: 'Subscriptions are not configured yet.',
+      );
+    }
     try {
       final info = await Purchases.restorePurchases();
-      final isPrem = info.entitlements.active.containsKey(_premiumEntitlement);
+      final isPrem =
+          info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
       if (isPrem) {
         await _syncStatusToSupabase('premium');
       }
       return PurchaseResult(success: isPrem, restored: true);
     } catch (e) {
-      return PurchaseResult(success: false, error: 'Restore failed. Please try again.');
+      return PurchaseResult(
+        success: false,
+        error: 'Restore failed. Please try again.',
+      );
     }
   }
 
-  // ── Sync on every app launch ─────────────────────────────────────────────────
-
   static Future<void> syncOnLaunch() async {
+    if (!_configured) return;
     try {
       final uid = _client.auth.currentUser?.id;
       if (uid == null) return;
+
       await Purchases.logIn(uid);
       final info = await Purchases.getCustomerInfo();
-      final isPrem = info.entitlements.active.containsKey(_premiumEntitlement);
+      final isPrem =
+          info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
       await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
     } catch (_) {}
   }
-
-  // ── Sync subscription status to Supabase ────────────────────────────────────
 
   static Future<void> _syncStatusToSupabase(String status) async {
     try {
       final uid = _client.auth.currentUser?.id;
       if (uid == null) return;
+
       await _client
           .from('users')
           .update({'subscription_status': status})
           .eq('id', uid);
+
+      if (status == 'premium') {
+        await _client.rpc('set_premium_limit', params: {'p_user_id': uid});
+      }
     } catch (_) {}
   }
 
@@ -145,13 +264,15 @@ class SubscriptionService {
         return 'This product is not available in your region.';
       case PurchasesErrorCode.paymentPendingError:
         return 'Payment is pending approval.';
+      case PurchasesErrorCode.purchaseNotAllowedError:
+        return 'Purchases are not allowed on this device.';
+      case PurchasesErrorCode.configurationError:
+        return 'Store is not configured. Check RevenueCat setup.';
       default:
         return 'Purchase failed. Please try again.';
     }
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class PurchaseResult {
   final bool success;

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import '../config/iap_config.dart';
+import '../constants/legal_urls.dart';
 import '../services/subscription_service.dart';
+import '../utils/external_link.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PaywallScreen — wired to RevenueCat
@@ -20,7 +23,19 @@ class _PaywallScreenState extends State<PaywallScreen>
     with SingleTickerProviderStateMixin {
   _Plan _selected = _Plan.yearly;
   bool _purchasing = false;
+  bool _loadingOfferings = true;
   Offerings? _offerings;
+
+  Package? get _yearlyPkg => SubscriptionService.yearlyPackage(_offerings);
+  Package? get _monthlyPkg => SubscriptionService.monthlyPackage(_offerings);
+
+  bool get _plansUnavailable =>
+      !_loadingOfferings && _yearlyPkg == null && _monthlyPkg == null;
+
+  String get _yearlyPrice =>
+      _yearlyPkg?.storeProduct.priceString ?? '£44.99';
+  String get _monthlyPrice =>
+      _monthlyPkg?.storeProduct.priceString ?? '£4.99';
 
   late AnimationController _heroCtrl;
   late Animation<double> _heroScale;
@@ -48,7 +63,11 @@ class _PaywallScreenState extends State<PaywallScreen>
 
   Future<void> _loadOfferings() async {
     final offerings = await SubscriptionService.getOfferings();
-    if (mounted) setState(() => _offerings = offerings);
+    if (!mounted) return;
+    setState(() {
+      _offerings = offerings;
+      _loadingOfferings = false;
+    });
   }
 
   Future<void> _purchase() async {
@@ -56,20 +75,17 @@ class _PaywallScreenState extends State<PaywallScreen>
     setState(() => _purchasing = true);
 
     try {
-      final offering = _offerings?.current;
-      Package? pkg;
-      if (offering != null) {
-        pkg = _selected == _Plan.yearly
-            ? offering.annual
-            : offering.monthly;
-      }
+      final pkg = _selected == _Plan.yearly ? _yearlyPkg : _monthlyPkg;
 
       if (pkg == null) {
-        // No offerings loaded yet (test keys) — show message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Products not available yet — set up RevenueCat API keys first.'),
+            SnackBar(
+              content: Text(
+                IapConfig.hasValidKeys
+                    ? SubscriptionService.offeringsSnackBarMessage
+                    : 'Add RevenueCat API keys and store products to enable purchases.',
+              ),
             ),
           );
         }
@@ -143,12 +159,15 @@ class _PaywallScreenState extends State<PaywallScreen>
               _buildFeaturesGrid(),
               const SizedBox(height: 28),
               _buildPlanSection(),
+              _buildStoreSetupBanner(),
               const SizedBox(height: 20),
               _buildSocialProof(),
               const SizedBox(height: 24),
               _buildCTA(),
               const SizedBox(height: 14),
               _buildRestore(),
+              const SizedBox(height: 12),
+              _buildLegalLinks(),
               const SizedBox(height: 32),
             ],
           ),
@@ -347,26 +366,96 @@ class _PaywallScreenState extends State<PaywallScreen>
             ),
           ),
           const SizedBox(height: 12),
-          _PlanTile(
-            icon: '📅',
-            title: 'Yearly',
-            subtitle: 'Less than £0.85/week',
-            price: '£44.99',
-            badgeText: 'SAVE 27%',
-            badgeColor: const Color(0xFFE53935),
-            isSelected: _selected == _Plan.yearly,
-            onTap: () => setState(() => _selected = _Plan.yearly),
-          ),
-          const SizedBox(height: 10),
-          _PlanTile(
-            icon: '🔄',
-            title: 'Monthly',
-            subtitle: 'Billed every month, cancel anytime',
-            price: '£4.99',
-            isSelected: _selected == _Plan.monthly,
-            onTap: () => setState(() => _selected = _Plan.monthly),
-          ),
+          if (_loadingOfferings)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: CircularProgressIndicator(color: _amber),
+              ),
+            )
+          else ...[
+            _PlanTile(
+              icon: '📅',
+              title: 'Yearly',
+              subtitle: 'Billed once a year — best value',
+              price: _yearlyPrice,
+              badgeText: 'BEST VALUE',
+              badgeColor: _amber,
+              isSelected: _selected == _Plan.yearly,
+              onTap: () => setState(() => _selected = _Plan.yearly),
+            ),
+            const SizedBox(height: 10),
+            _PlanTile(
+              icon: '🔄',
+              title: 'Monthly',
+              subtitle: 'Billed every month — cancel anytime',
+              price: _monthlyPrice,
+              isSelected: _selected == _Plan.monthly,
+              onTap: () => setState(() => _selected = _Plan.monthly),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildStoreSetupBanner() {
+    if (!_plansUnavailable) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A1520),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE57373).withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Color(0xFFE57373), size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Store setup needed',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Bundle ID is correct (com.example.quillo). Usually this means:\n'
+              '• Subscriptions still show “Missing Metadata” in App Store Connect\n'
+              '• RevenueCat is not linked to App Store Connect (API key)\n'
+              '• Products need time to sync (try again in 1–2 hours)\n'
+              '• Simulator: open ios/Runner.xcworkspace in Xcode → Run\n'
+              '• Or use a real iPhone + Sandbox Apple ID',
+              style: TextStyle(
+                color: _textGrey,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => _loadingOfferings = true);
+                _loadOfferings();
+              },
+              child: const Text(
+                'Retry loading plans',
+                style: TextStyle(color: _amber, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -518,8 +607,8 @@ class _PaywallScreenState extends State<PaywallScreen>
                       ),
                       Text(
                         isYearly
-                            ? 'Start Free Trial'
-                            : 'Upgrade Now · £4.99/mo',
+                            ? 'Subscribe · $_yearlyPrice/yr'
+                            : 'Subscribe · $_monthlyPrice/mo',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
@@ -555,6 +644,29 @@ class _PaywallScreenState extends State<PaywallScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLegalLinks() {
+    Widget link(String label, String url) => GestureDetector(
+          onTap: () => openExternalUrl(context, url),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.35),
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        );
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        link('Terms', LegalUrls.termsAndConditions),
+        Text('  ·  ', style: TextStyle(color: Colors.white.withValues(alpha: 0.2))),
+        link('Privacy', LegalUrls.privacyPolicy),
+      ],
     );
   }
 }

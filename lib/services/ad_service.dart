@@ -1,26 +1,12 @@
 import 'dart:io';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../config/admob_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AdService — Google AdMob initialisation
-//
-// SETUP REQUIRED (client):
-//   iOS:     Replace GADApplicationIdentifier in ios/Runner/Info.plist
-//   Android: Replace com.google.android.gms.ads.APPLICATION_ID in
-//            android/app/src/main/AndroidManifest.xml
-//
-//   Then replace the ad unit IDs below with real ones from your AdMob account.
-//   For testing, the test IDs below work on any device.
+// AdService — Google AdMob (see lib/config/admob_config.dart)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdService {
-  // ── Test IDs (replace with real IDs before publishing) ─────────────────────
-  // iOS test banner unit ID
-  static const String _iosBannerAdUnitId =
-      'ca-app-pub-3940256099942544/2934735716';
-  // Android test banner unit ID
-  static const String _androidBannerAdUnitId =
-      'ca-app-pub-3940256099942544/6300978111';
 
   static bool _initialised = false;
 
@@ -39,7 +25,9 @@ class AdService {
     required void Function(Ad, LoadAdError) onFailed,
   }) {
     // Detect platform at runtime to pick the correct unit ID
-    final unitId = _isIOS ? _iosBannerAdUnitId : _androidBannerAdUnitId;
+    final unitId = _isIOS
+        ? AdMobConfig.iosBannerAdUnitId
+        : AdMobConfig.androidBannerAdUnitId;
     return BannerAd(
       adUnitId: unitId,
       size: AdSize.banner,

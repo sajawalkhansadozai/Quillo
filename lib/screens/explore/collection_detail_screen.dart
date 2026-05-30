@@ -47,7 +47,8 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
       var query = _client
           .from('recipes')
           .select(
-              'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url');
+              'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url, is_public')
+          .eq('is_public', true);
 
       if (widget.quickOnly) {
         // Quick Bites — cook time ≤ 20 minutes

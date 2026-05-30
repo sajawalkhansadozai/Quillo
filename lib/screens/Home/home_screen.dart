@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
@@ -26,14 +28,17 @@ class HomeScreenState extends State<HomeScreen>
 
   final _client = Supabase.instance.client;
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   String _userName = '';
   String? _avatarUrl;
   int _streak = 0;
   List<Map<String, dynamic>> _recentScans = [];
   List<GeneratedRecipe> _recentRecipes = [];
+  List<GeneratedRecipe> _searchResults = [];
   List<GeneratedRecipe> _savedRecipes = [];
   bool _loading = true;
+  bool _searchLoading = false;
   String _selectedCategory = 'All';
   String _searchQuery = '';
   final _categories = ['All', 'Quick', 'Breakfast', 'Lunch', 'Dinner', 'Vegan'];
@@ -45,14 +50,43 @@ class HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 500), vsync: this);
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
-    _searchCtrl.addListener(() {
-      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
-    });
+    _searchCtrl.addListener(_onSearchChanged);
     _loadData();
+  }
+
+  void _onSearchChanged() {
+    final q = _searchCtrl.text.trim();
+    setState(() => _searchQuery = q.toLowerCase());
+    _searchDebounce?.cancel();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _fetchSearchFromSupabase(q);
+    });
+  }
+
+  Future<void> _fetchSearchFromSupabase(String query) async {
+    setState(() => _searchLoading = true);
+    try {
+      final results = await RecipeService.searchRecipes(query: query, limit: 50);
+      if (!mounted || _searchCtrl.text.trim() != query) return;
+      setState(() {
+        _searchResults = results;
+        _searchLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _searchLoading = false);
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _fadeCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -191,11 +225,10 @@ class HomeScreenState extends State<HomeScreen>
     return 'Good evening';
   }
 
+  bool get _isSearching => _searchQuery.isNotEmpty;
+
   List<GeneratedRecipe> get _filtered {
-    var list = _recentRecipes;
-    if (_searchQuery.isNotEmpty) {
-      list = list.where((r) => r.title.toLowerCase().contains(_searchQuery)).toList();
-    }
+    var list = _isSearching ? _searchResults : _recentRecipes;
     if (_selectedCategory == 'All') return list;
     return list.where((r) {
       final t = r.title.toLowerCase();
@@ -301,11 +334,24 @@ class HomeScreenState extends State<HomeScreen>
                 // ── Categories ───────────────────────────────────────────
                 SliverToBoxAdapter(child: _buildCategories()),
 
-                // ── Suggested for You ────────────────────────────────────
+                // ── Suggested for You / Search results ───────────────────
                 SliverToBoxAdapter(
-                  child: _sectionHeader('Suggested for You', 'See all', onTap: () => _goToAllRecipes()),
+                  child: _sectionHeader(
+                    _isSearching ? 'Search results' : 'Suggested for You',
+                    'See all',
+                    onTap: () => _goToAllRecipes(),
+                  ),
                 ),
-                if (_filtered.isEmpty)
+                if (_searchLoading)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: CircularProgressIndicator(color: AppColors.primary),
+                      ),
+                    ),
+                  )
+                else if (_filtered.isEmpty)
                   SliverToBoxAdapter(child: _buildEmptyRecipes())
                 else
                   SliverList(
@@ -314,7 +360,9 @@ class HomeScreenState extends State<HomeScreen>
                         recipe: _filtered[i],
                         onTap: () => _openRecipe(_filtered[i]),
                       ),
-                      childCount: _filtered.length.clamp(0, 6),
+                      childCount: _isSearching
+                          ? _filtered.length
+                          : _filtered.length.clamp(0, 6),
                     ),
                   ),
 
@@ -780,18 +828,27 @@ class HomeScreenState extends State<HomeScreen>
   // ── Empty recipes ────────────────────────────────────────────────────────────
 
   Widget _buildEmptyRecipes() {
+    final searching = _isSearching;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-        child: const Column(children: [
-          Text('🍽️', style: TextStyle(fontSize: 36)),
-          SizedBox(height: 8),
-          Text('No recipes yet', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark)),
-          SizedBox(height: 4),
-          Text('Scan a receipt to get recipes!',
-              textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textMedium)),
+        child: Column(children: [
+          Text(searching ? '🔍' : '🍽️', style: const TextStyle(fontSize: 36)),
+          const SizedBox(height: 8),
+          Text(
+            searching ? 'No recipes found' : 'No recipes yet',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            searching
+                ? 'Try a different search term or category.'
+                : 'Scan a receipt to get recipes!',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: AppColors.textMedium),
+          ),
         ]),
       ),
     );

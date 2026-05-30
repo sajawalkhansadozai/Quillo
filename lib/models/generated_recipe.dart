@@ -14,6 +14,7 @@ class GeneratedRecipe {
   final List<MissingIngredient> missingIngredients;
   final RecipeNutritionData nutrition;
   final String? imageUrl;
+  final bool isPublic;
 
   const GeneratedRecipe({
     this.id,
@@ -26,6 +27,7 @@ class GeneratedRecipe {
     required this.missingIngredients,
     required this.nutrition,
     this.imageUrl,
+    this.isPublic = false,
   });
 
   factory GeneratedRecipe.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,7 @@ class GeneratedRecipe {
         json['nutrition'] as Map<String, dynamic>? ?? {},
       ),
       imageUrl: json['image_url'] as String?,
+      isPublic: json['is_public'] as bool? ?? false,
     );
   }
 
@@ -62,6 +65,7 @@ class GeneratedRecipe {
         'missing_ingredients': missingIngredients.map((i) => i.toJson()).toList(),
         'nutrition': nutrition.toJson(),
         if (imageUrl != null) 'image_url': imageUrl,
+        'is_public': isPublic,
       };
 
   String get difficultyLabel {

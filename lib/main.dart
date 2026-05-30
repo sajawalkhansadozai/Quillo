@@ -32,7 +32,9 @@ Future<void> main() async {
   try {
     await SubscriptionService.configure();
     await SubscriptionService.syncOnLaunch();
-  } catch (_) {}
+  } catch (e, st) {
+    debugPrint('RevenueCat configure failed: $e\n$st');
+  }
 
   runApp(const QuilloApp());
 }

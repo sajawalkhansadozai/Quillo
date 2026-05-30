@@ -33,6 +33,9 @@ class _GeneratedRecipeDetailPageState
 
   bool _isSaved = false;
   bool _checkingStatus = true;
+  bool _isPublic = false;
+  bool _isOwner = false;
+  bool _shareStatusLoading = true;
   int _servings = 2;
   final Set<int> _checkedIngredients = {};
   final ScrollController _scrollController = ScrollController();
@@ -44,6 +47,7 @@ class _GeneratedRecipeDetailPageState
     _servings = widget.recipe.servings;
     _scrollController.addListener(_onScroll);
     _initSavedStatus();
+    _initShareStatus();
   }
 
   @override
@@ -137,6 +141,49 @@ class _GeneratedRecipeDetailPageState
     } else {
       await RecipeService.unsaveRecipe(widget.recipe.id!);
     }
+  }
+
+  Future<void> _initShareStatus() async {
+    if (widget.recipe.id == null) {
+      if (mounted) setState(() => _shareStatusLoading = false);
+      return;
+    }
+    final status = await RecipeService.getRecipeShareStatus(widget.recipe.id!);
+    if (!mounted) return;
+    setState(() {
+      _isOwner = status?.isOwner ?? false;
+      _isPublic = status?.isPublic ?? widget.recipe.isPublic;
+      _shareStatusLoading = false;
+    });
+  }
+
+  Future<void> _toggleShareToExplore(bool value) async {
+    final id = widget.recipe.id;
+    if (id == null || !_isOwner) return;
+
+    setState(() => _isPublic = value);
+    final ok = await RecipeService.setRecipePublic(
+      recipeId: id,
+      isPublic: value,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _isPublic = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not update sharing. Try again.')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? 'Recipe is now on Explore for everyone'
+              : 'Recipe removed from public Explore',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -242,6 +289,9 @@ class _GeneratedRecipeDetailPageState
                   ),
                 ),
               ),
+
+              if (_isOwner && widget.recipe.id != null)
+                SliverToBoxAdapter(child: _buildShareToExploreCard()),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -618,6 +668,56 @@ class _GeneratedRecipeDetailPageState
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildShareToExploreCard() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.chipBorder),
+        ),
+        child: _shareStatusLoading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _isPublic,
+                activeThumbColor: widget.accentColor,
+                onChanged: _toggleShareToExplore,
+                title: const Text(
+                  'Share to Explore',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                subtitle: Text(
+                  _isPublic
+                      ? 'Visible to everyone on Explore'
+                      : 'Hidden from Explore — only you can see it',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textMedium),
+                ),
+                secondary: Icon(
+                  Icons.public_rounded,
+                  color: _isPublic ? widget.accentColor : AppColors.textLight,
+                ),
+              ),
       ),
     );
   }

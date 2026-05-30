@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
+import '../../services/recipe_service.dart';
 import '../scan/recipe_detail_page.dart';
 import '../explore/collection_detail_screen.dart';
+import '../shopping/shopping_lists_screen.dart';
 import 'all_recipes_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,13 +28,16 @@ class _ExploreScreenState extends State<ExploreScreen>
 
   final _client = Supabase.instance.client;
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   String _selectedCategory = 'All';
   static const _baseCategories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
 
   List<GeneratedRecipe> _allRecipes = [];
+  List<GeneratedRecipe> _searchResults = [];
   List<GeneratedRecipe> _filteredRecipes = [];
   bool _loading = true;
+  bool _searchLoading = false;
 
   // User preferences for personalisation
   List<String> _userDietary = [];
@@ -101,11 +108,47 @@ class _ExploreScreenState extends State<ExploreScreen>
         CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
     _loadData();
-    _searchController.addListener(_applyFilters);
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final q = _searchController.text.trim();
+    _searchDebounce?.cancel();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+      });
+      _applyFilters();
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _fetchSearchFromSupabase(q);
+    });
+  }
+
+  Future<void> _fetchSearchFromSupabase(String query) async {
+    setState(() => _searchLoading = true);
+    try {
+      final results =
+          await RecipeService.searchPublicRecipes(query: query, limit: 100);
+      if (!mounted || _searchController.text.trim() != query) return;
+      setState(() {
+        _searchResults = results;
+        _searchLoading = false;
+      });
+      _applyFilters();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _searchLoading = false);
+        _applyFilters();
+      }
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _fadeCtrl.dispose();
     _searchController.dispose();
     super.dispose();
@@ -114,44 +157,31 @@ class _ExploreScreenState extends State<ExploreScreen>
   Future<void> _loadData() async {
     final uid = _client.auth.currentUser?.id;
     try {
-      // Load preferences and recipes in parallel
-      final futures = await Future.wait([
-        _client
-            .from('recipes')
-            .select('id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url')
-            .order('created_at', ascending: false)
-            .limit(100),
-        if (uid != null)
-          _client
+      final recipesFuture = RecipeService.listPublicRecipes(limit: 100);
+      final prefsFuture = uid != null
+          ? _client
               .from('user_preferences')
               .select('dietary_labels')
               .eq('user_id', uid)
-              .maybeSingle(),
-        if (uid != null)
-          _client
+              .maybeSingle()
+          : Future<Map<String, dynamic>?>.value(null);
+      final userFuture = uid != null
+          ? _client
               .from('users')
               .select('preferred_cuisine')
               .eq('id', uid)
-              .maybeSingle(),
+              .maybeSingle()
+          : Future<Map<String, dynamic>?>.value(null);
+
+      final results = await Future.wait([
+        recipesFuture,
+        prefsFuture,
+        userFuture,
       ]);
 
-      final recipeData = futures[0] as List;
-      final prefsRow = uid != null ? futures[1] : null;
-      final userRow = uid != null ? futures[2] : null;
-
-      final recipes = GeneratedRecipe.sortedByIngredientMatch(
-        recipeData
-            .map<GeneratedRecipe?>((r) {
-              try {
-                return GeneratedRecipe.fromJson(
-                    Map<String, dynamic>.from(r as Map));
-              } catch (_) {
-                return null;
-              }
-            })
-            .whereType<GeneratedRecipe>()
-            .toList(),
-      );
+      final recipes = results[0] as List<GeneratedRecipe>;
+      final prefsRow = results[1];
+      final userRow = results[2];
 
       if (mounted) {
         setState(() {
@@ -169,21 +199,18 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   void _applyFilters() {
-    final query = _searchController.text.trim().toLowerCase();
+    final isSearching = _searchController.text.trim().isNotEmpty;
     final featuredId = _featured?.id;
+    final source = isSearching ? _searchResults : _allRecipes;
     setState(() {
-      _filteredRecipes = _allRecipes.where((r) {
-        if (r.id != null && r.id == featuredId) return false;
-        final matchesSearch = query.isEmpty ||
-            r.title.toLowerCase().contains(query) ||
-            r.ingredientsUsed.any(
-                (i) => i.name.toLowerCase().contains(query));
+      _filteredRecipes = source.where((r) {
+        if (!isSearching && r.id != null && r.id == featuredId) return false;
         final cat = _selectedCategory;
         final matchesCategory = cat == 'All' ||
             (cat == 'Quick' && r.cookTimeMinutes <= 20) ||
             r.difficulty.toLowerCase() == cat.toLowerCase() ||
             r.title.toLowerCase().contains(cat.toLowerCase());
-        return matchesSearch && matchesCategory;
+        return matchesCategory;
       }).toList();
       _filteredRecipes.sort(GeneratedRecipe.compareByIngredientMatch);
     });
@@ -274,7 +301,9 @@ class _ExploreScreenState extends State<ExploreScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${_filteredRecipes.length} recipe${_filteredRecipes.length == 1 ? '' : 's'} for "${_searchController.text}"',
+                            _searchLoading
+                                ? 'Searching…'
+                                : '${_filteredRecipes.length} recipe${_filteredRecipes.length == 1 ? '' : 's'} for "${_searchController.text}"',
                             style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -290,7 +319,17 @@ class _ExploreScreenState extends State<ExploreScreen>
                       ),
                     ),
                   ),
-                  if (_filteredRecipes.isEmpty)
+                  if (_searchLoading)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primary),
+                        ),
+                      ),
+                    )
+                  else if (_filteredRecipes.isEmpty)
                     SliverToBoxAdapter(child: _buildEmptySearch())
                   else
                     SliverPadding(
@@ -530,19 +569,33 @@ class _ExploreScreenState extends State<ExploreScreen>
               ],
             ),
           ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
+          GestureDetector(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ShoppingListsScreen(),
+                ),
+              );
+            },
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 8)
-                ]),
-            child: const Icon(Icons.tune_rounded,
-                size: 20, color: AppColors.textDark),
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.shopping_cart_outlined,
+                size: 20,
+                color: AppColors.textDark,
+              ),
+            ),
           ),
         ],
       ),

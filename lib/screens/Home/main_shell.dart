@@ -16,14 +16,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final _homeKey = GlobalKey<HomeScreenState>();
-  final _profileKey = GlobalKey<ProfileScreenState>();
-
   late final List<Widget> _screens = [
     HomeScreen(key: _homeKey, onExploreTap: () => setState(() => _currentIndex = 1)),
     const ExploreScreen(),
     const ScanPlaceholderScreen(),
     const SavedScreen(),
-    ProfileScreen(key: _profileKey),
+    const ProfileScreen(),
   ];
 
   @override
@@ -42,7 +40,6 @@ class _MainShellState extends State<MainShell> {
             return;
           }
           if (i == 0) _homeKey.currentState?.refreshName();
-          if (i == 4) _profileKey.currentState?.refreshShoppingLists();
           setState(() => _currentIndex = i);
         },
       ),

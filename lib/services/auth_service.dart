@@ -3,6 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'subscription_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AuthResult — returned by every auth method
@@ -59,6 +60,9 @@ class AuthService {
       if (res.user != null && res.session == null) {
         return AuthResult.verifyEmail();
       }
+      if (res.session != null) {
+        await SubscriptionService.linkUserAfterAuth();
+      }
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.err(_friendlyError(e.message));
@@ -76,6 +80,7 @@ class AuthService {
         email: email.trim(),
         password: password,
       );
+      await SubscriptionService.linkUserAfterAuth();
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.err(_friendlyError(e.message));
@@ -125,6 +130,7 @@ class AuthService {
         accessToken: accessToken,
       );
 
+      await SubscriptionService.linkUserAfterAuth();
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.err(_friendlyError(e.message));
@@ -132,7 +138,6 @@ class AuthService {
       return AuthResult.err('Google sign-in failed. Please try again.');
     }
   }
-
 
   // ── Apple ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +160,7 @@ class AuthService {
         idToken: idToken,
       );
 
+      await SubscriptionService.linkUserAfterAuth();
       return AuthResult.ok();
     } on SignInWithAppleAuthorizationException catch (e) {
       if (e.code == AuthorizationErrorCode.canceled) {
@@ -171,6 +177,7 @@ class AuthService {
   // ── Sign out ───────────────────────────────────────────────────────────────
 
   static Future<void> signOut() async {
+    await SubscriptionService.logOut();
     await _client.auth.signOut();
   }
 

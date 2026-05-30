@@ -281,6 +281,7 @@ serve(async (req: Request) => {
           missing_ingredients: recipe.missing_ingredients,
           nutrition: recipe.nutrition,
           image_url: imageUrl,
+          is_public: true,
         })
         .select()
         .single();
