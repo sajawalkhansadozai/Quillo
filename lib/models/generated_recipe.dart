@@ -15,6 +15,9 @@ class GeneratedRecipe {
   final RecipeNutritionData nutrition;
   final String? imageUrl;
   final bool isPublic;
+  /// Provider when the recipe is not stored in Supabase yet (e.g. spoonacular).
+  final String? externalSource;
+  final String? externalId;
 
   const GeneratedRecipe({
     this.id,
@@ -28,11 +31,29 @@ class GeneratedRecipe {
     required this.nutrition,
     this.imageUrl,
     this.isPublic = false,
+    this.externalSource,
+    this.externalId,
   });
+
+  bool get isExternal =>
+      externalSource != null &&
+      externalSource!.isNotEmpty &&
+      externalId != null &&
+      externalId!.isNotEmpty;
+
+  /// True when steps are missing or only a source-URL placeholder (e.g. Edamam).
+  bool get needsGeneratedInstructions {
+    if (steps.isEmpty) return true;
+    if (steps.length > 1) return false;
+    final text = steps.first.instruction.toLowerCase();
+    return text.contains('see full instructions at') ||
+        text.contains('follow the linked recipe') ||
+        text.startsWith('http');
+  }
 
   factory GeneratedRecipe.fromJson(Map<String, dynamic> json) {
     return GeneratedRecipe(
-      id: json['id'] as String?,
+      id: json['id']?.toString(),
       title: json['title'] as String? ?? 'Untitled Recipe',
       difficulty: json['difficulty'] as String? ?? 'medium',
       cookTimeMinutes: (json['cook_time_minutes'] as num?)?.toInt() ?? 30,
@@ -51,6 +72,10 @@ class GeneratedRecipe {
       ),
       imageUrl: json['image_url'] as String?,
       isPublic: json['is_public'] as bool? ?? false,
+      externalSource:
+          json['external_source'] as String? ?? json['source'] as String?,
+      externalId:
+          json['external_id']?.toString() ?? json['source_id']?.toString(),
     );
   }
 
@@ -66,7 +91,41 @@ class GeneratedRecipe {
         'nutrition': nutrition.toJson(),
         if (imageUrl != null) 'image_url': imageUrl,
         'is_public': isPublic,
+        if (externalSource != null) 'external_source': externalSource,
+        if (externalId != null) 'external_id': externalId,
       };
+
+  GeneratedRecipe copyWith({
+    String? id,
+    String? title,
+    String? difficulty,
+    int? cookTimeMinutes,
+    int? servings,
+    List<RecipeStep>? steps,
+    List<RecipeIngredientUsed>? ingredientsUsed,
+    List<MissingIngredient>? missingIngredients,
+    RecipeNutritionData? nutrition,
+    String? imageUrl,
+    bool? isPublic,
+    String? externalSource,
+    String? externalId,
+  }) {
+    return GeneratedRecipe(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      difficulty: difficulty ?? this.difficulty,
+      cookTimeMinutes: cookTimeMinutes ?? this.cookTimeMinutes,
+      servings: servings ?? this.servings,
+      steps: steps ?? this.steps,
+      ingredientsUsed: ingredientsUsed ?? this.ingredientsUsed,
+      missingIngredients: missingIngredients ?? this.missingIngredients,
+      nutrition: nutrition ?? this.nutrition,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isPublic: isPublic ?? this.isPublic,
+      externalSource: externalSource ?? this.externalSource,
+      externalId: externalId ?? this.externalId,
+    );
+  }
 
   String get difficultyLabel {
     switch (difficulty.toLowerCase()) {

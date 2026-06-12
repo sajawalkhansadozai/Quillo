@@ -1,3 +1,7 @@
+# Local secrets / import state
+.env
+data/claude_import_state.json
+
 # Miscellaneous
 *.class
 *.log

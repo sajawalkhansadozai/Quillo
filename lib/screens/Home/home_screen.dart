@@ -73,7 +73,7 @@ class HomeScreenState extends State<HomeScreen>
   Future<void> _fetchSearchFromSupabase(String query) async {
     setState(() => _searchLoading = true);
     try {
-      final results = await RecipeService.searchRecipes(query: query, limit: 50);
+      final results = await RecipeService.searchCatalog(query: query, limit: 50);
       if (!mounted || _searchCtrl.text.trim() != query) return;
       setState(() {
         _searchResults = results;

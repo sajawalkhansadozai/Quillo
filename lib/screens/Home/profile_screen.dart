@@ -1,10 +1,12 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
+import '../../services/dev_recipe_seed_service.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
@@ -22,6 +24,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
+  bool _seedingRecipes = false;
 
   // ── Real user data ──────────────────────────────────────────────────────────
   final _client = Supabase.instance.client;
@@ -1016,6 +1019,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() => _isPremium = prem);
   }
 
+  Future<void> _seedRecipesForDev() async {
+    if (!kDebugMode || _seedingRecipes) return;
+    setState(() => _seedingRecipes = true);
+
+    try {
+      final result = await DevRecipeSeedService.seedPublicRecipes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Seed complete: ${result.insertedCount} inserted, ${result.skippedCount} skipped.',
+          ),
+          backgroundColor: AppColors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Seeding failed: $e'),
+          backgroundColor: const Color(0xFFE53935),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _seedingRecipes = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1031,6 +1066,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             SliverToBoxAdapter(child: _buildSettingsSection()),
             SliverToBoxAdapter(child: _buildAccountSection()),
             SliverToBoxAdapter(child: _buildMoreSection()),
+            if (kDebugMode) SliverToBoxAdapter(child: _buildDevToolsSection()),
             SliverToBoxAdapter(child: _buildDangerZone()),
             SliverToBoxAdapter(child: _buildSignOut()),
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -1654,6 +1690,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDevToolsSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionLabel('DEV TOOLS'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                )
+              ],
+            ),
+            child: _SettingArrowRow(
+              icon: Icons.storage_rounded,
+              iconColor: const Color(0xFF6C63FF),
+              title: 'Seed Public Recipes',
+              subtitle: 'Insert starter Explore recipes into Supabase',
+              trailing: _seedingRecipes ? 'Running...' : '',
+              onTap: _seedingRecipes ? null : _seedRecipesForDev,
+            ),
+          ),
+        ],
       ),
     );
   }

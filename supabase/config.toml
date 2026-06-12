@@ -1,0 +1,20 @@
+# Supabase project config (CLI + Edge Functions)
+# https://supabase.com/docs/guides/functions/function-configuration
+
+[functions.search-external-recipes]
+verify_jwt = true
+
+[functions.fetch-external-recipe]
+verify_jwt = true
+
+[functions.sync-bigoven-grocery]
+verify_jwt = true
+
+[functions.generate-recipes]
+verify_jwt = true
+
+[functions.generate-recipe-instructions]
+verify_jwt = true
+
+[functions.ocr-scan]
+verify_jwt = true

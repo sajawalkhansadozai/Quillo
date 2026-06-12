@@ -6,11 +6,13 @@
 //
 // Secrets required (set via Supabase Dashboard → Edge Functions → Secrets):
 //   ANTHROPIC_API_KEY     — Anthropic / Claude API key (OCR + recipe generation)
-//   SPOONACULAR_API_KEY   — Spoonacular API key (recipe images only)
+//   GEMINI_API_KEY        — Gemini 3 Pro Image (Nano Banana Pro) for recipe images
+//   SPOONACULAR_API_KEY   — Optional fallback when Gemini image generation fails
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { fetchGeminiRecipeImageUrl } from '../_shared/gemini_image.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -117,7 +119,35 @@ function titleSearchCandidates(title: string): string[] {
   return [...new Set(candidates)];
 }
 
-// ── Fetch a recipe image from Spoonacular (search by generated title) ─────────
+async function fetchRecipeImage(
+  title: string,
+  ingredientNames: string[],
+  geminiKey: string | undefined,
+  spoonacularKey: string | undefined,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  scanId: string,
+): Promise<string | null> {
+  if (geminiKey) {
+    const url = await fetchGeminiRecipeImageUrl(
+      supabase,
+      title,
+      geminiKey,
+      `generated/${userId}/${scanId}`,
+      ingredientNames,
+    );
+    if (url) return url;
+    console.warn(`Gemini image failed for "${title}", trying Spoonacular fallback`);
+  }
+
+  if (spoonacularKey) {
+    return fetchSpoonacularImage(title, spoonacularKey);
+  }
+
+  return null;
+}
+
+// ── Fetch a recipe image from Spoonacular (fallback) ──────────────────────────
 async function fetchSpoonacularImage(title: string, apiKey: string): Promise<string | null> {
   for (const query of titleSearchCandidates(title)) {
     try {
@@ -152,6 +182,7 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
     const spoonacularKey = Deno.env.get('SPOONACULAR_API_KEY');
 
     if (!anthropicKey) {
@@ -161,9 +192,11 @@ serve(async (req: Request) => {
       );
     }
 
-    if (!spoonacularKey) {
+    if (!geminiKey && !spoonacularKey) {
       return new Response(
-        JSON.stringify({ error: 'Spoonacular API key not configured. Add SPOONACULAR_API_KEY to Edge Function secrets.' }),
+        JSON.stringify({
+          error: 'Recipe image API not configured. Add GEMINI_API_KEY (recommended) or SPOONACULAR_API_KEY to Edge Function secrets.',
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -257,9 +290,22 @@ serve(async (req: Request) => {
     // Highest ingredient match first (100% → 90% → 80% → …)
     recipes.sort((a, b) => ingredientMatchPercent(b) - ingredientMatchPercent(a));
 
-    // ── Fetch images (Spoonacular) + save recipes to DB ─────────────────────
+    // ── Fetch images (Gemini 3 Pro Image, Spoonacular fallback) + save ──────
     const imageUrls = await Promise.all(
-      recipes.map((recipe) => fetchSpoonacularImage(recipe.title as string, spoonacularKey)),
+      recipes.map((recipe) => {
+        const used = Array.isArray(recipe.ingredients_used)
+          ? (recipe.ingredients_used as Array<{ name?: string }>).map((i) => i.name ?? '').filter(Boolean)
+          : [];
+        return fetchRecipeImage(
+          recipe.title as string,
+          used,
+          geminiKey ?? undefined,
+          spoonacularKey ?? undefined,
+          supabase,
+          user_id,
+          scan_id,
+        );
+      }),
     );
 
     const savedRecipes = [];

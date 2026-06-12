@@ -1,0 +1,46 @@
+[
+  {
+    "title": "Shakshuka",
+    "cook_time_minutes": 25,
+    "difficulty": "easy",
+    "servings": 2,
+    "image_url": "https://images.unsplash.com/photo-1590412202350-81b9b67a9f0e?w=800",
+    "source": "curated",
+    "source_id": "shakshuka",
+    "license": "Sample data for Quillo",
+    "ingredients_used": [
+      {"name": "Eggs", "amount": "4"},
+      {"name": "Crushed tomatoes", "amount": "400 g"},
+      {"name": "Onion", "amount": "1 medium"},
+      {"name": "Bell pepper", "amount": "1"},
+      {"name": "Olive oil", "amount": "2 tbsp"}
+    ],
+    "steps": [
+      {"order": 1, "instruction": "Saute onion and pepper in olive oil until soft."},
+      {"order": 2, "instruction": "Add tomatoes and simmer 10 minutes."},
+      {"order": 3, "instruction": "Make wells, crack in eggs, cover until set."}
+    ],
+    "nutrition": {"calories": 320, "protein": 18, "carbs": 22, "fat": 18}
+  },
+  {
+    "title": "Vegetable Fried Rice",
+    "cook_time_minutes": 20,
+    "difficulty": "easy",
+    "servings": 4,
+    "source": "curated",
+    "source_id": "vegetable-fried-rice",
+    "ingredients_used": [
+      {"name": "Cooked rice", "amount": "3 cups"},
+      {"name": "Mixed vegetables", "amount": "2 cups"},
+      {"name": "Soy sauce", "amount": "2 tbsp"},
+      {"name": "Sesame oil", "amount": "1 tsp"},
+      {"name": "Egg", "amount": "2"}
+    ],
+    "steps": [
+      {"order": 1, "instruction": "Scramble eggs in a hot wok, set aside."},
+      {"order": 2, "instruction": "Stir-fry vegetables until tender."},
+      {"order": 3, "instruction": "Add rice, soy sauce, eggs; toss until heated."}
+    ],
+    "nutrition": {"calories": 410, "protein": 12, "carbs": 68, "fat": 10}
+  }
+]

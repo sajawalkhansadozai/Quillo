@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/generated_recipe.dart';
 import '../../services/recipe_service.dart';
+import '../../services/local_db_service.dart';
 import '../../services/shopping_list_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ingredient_visual_icon.dart';
 import '../cooking/cooking_mode_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,9 +35,10 @@ class _GeneratedRecipeDetailPageState
 
   bool _isSaved = false;
   bool _checkingStatus = true;
-  bool _isPublic = false;
-  bool _isOwner = false;
-  bool _shareStatusLoading = true;
+  bool _hydratingExternal = false;
+  bool _generatingInstructions = false;
+  bool _saveInProgress = false;
+  late GeneratedRecipe _recipe;
   int _servings = 2;
   final Set<int> _checkedIngredients = {};
   final ScrollController _scrollController = ScrollController();
@@ -44,10 +47,58 @@ class _GeneratedRecipeDetailPageState
   @override
   void initState() {
     super.initState();
-    _servings = widget.recipe.servings;
+    _recipe = widget.recipe;
+    _servings = _recipe.servings;
     _scrollController.addListener(_onScroll);
     _initSavedStatus();
-    _initShareStatus();
+    if (_needsExternalHydration) {
+      _hydrateExternalRecipe();
+    } else if (_recipe.needsGeneratedInstructions) {
+      _generateInstructionsIfNeeded();
+    }
+  }
+
+  /// Refetch from Edamam only when search did not already persist full recipe data.
+  bool get _needsExternalHydration =>
+      _recipe.externalId != null &&
+      _recipe.externalSource != null &&
+      (_recipe.id == null || _recipe.ingredientsUsed.isEmpty);
+
+  Future<void> _hydrateExternalRecipe() async {
+    final source = _recipe.externalSource;
+    final sourceId = _recipe.externalId;
+    if (source == null || sourceId == null) return;
+
+    setState(() => _hydratingExternal = true);
+    final full = await RecipeService.fetchExternalRecipe(
+      source: source,
+      sourceId: sourceId,
+    );
+    if (!mounted) return;
+
+    if (full != null) {
+      setState(() {
+        _recipe = full;
+        _servings = full.servings;
+        _hydratingExternal = false;
+      });
+      await _initSavedStatus();
+      if (full.needsGeneratedInstructions) {
+        await _generateInstructionsIfNeeded();
+      }
+    } else {
+      setState(() => _hydratingExternal = false);
+      // Search may already have returned enough data to display the recipe.
+      if (_recipe.ingredientsUsed.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load this recipe. Check your connection and try again.'),
+          ),
+        );
+      } else if (_recipe.needsGeneratedInstructions) {
+        await _generateInstructionsIfNeeded();
+      }
+    }
   }
 
   @override
@@ -71,9 +122,26 @@ class _GeneratedRecipeDetailPageState
     );
   }
 
+  Future<void> _generateInstructionsIfNeeded() async {
+    if (!_recipe.needsGeneratedInstructions || _generatingInstructions) return;
+
+    setState(() => _generatingInstructions = true);
+    final steps = await RecipeService.generateInstructions(_recipe);
+    if (!mounted) return;
+
+    if (steps != null && steps.isNotEmpty) {
+      setState(() {
+        _recipe = _recipe.copyWith(steps: steps);
+        _generatingInstructions = false;
+      });
+    } else {
+      setState(() => _generatingInstructions = false);
+    }
+  }
+
   Future<void> _initSavedStatus() async {
-    if (widget.recipe.id != null) {
-      final saved = await RecipeService.isRecipeSaved(widget.recipe.id!);
+    if (_recipe.id != null) {
+      final saved = await RecipeService.isRecipeSaved(_recipe.id!);
       if (mounted) setState(() {
         _isSaved = saved;
         _checkingStatus = false;
@@ -134,61 +202,70 @@ class _GeneratedRecipeDetailPageState
   }
 
   Future<void> _toggleSave() async {
-    if (widget.recipe.id == null) return;
-    setState(() => _isSaved = !_isSaved);
-    if (_isSaved) {
-      await RecipeService.saveRecipe(widget.recipe);
-    } else {
-      await RecipeService.unsaveRecipe(widget.recipe.id!);
-    }
-  }
+    if (_saveInProgress) return;
 
-  Future<void> _initShareStatus() async {
-    if (widget.recipe.id == null) {
-      if (mounted) setState(() => _shareStatusLoading = false);
-      return;
+    setState(() => _saveInProgress = true);
+    var recipe = _recipe;
+
+    if (recipe.id == null) {
+      final persisted = await RecipeService.ensureRecipePersisted(recipe);
+      if (!mounted) return;
+      if (persisted?.id == null) {
+        setState(() => _saveInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Recipe is still loading. Wait a moment, then try saving again.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      recipe = persisted!;
+      setState(() => _recipe = recipe);
     }
-    final status = await RecipeService.getRecipeShareStatus(widget.recipe.id!);
-    if (!mounted) return;
+
+    final wasSaved = _isSaved;
     setState(() {
-      _isOwner = status?.isOwner ?? false;
-      _isPublic = status?.isPublic ?? widget.recipe.isPublic;
-      _shareStatusLoading = false;
+      _isSaved = !wasSaved;
+      _saveInProgress = false;
     });
-  }
 
-  Future<void> _toggleShareToExplore(bool value) async {
-    final id = widget.recipe.id;
-    if (id == null || !_isOwner) return;
+    final ok = wasSaved
+        ? await RecipeService.unsaveRecipe(recipe.id!)
+        : await RecipeService.saveRecipe(recipe);
 
-    setState(() => _isPublic = value);
-    final ok = await RecipeService.setRecipePublic(
-      recipeId: id,
-      isPublic: value,
-    );
     if (!mounted) return;
+
     if (!ok) {
-      setState(() => _isPublic = !value);
+      setState(() => _isSaved = wasSaved);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not update sharing. Try again.')),
+        const SnackBar(
+          content: Text('Could not update saved recipes. Try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          value
-              ? 'Recipe is now on Explore for everyone'
-              : 'Recipe removed from public Explore',
+
+    if (!wasSaved) {
+      await LocalDbService.cacheRecipe(recipe);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved "${recipe.title}"'),
+          behavior: SnackBarBehavior.floating,
         ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    } else {
+      await LocalDbService.removeRecipe(recipe.id!);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final recipe = widget.recipe;
+    final recipe = _recipe;
     final color = widget.accentColor;
 
     final topInset = MediaQuery.of(context).padding.top;
@@ -197,6 +274,15 @@ class _GeneratedRecipeDetailPageState
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
+          if (_hydratingExternal)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x88FFFFFF),
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              ),
+            ),
           CustomScrollView(
             controller: _scrollController,
             physics: const BouncingScrollPhysics(
@@ -290,9 +376,6 @@ class _GeneratedRecipeDetailPageState
                 ),
               ),
 
-              if (_isOwner && widget.recipe.id != null)
-                SliverToBoxAdapter(child: _buildShareToExploreCard()),
-
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -342,7 +425,7 @@ class _GeneratedRecipeDetailPageState
                     crossAxisCount: 2,
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
-                    childAspectRatio: 2.6,
+                    childAspectRatio: 2.15,
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (ctx, i) => _IngredientTile(
@@ -434,18 +517,32 @@ class _GeneratedRecipeDetailPageState
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) => _StepCard(
-                      step: recipe.steps[i],
-                      accentColor: color,
+              if (_generatingInstructions)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20, 24, 20, 0),
+                    child: Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
                     ),
-                    childCount: recipe.steps.length,
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => _StepCard(
+                        step: recipe.steps[i],
+                        accentColor: color,
+                      ),
+                      childCount: recipe.steps.length,
+                    ),
                   ),
                 ),
-              ),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -668,56 +765,6 @@ class _GeneratedRecipeDetailPageState
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildShareToExploreCard() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.chipBorder),
-        ),
-        child: _shareStatusLoading
-            ? const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              )
-            : SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _isPublic,
-                activeThumbColor: widget.accentColor,
-                onChanged: _toggleShareToExplore,
-                title: const Text(
-                  'Share to Explore',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                subtitle: Text(
-                  _isPublic
-                      ? 'Visible to everyone on Explore'
-                      : 'Hidden from Explore — only you can see it',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textMedium),
-                ),
-                secondary: Icon(
-                  Icons.public_rounded,
-                  color: _isPublic ? widget.accentColor : AppColors.textLight,
-                ),
-              ),
       ),
     );
   }
@@ -1072,8 +1119,8 @@ class _IngredientTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(_emojiFor(item.name), style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 8),
+          IngredientVisualIcon(ingredientName: item.name),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1085,17 +1132,21 @@ class _IngredientTile extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textDark,
+                    height: 1.25,
                   ),
-                  maxLines: 1,
+                  maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  item.amount,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.textMedium,
+                if (item.amount.isNotEmpty)
+                  Text(
+                    item.amount,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textMedium,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
               ],
             ),
           ),
@@ -1121,33 +1172,6 @@ class _IngredientTile extends StatelessWidget {
     );
   }
 
-  static String _emojiFor(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('chicken')) return '🍗';
-    if (n.contains('beef') || n.contains('steak')) return '🥩';
-    if (n.contains('fish') || n.contains('salmon')) return '🐟';
-    if (n.contains('pasta') || n.contains('noodle')) return '🍝';
-    if (n.contains('rice')) return '🍚';
-    if (n.contains('egg')) return '🥚';
-    if (n.contains('milk') || n.contains('cream')) return '🥛';
-    if (n.contains('cheese')) return '🧀';
-    if (n.contains('butter')) return '🧈';
-    if (n.contains('oil') || n.contains('olive')) return '🫙';
-    if (n.contains('garlic') || n.contains('onion')) return '🧅';
-    if (n.contains('tomato')) return '🍅';
-    if (n.contains('lemon') || n.contains('lime')) return '🍋';
-    if (n.contains('salt') || n.contains('pepper') || n.contains('spice')) return '🧂';
-    if (n.contains('herb') || n.contains('basil') || n.contains('parsley')) return '🌿';
-    if (n.contains('mushroom')) return '🍄';
-    if (n.contains('spinach') || n.contains('lettuce')) return '🥬';
-    if (n.contains('carrot')) return '🥕';
-    if (n.contains('potato')) return '🥔';
-    if (n.contains('avocado')) return '🥑';
-    if (n.contains('bread')) return '🍞';
-    if (n.contains('yogurt')) return '🥣';
-    if (n.contains('ginger')) return '🫚';
-    return '🥄';
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

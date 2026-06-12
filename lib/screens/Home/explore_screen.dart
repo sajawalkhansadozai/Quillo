@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
+import '../../config/recipe_search_config.dart';
+import '../../services/local_db_service.dart';
 import '../../services/recipe_service.dart';
 import '../scan/recipe_detail_page.dart';
 import '../explore/collection_detail_screen.dart';
@@ -30,6 +32,9 @@ class _ExploreScreenState extends State<ExploreScreen>
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
 
+  static const _searchDebounceMs = 800;
+  static const _minSearchLength = 2;
+
   String _selectedCategory = 'All';
   static const _baseCategories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
 
@@ -38,6 +43,9 @@ class _ExploreScreenState extends State<ExploreScreen>
   List<GeneratedRecipe> _filteredRecipes = [];
   bool _loading = true;
   bool _searchLoading = false;
+  String? _searchHint;
+  final Set<String> _savedIds = {};
+  final Set<String> _savingIds = {};
 
   // User preferences for personalisation
   List<String> _userDietary = [];
@@ -114,33 +122,77 @@ class _ExploreScreenState extends State<ExploreScreen>
   void _onSearchChanged() {
     final q = _searchController.text.trim();
     _searchDebounce?.cancel();
+
     if (q.isEmpty) {
       setState(() {
         _searchResults = [];
         _searchLoading = false;
+        _searchHint = null;
       });
       _applyFilters();
       return;
     }
-    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-      _fetchSearchFromSupabase(q);
+
+    if (q.length < _minSearchLength) {
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+        _searchHint = null;
+      });
+      _applyFilters();
+      return;
+    }
+
+    // Wait until the user stops typing before calling the API.
+    _searchDebounce = Timer(const Duration(milliseconds: _searchDebounceMs), () {
+      _runSearch(q);
     });
   }
 
-  Future<void> _fetchSearchFromSupabase(String query) async {
-    setState(() => _searchLoading = true);
+  void _submitSearch([String? value]) {
+    _searchDebounce?.cancel();
+    final q = (value ?? _searchController.text).trim();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+        _searchHint = null;
+      });
+      _applyFilters();
+      return;
+    }
+    if (q.length < _minSearchLength) return;
+    _runSearch(q);
+  }
+
+  Future<void> _runSearch(String query) async {
+    setState(() {
+      _searchLoading = true;
+      _searchHint = null;
+    });
     try {
       final results =
-          await RecipeService.searchPublicRecipes(query: query, limit: 100);
+          await RecipeService.searchCatalog(query: query, limit: 100);
       if (!mounted || _searchController.text.trim() != query) return;
       setState(() {
         _searchResults = results;
         _searchLoading = false;
+        if (results.isEmpty) {
+          _searchHint =
+              'No matches for "${_searchController.text.trim()}". '
+              'Provider: ${RecipeSearchConfig.provider}. '
+              'Check API keys in Supabase Edge secrets.';
+        }
       });
       _applyFilters();
-    } catch (_) {
+      await _loadSavedIds();
+    } catch (e) {
+      debugPrint('Explore search error: $e');
       if (mounted) {
-        setState(() => _searchLoading = false);
+        setState(() {
+          _searchLoading = false;
+          _searchHint = 'Search failed. Pull to refresh and try again.';
+        });
         _applyFilters();
       }
     }
@@ -192,11 +244,119 @@ class _ExploreScreenState extends State<ExploreScreen>
         });
         _applyFilters();
       }
+      await _loadSavedIds();
     } catch (e) {
       debugPrint('ExploreScreen error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<void> _loadSavedIds() async {
+    try {
+      final saved = await RecipeService.loadSavedRecipes();
+      if (!mounted) return;
+      setState(() {
+        _savedIds
+          ..clear()
+          ..addAll(saved.map((r) => r.id).whereType<String>());
+      });
+    } catch (_) {}
+  }
+
+  void _replaceRecipeInLists(GeneratedRecipe old, GeneratedRecipe updated) {
+    void patch(List<GeneratedRecipe> list) {
+      final i = list.indexWhere((r) {
+        if (old.id != null && r.id == old.id) return true;
+        if (old.externalId != null &&
+            r.externalId == old.externalId &&
+            r.title == old.title) {
+          return true;
+        }
+        return false;
+      });
+      if (i >= 0) list[i] = updated;
+    }
+
+    patch(_allRecipes);
+    patch(_searchResults);
+    _applyFilters();
+  }
+
+  Future<void> _toggleSave(GeneratedRecipe recipe) async {
+    final trackKey = recipe.id ?? recipe.externalId ?? recipe.title;
+    if (_savingIds.contains(trackKey)) return;
+
+    setState(() => _savingIds.add(trackKey));
+    var r = recipe;
+
+    if (r.id == null) {
+      final persisted = await RecipeService.ensureRecipePersisted(r);
+      if (!mounted) return;
+      if (persisted?.id == null) {
+        setState(() => _savingIds.remove(trackKey));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not save this recipe right now. Check your connection and try again.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      r = persisted!;
+      _replaceRecipeInLists(recipe, r);
+    }
+
+    final id = r.id!;
+    final wasSaved = _savedIds.contains(id);
+    setState(() {
+      if (wasSaved) {
+        _savedIds.remove(id);
+      } else {
+        _savedIds.add(id);
+      }
+    });
+
+    final ok = wasSaved
+        ? await RecipeService.unsaveRecipe(id)
+        : await RecipeService.saveRecipe(r);
+
+    if (!mounted) return;
+    setState(() => _savingIds.remove(trackKey));
+    if (!ok) {
+      setState(() {
+        if (wasSaved) {
+          _savedIds.add(id);
+        } else {
+          _savedIds.remove(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update saved recipes. Try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!wasSaved) {
+      await LocalDbService.cacheRecipe(r);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved "${r.title}"'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      await LocalDbService.removeRecipe(id);
+    }
+  }
+
+  bool _isRecipeSaved(GeneratedRecipe recipe) =>
+      recipe.id != null && _savedIds.contains(recipe.id);
 
   void _applyFilters() {
     final isSearching = _searchController.text.trim().isNotEmpty;
@@ -278,7 +438,10 @@ class _ExploreScreenState extends State<ExploreScreen>
                   child: Padding(
                     padding:
                         const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                    child: _SearchBar(controller: _searchController),
+                    child: _SearchBar(
+                      controller: _searchController,
+                      onSubmitted: _submitSearch,
+                    ),
                   ),
                 ),
 
@@ -310,9 +473,9 @@ class _ExploreScreenState extends State<ExploreScreen>
                                 color: AppColors.textDark),
                           ),
                           if (_filteredRecipes.isNotEmpty)
-                            const Text(
-                              'Tap a recipe to see what ingredients you need',
-                              style: TextStyle(
+                            Text(
+                              RecipeSearchConfig.exploreSearchHint,
+                              style: const TextStyle(
                                   fontSize: 11, color: AppColors.textMedium),
                             ),
                         ],
@@ -344,10 +507,20 @@ class _ExploreScreenState extends State<ExploreScreen>
                           childAspectRatio: 1.35,
                         ),
                         delegate: SliverChildBuilderDelegate(
-                          (ctx, i) => _RecipeCard(
-                            recipe: _filteredRecipes[i],
-                            onTap: () => _openRecipe(_filteredRecipes[i]),
-                          ),
+                          (ctx, i) {
+                            final recipe = _filteredRecipes[i];
+                            return _RecipeCard(
+                              recipe: recipe,
+                              isSaved: _isRecipeSaved(recipe),
+                              isSaving: _savingIds.contains(
+                                recipe.id ??
+                                    recipe.externalId ??
+                                    recipe.title,
+                              ),
+                              onTap: () => _openRecipe(recipe),
+                              onSave: () => _toggleSave(recipe),
+                            );
+                          },
                           childCount: _filteredRecipes.length,
                         ),
                       ),
@@ -377,10 +550,20 @@ class _ExploreScreenState extends State<ExploreScreen>
                           childAspectRatio: 1.35,
                         ),
                         delegate: SliverChildBuilderDelegate(
-                          (ctx, i) => _RecipeCard(
-                            recipe: _forYouRecipes[i],
-                            onTap: () => _openRecipe(_forYouRecipes[i]),
-                          ),
+                          (ctx, i) {
+                            final recipe = _forYouRecipes[i];
+                            return _RecipeCard(
+                              recipe: recipe,
+                              isSaved: _isRecipeSaved(recipe),
+                              isSaving: _savingIds.contains(
+                                recipe.id ??
+                                    recipe.externalId ??
+                                    recipe.title,
+                              ),
+                              onTap: () => _openRecipe(recipe),
+                              onSave: () => _toggleSave(recipe),
+                            );
+                          },
                           childCount: _forYouRecipes.length > 6
                               ? 6
                               : _forYouRecipes.length,
@@ -484,10 +667,20 @@ class _ExploreScreenState extends State<ExploreScreen>
                           childAspectRatio: 1.35,
                         ),
                         delegate: SliverChildBuilderDelegate(
-                          (ctx, i) => _RecipeCard(
-                            recipe: _filteredRecipes[i],
-                            onTap: () => _openRecipe(_filteredRecipes[i]),
-                          ),
+                          (ctx, i) {
+                            final recipe = _filteredRecipes[i];
+                            return _RecipeCard(
+                              recipe: recipe,
+                              isSaved: _isRecipeSaved(recipe),
+                              isSaving: _savingIds.contains(
+                                recipe.id ??
+                                    recipe.externalId ??
+                                    recipe.title,
+                              ),
+                              onTap: () => _openRecipe(recipe),
+                              onSave: () => _toggleSave(recipe),
+                            );
+                          },
                           childCount: _filteredRecipes.length > 6
                               ? 6
                               : _filteredRecipes.length,
@@ -516,10 +709,15 @@ class _ExploreScreenState extends State<ExploreScreen>
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           itemCount: _quickRecipes.length,
-                          itemBuilder: (ctx, i) => _QuickCard(
-                            recipe: _quickRecipes[i],
-                            onTap: () => _openRecipe(_quickRecipes[i]),
-                          ),
+                          itemBuilder: (ctx, i) {
+                            final recipe = _quickRecipes[i];
+                            return _QuickCard(
+                              recipe: recipe,
+                              isSaved: _isRecipeSaved(recipe),
+                              onTap: () => _openRecipe(recipe),
+                              onSave: () => _toggleSave(recipe),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -536,12 +734,14 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   void _openRecipe(GeneratedRecipe recipe) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => GeneratedRecipeDetailPage(
-        recipe: recipe,
-        accentColor: _tagColor(recipe.difficulty),
-      ),
-    ));
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => GeneratedRecipeDetailPage(
+            recipe: recipe,
+            accentColor: _tagColor(recipe.difficulty),
+          ),
+        ))
+        .then((_) => _loadSavedIds());
   }
 
   Widget _buildHeader() {
@@ -684,7 +884,8 @@ class _ExploreScreenState extends State<ExploreScreen>
                   fontFamily: 'Nunito')),
           const SizedBox(height: 6),
           Text(
-            'No results for "$query". Try scanning a receipt with those ingredients — Quillo will generate matching recipes.',
+            _searchHint ??
+                'No results for "$query". Try scanning a receipt with those ingredients — Quillo will generate matching recipes.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5),
           ),
@@ -740,56 +941,68 @@ class _SectionHeader extends StatelessWidget {
 
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
-  const _SearchBar({required this.controller});
+  final ValueChanged<String>? onSubmitted;
+
+  const _SearchBar({
+    required this.controller,
+    this.onSubmitted,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 8)
-          ]),
-      child: Row(
-        children: [
-          const SizedBox(width: 14),
-          const Icon(Icons.search_rounded,
-              color: AppColors.textLight, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              style: const TextStyle(
-                  fontSize: 14, color: AppColors.textDark),
-              decoration: const InputDecoration(
-                hintText: 'Search recipes to plan your shop...',
-                hintStyle: TextStyle(
-                    fontSize: 14, color: AppColors.textLight),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return Container(
+          height: 46,
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8)
+              ]),
+          child: Row(
+            children: [
+              const SizedBox(width: 14),
+              const Icon(Icons.search_rounded,
+                  color: AppColors.textLight, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: onSubmitted,
+                  style: const TextStyle(
+                      fontSize: 14, color: AppColors.textDark),
+                  decoration: const InputDecoration(
+                    hintText: 'Search recipes to plan your shop...',
+                    hintStyle: TextStyle(
+                        fontSize: 14, color: AppColors.textLight),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               ),
-            ),
+              if (controller.text.isNotEmpty)
+                GestureDetector(
+                  onTap: controller.clear,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                        color: AppColors.chipBorder,
+                        shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded,
+                        size: 14, color: AppColors.textMedium),
+                  ),
+                ),
+            ],
           ),
-          if (controller.text.isNotEmpty)
-            GestureDetector(
-              onTap: () => controller.clear(),
-              child: Container(
-                margin: const EdgeInsets.only(right: 8),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                    color: AppColors.chipBorder,
-                    shape: BoxShape.circle),
-                child: const Icon(Icons.close_rounded,
-                    size: 14, color: AppColors.textMedium),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1146,8 +1359,18 @@ class _CollectionCard extends StatelessWidget {
 
 class _RecipeCard extends StatelessWidget {
   final GeneratedRecipe recipe;
+  final bool isSaved;
+  final bool isSaving;
   final VoidCallback onTap;
-  const _RecipeCard({required this.recipe, required this.onTap});
+  final VoidCallback onSave;
+
+  const _RecipeCard({
+    required this.recipe,
+    required this.isSaved,
+    this.isSaving = false,
+    required this.onTap,
+    required this.onSave,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1172,24 +1395,67 @@ class _RecipeCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(14)),
-                child: recipe.imageUrl != null
-                    ? Image.network(
-                        recipe.imageUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: tagColor.withValues(alpha: 0.1),
-                          child: Center(
-                              child: Text(emoji,
-                                  style: const TextStyle(fontSize: 36))),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    recipe.imageUrl != null
+                        ? Image.network(
+                            recipe.imageUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: tagColor.withValues(alpha: 0.1),
+                              child: Center(
+                                  child: Text(emoji,
+                                      style: const TextStyle(fontSize: 36))),
+                            ),
+                          )
+                        : Container(
+                            color: tagColor.withValues(alpha: 0.1),
+                            child: Center(
+                                child: Text(emoji,
+                                    style: const TextStyle(fontSize: 36))),
+                          ),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: GestureDetector(
+                        onTap: isSaving ? null : onSave,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: isSaving
+                              ? const Padding(
+                                  padding: EdgeInsets.all(7),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.primary,
+                                  ),
+                                )
+                              : Icon(
+                                  isSaved
+                                      ? Icons.bookmark_rounded
+                                      : Icons.bookmark_border_rounded,
+                                  size: 16,
+                                  color: isSaved
+                                      ? AppColors.primary
+                                      : AppColors.textLight,
+                                ),
                         ),
-                      )
-                    : Container(
-                        color: tagColor.withValues(alpha: 0.1),
-                        child: Center(
-                            child: Text(emoji,
-                                style: const TextStyle(fontSize: 36))),
                       ),
+                    ),
+                  ],
+                ),
               ),
             ),
             Padding(
@@ -1241,8 +1507,16 @@ class _RecipeCard extends StatelessWidget {
 
 class _QuickCard extends StatelessWidget {
   final GeneratedRecipe recipe;
+  final bool isSaved;
   final VoidCallback onTap;
-  const _QuickCard({required this.recipe, required this.onTap});
+  final VoidCallback onSave;
+
+  const _QuickCard({
+    required this.recipe,
+    required this.isSaved,
+    required this.onTap,
+    required this.onSave,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1262,23 +1536,25 @@ class _QuickCard extends StatelessWidget {
                 blurRadius: 8)
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle),
-              child: Center(
-                  child: Text(emoji,
-                      style: const TextStyle(fontSize: 28))),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(recipe.title,
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      shape: BoxShape.circle),
+                  child: Center(
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 28))),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(recipe.title,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1286,16 +1562,47 @@ class _QuickCard extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textDark)),
+                ),
+                const SizedBox(height: 4),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Icon(Icons.timer_outlined,
+                      size: 10, color: AppColors.textLight),
+                  const SizedBox(width: 2),
+                  Text('${recipe.cookTimeMinutes}m',
+                      style: const TextStyle(
+                          fontSize: 10, color: AppColors.textLight)),
+                ]),
+              ],
             ),
-            const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.timer_outlined,
-                  size: 10, color: AppColors.textLight),
-              const SizedBox(width: 2),
-              Text('${recipe.cookTimeMinutes}m',
-                  style: const TextStyle(
-                      fontSize: 10, color: AppColors.textLight)),
-            ]),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: GestureDetector(
+                onTap: onSave,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    isSaved
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    size: 14,
+                    color:
+                        isSaved ? AppColors.primary : AppColors.textLight,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
