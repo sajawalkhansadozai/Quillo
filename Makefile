@@ -7,8 +7,11 @@ deploy-functions:
 	@# Use CLI login token; a stale SUPABASE_ACCESS_TOKEN in the shell causes 401.
 	@export SUPABASE_ACCESS_TOKEN=$$(cat $$HOME/.supabase/access-token); \
 	$(SUPABASE) functions deploy generate-recipes && \
+	$(SUPABASE) functions deploy list-public-recipes && \
+	$(SUPABASE) functions deploy search-catalog && \
 	$(SUPABASE) functions deploy search-external-recipes && \
 	$(SUPABASE) functions deploy fetch-external-recipe && \
+	$(SUPABASE) functions deploy upgrade-recipe-image && \
 	$(SUPABASE) functions deploy generate-recipe-instructions && \
 	$(SUPABASE) functions deploy sync-bigoven-grocery
 

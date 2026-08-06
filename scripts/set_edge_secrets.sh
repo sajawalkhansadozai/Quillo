@@ -50,6 +50,7 @@ add_secret BIGOVEN_USER_PASSWORD
 add_secret SEED_USER_ID
 add_secret ANTHROPIC_API_KEY
 add_secret GEMINI_API_KEY
+add_secret GEMINI_IMAGE_MODEL
 add_secret GEMINI_IMAGE_MAX_PER_SEARCH
 
 if [[ ${#ARGS[@]} -eq 0 ]]; then

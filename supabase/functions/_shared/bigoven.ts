@@ -104,11 +104,14 @@ export async function searchBigOven(
   query: string,
   apiKey: string,
   limit = 20,
+  offset = 0,
 ): Promise<NormalizedSearchRecipe[]> {
   const rpp = Math.min(Math.max(limit, 1), 25);
+  const page = Math.floor(Math.max(0, offset) / rpp) + 1;
+  const skipInPage = Math.max(0, offset) % rpp;
   const url = new URL('https://api2.bigoven.com/recipes');
-  url.searchParams.set('pg', '1');
-  url.searchParams.set('rpp', String(rpp));
+  url.searchParams.set('pg', String(page));
+  url.searchParams.set('rpp', String(rpp + skipInPage));
   url.searchParams.set('any_kw', query);
   url.searchParams.set('isbookmark', '0');
   url.searchParams.set('api_key', apiKey);
@@ -122,7 +125,8 @@ export async function searchBigOven(
     const data = (await res.json()) as { Results?: Array<Record<string, unknown>> };
     return (data.Results ?? [])
       .map((item) => bigOvenListItemToNormalized(item, query))
-      .filter((r): r is NormalizedSearchRecipe => r != null);
+      .filter((r): r is NormalizedSearchRecipe => r != null)
+      .slice(skipInPage, skipInPage + rpp);
   } catch (err) {
     console.error('BigOven search error:', err);
     return [];

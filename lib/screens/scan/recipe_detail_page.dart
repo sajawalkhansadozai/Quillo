@@ -5,7 +5,13 @@ import '../../services/recipe_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/shopping_list_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/recipe_image_source.dart';
 import '../../widgets/ingredient_visual_icon.dart';
+import '../../widgets/recipe_rating_section.dart';
+import '../../widgets/recipe_rating_badge.dart';
+import '../../widgets/recipe_rating_sheet.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../widgets/ad_banner.dart';
 import '../cooking/cooking_mode_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +46,9 @@ class _GeneratedRecipeDetailPageState
   bool _saveInProgress = false;
   late GeneratedRecipe _recipe;
   int _servings = 2;
+  int _ratingRevision = 0;
+  int? _userRating;
+  bool _userRatingLoading = true;
   final Set<int> _checkedIngredients = {};
   final ScrollController _scrollController = ScrollController();
   double _scrollOffset = 0;
@@ -47,15 +56,49 @@ class _GeneratedRecipeDetailPageState
   @override
   void initState() {
     super.initState();
-    _recipe = widget.recipe;
+    _recipe = _reconcileCookTime(widget.recipe);
     _servings = _recipe.servings;
     _scrollController.addListener(_onScroll);
     _initSavedStatus();
+    _loadUserRating();
     if (_needsExternalHydration) {
       _hydrateExternalRecipe();
-    } else if (_recipe.needsGeneratedInstructions) {
-      _generateInstructionsIfNeeded();
+    } else {
+      if (_needsProviderImageUpgrade) _upgradeProviderImageIfNeeded();
+      if (_recipe.needsGeneratedInstructions) {
+        _generateInstructionsIfNeeded();
+      }
     }
+  }
+
+  Future<void> _loadUserRating() async {
+    final rating = await RecipeRatingService.getRating(_recipe);
+    if (!mounted) return;
+    setState(() {
+      _userRating = rating;
+      _userRatingLoading = false;
+    });
+  }
+
+  void _applyRatingResult(RecipeRatingResult result) {
+    setState(() {
+      _userRating = result.rating;
+      if (result.recipe.id != _recipe.id) {
+        _recipe = result.recipe;
+      }
+      _ratingRevision++;
+    });
+  }
+
+  Future<void> _editRating(GeneratedRecipe recipe, Color color) async {
+    final result = await showRecipeRatingSheet(
+      context,
+      recipe: recipe,
+      accentColor: color,
+      isEdit: true,
+    );
+    if (!mounted || result == null) return;
+    _applyRatingResult(result);
   }
 
   /// Refetch from Edamam only when search did not already persist full recipe data.
@@ -63,6 +106,27 @@ class _GeneratedRecipeDetailPageState
       _recipe.externalId != null &&
       _recipe.externalSource != null &&
       (_recipe.id == null || _recipe.ingredientsUsed.isEmpty);
+
+  /// DB or API rows with provider or legacy AI thumbnails — upgrade via edge function.
+  bool get _needsProviderImageUpgrade {
+    final url = _recipe.imageUrl;
+    if (url == null || url.isEmpty) return false;
+    if (url.contains('/recipe-images/')) return false;
+    return isSupabaseRecipeId(_recipe.id) ||
+        (_recipe.externalSource != null && _recipe.externalId != null);
+  }
+
+  Future<void> _upgradeProviderImageIfNeeded() async {
+    final upgraded = await RecipeService.fetchExternalRecipe(
+      source: _recipe.externalSource,
+      sourceId: _recipe.externalId,
+      recipeId: _recipe.id,
+    );
+    if (!mounted || upgraded == null) return;
+    final newUrl = upgraded.imageUrl;
+    if (newUrl == null || newUrl == _recipe.imageUrl) return;
+    setState(() => _recipe = _recipe.copyWith(imageUrl: newUrl));
+  }
 
   Future<void> _hydrateExternalRecipe() async {
     final source = _recipe.externalSource;
@@ -78,7 +142,7 @@ class _GeneratedRecipeDetailPageState
 
     if (full != null) {
       setState(() {
-        _recipe = full;
+        _recipe = _reconcileCookTime(full);
         _servings = full.servings;
         _hydratingExternal = false;
       });
@@ -122,16 +186,29 @@ class _GeneratedRecipeDetailPageState
     );
   }
 
+  GeneratedRecipe _reconcileCookTime(GeneratedRecipe recipe) {
+    final effective = recipe.effectiveCookTimeMinutes;
+    if (effective != recipe.cookTimeMinutes) {
+      return recipe.copyWith(cookTimeMinutes: effective);
+    }
+    return recipe;
+  }
+
   Future<void> _generateInstructionsIfNeeded() async {
     if (!_recipe.needsGeneratedInstructions || _generatingInstructions) return;
 
     setState(() => _generatingInstructions = true);
-    final steps = await RecipeService.generateInstructions(_recipe);
+    final result = await RecipeService.generateInstructions(_recipe);
     if (!mounted) return;
 
-    if (steps != null && steps.isNotEmpty) {
+    if (result != null && result.steps.isNotEmpty) {
       setState(() {
-        _recipe = _recipe.copyWith(steps: steps);
+        _recipe = _reconcileCookTime(
+          _recipe.copyWith(
+            steps: result.steps,
+            cookTimeMinutes: result.cookTimeMinutes ?? _recipe.cookTimeMinutes,
+          ),
+        );
         _generatingInstructions = false;
       });
     } else {
@@ -184,7 +261,7 @@ class _GeneratedRecipeDetailPageState
     }
   }
 
-  void _openCookingMode(GeneratedRecipe recipe, Color color) {
+  Future<void> _openCookingMode(GeneratedRecipe recipe, Color color) async {
     if (recipe.steps.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -194,11 +271,14 @@ class _GeneratedRecipeDetailPageState
       return;
     }
     HapticFeedback.lightImpact();
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CookingModeScreen(recipe: recipe, accentColor: color),
       ),
     );
+    if (!mounted) return;
+    await _loadUserRating();
+    setState(() => _ratingRevision++);
   }
 
   Future<void> _toggleSave() async {
@@ -266,7 +346,9 @@ class _GeneratedRecipeDetailPageState
   @override
   Widget build(BuildContext context) {
     final recipe = _recipe;
+    final displayRecipe = recipe.scaledToServings(_servings);
     final color = widget.accentColor;
+    final cookMins = recipe.effectiveCookTimeMinutes;
 
     final topInset = MediaQuery.of(context).padding.top;
 
@@ -318,14 +400,14 @@ class _GeneratedRecipeDetailPageState
                           const Icon(Icons.timer_outlined,
                               size: 13, color: AppColors.textMedium),
                           const SizedBox(width: 3),
-                          Text('${recipe.cookTimeMinutes} min total',
+                          Text('$cookMins min total',
                               style: const TextStyle(
                                   fontSize: 12, color: AppColors.textMedium)),
                           const SizedBox(width: 12),
                           const Icon(Icons.people_outline_rounded,
                               size: 13, color: AppColors.textMedium),
                           const SizedBox(width: 3),
-                          Text('${recipe.servings} servings',
+                          Text('$_servings servings',
                               style: const TextStyle(
                                   fontSize: 12, color: AppColors.textMedium)),
                           const SizedBox(width: 12),
@@ -350,7 +432,7 @@ class _GeneratedRecipeDetailPageState
                     children: [
                       _StatBox(
                         asset: _RecipeDetailAssets.cookTime,
-                        value: '${recipe.cookTimeMinutes} min',
+                        value: '$cookMins min',
                         label: 'Cook time',
                       ),
                       const SizedBox(width: 8),
@@ -362,7 +444,7 @@ class _GeneratedRecipeDetailPageState
                       const SizedBox(width: 8),
                       _StatBox(
                         asset: _RecipeDetailAssets.servings,
-                        value: '${recipe.servings}',
+                        value: '$_servings',
                         label: 'Servings',
                       ),
                       const SizedBox(width: 8),
@@ -375,6 +457,50 @@ class _GeneratedRecipeDetailPageState
                   ),
                 ),
               ),
+
+              if (!_userRatingLoading && _userRating == null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: RecipeRatingSection(
+                      key: ValueKey(
+                        'rating:${RecipeRatingService.cacheKeyFor(recipe)}:$_ratingRevision',
+                      ),
+                      recipe: recipe,
+                      accentColor: color,
+                      showCommunitySummary: false,
+                      onRated: _applyRatingResult,
+                    ),
+                  ),
+                )
+              else if (_userRating != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => _editRating(recipe, color),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Change your rating',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -429,7 +555,7 @@ class _GeneratedRecipeDetailPageState
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (ctx, i) => _IngredientTile(
-                      item: recipe.ingredientsUsed[i],
+                      item: displayRecipe.ingredientsUsed[i],
                       checked: _checkedIngredients.contains(i),
                       onCheckChanged: (v) {
                         setState(() {
@@ -441,30 +567,30 @@ class _GeneratedRecipeDetailPageState
                         });
                       },
                     ),
-                    childCount: recipe.ingredientsUsed.length,
+                    childCount: displayRecipe.ingredientsUsed.length,
                   ),
                 ),
               ),
 
               // ── Missing Ingredients ───────────────────────────────────────
-              if (recipe.missingIngredients.isNotEmpty)
+              if (displayRecipe.missingIngredients.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                     child: _MissingIngredientsCard(
-                      items: recipe.missingIngredients,
+                      items: displayRecipe.missingIngredients,
                       color: color,
-                      onAddToList: () => _addToShoppingList(recipe),
+                      onAddToList: () => _addToShoppingList(displayRecipe),
                     ),
                   ),
                 ),
 
-              if (recipe.missingIngredients.isEmpty)
+              if (displayRecipe.missingIngredients.isEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                     child: GestureDetector(
-                      onTap: () => _addToShoppingList(recipe),
+                      onTap: () => _addToShoppingList(displayRecipe),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -604,7 +730,7 @@ class _GeneratedRecipeDetailPageState
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 110)),
+              const SliverToBoxAdapter(child: SizedBox(height: 170)),
             ],
           ),
 
@@ -626,95 +752,104 @@ class _GeneratedRecipeDetailPageState
               ),
             ),
 
-          // ── Sticky bottom CTA ─────────────────────────────────────────────
+          // ── Sticky bottom CTA + free-tier banner (3.3) ────────────────────
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                  20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4))
-                ],
-              ),
-              child: Row(
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    onTap: () => _openCookingMode(recipe, color),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.chipBorder),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.timer_outlined,
-                        color: AppColors.textDark,
-                        size: 22,
-                      ),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 20,
+                            offset: const Offset(0, -4))
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _openCookingMode(recipe, color),
-                      child: Container(
-                        height: 52,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              color,
-                              color.withValues(alpha: 0.72),
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: color.withValues(alpha: 0.35),
-                              blurRadius: 14,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => _openCookingMode(displayRecipe, color),
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
                               color: Colors.white,
-                              size: 18,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.chipBorder),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 8,
+                                ),
+                              ],
                             ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Start Cooking',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                fontFamily: 'Nunito',
+                            child: const Icon(
+                              Icons.timer_outlined,
+                              color: AppColors.textDark,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _openCookingMode(displayRecipe, color),
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    color,
+                                    color.withValues(alpha: 0.72),
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: color.withValues(alpha: 0.35),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.auto_awesome,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Start Cooking',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                      fontFamily: 'Nunito',
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
+                  // Below Start Cooking — free users only (pro hides automatically)
+                  const AdBannerWidget(safeArea: false),
                 ],
               ),
             ),
@@ -787,7 +922,7 @@ class _GeneratedRecipeDetailPageState
                 alignment: Alignment.center,
                 child: recipe.imageUrl != null
                     ? Image.network(
-                        recipe.imageUrl!,
+                        resizedRecipeImageUrl(recipe.imageUrl, width: 900, quality: 75)!,
                         fit: BoxFit.cover,
                         height: _heroHeight,
                         width: double.infinity,
@@ -827,35 +962,12 @@ class _GeneratedRecipeDetailPageState
             Positioned(
               bottom: 14,
               left: 16,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 8,
-                    ),
-                  ],
+              child: RecipeRatingBadge(
+                key: ValueKey(
+                  'hero-rating:${RecipeRatingService.cacheKeyFor(recipe)}:$_ratingRevision',
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.star_rounded,
-                        size: 14, color: Color(0xFFFFB300)),
-                    const SizedBox(width: 4),
-                    Text(
-                      _displayRating(recipe),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ],
-                ),
+                recipe: recipe,
+                accentColor: color,
               ),
             ),
             Positioned(
@@ -912,14 +1024,6 @@ class _GeneratedRecipeDetailPageState
         foreground: AppColors.primary,
       ),
     ];
-  }
-
-  static String _displayRating(GeneratedRecipe recipe) {
-    final score =
-        (4.5 + (recipe.matchPercent.clamp(0, 100) / 100) * 0.4)
-            .toStringAsFixed(1);
-    final reviews = 80 + (recipe.id?.hashCode ?? recipe.title.hashCode).abs() % 200;
-    return '$score ($reviews)';
   }
 
   static List<String> _cuisineTags(String title) {

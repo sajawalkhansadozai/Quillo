@@ -18,6 +18,10 @@ class IapConfig {
   static const String monthlyProductId = 'quillo.premium.monthly';
   static const String yearlyProductId = 'quillo.premium.yearly';
 
+  /// Shown on paywall & profile (matches App Store / Play listing).
+  static const String monthlyDisplayPrice = '£4.99';
+  static const String yearlyDisplayPrice = '£44.99';
+
   static const String _testApiKey = 'test_AvZxqiXTdgpkslvnfRspgAkIyNc';
 
   static const String iosApiKey = String.fromEnvironment(

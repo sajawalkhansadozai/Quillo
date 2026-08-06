@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
 import '../../config/recipe_search_config.dart';
@@ -11,6 +12,11 @@ import '../scan/recipe_detail_page.dart';
 import '../explore/collection_detail_screen.dart';
 import '../shopping/shopping_lists_screen.dart';
 import 'all_recipes_screen.dart';
+import '../../models/user_recipe_preferences.dart';
+import '../../utils/recipe_preference_filter.dart';
+import '../../utils/recipe_image_source.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../widgets/recipe_rating_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ExploreScreen — real recipes from Supabase with search + category filter
@@ -20,16 +26,16 @@ class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
 
   @override
-  State<ExploreScreen> createState() => _ExploreScreenState();
+  State<ExploreScreen> createState() => ExploreScreenState();
 }
 
-class _ExploreScreenState extends State<ExploreScreen>
+class ExploreScreenState extends State<ExploreScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
-  final _client = Supabase.instance.client;
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
 
   static const _searchDebounceMs = 800;
@@ -39,21 +45,29 @@ class _ExploreScreenState extends State<ExploreScreen>
   static const _baseCategories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
 
   List<GeneratedRecipe> _allRecipes = [];
+  List<GeneratedRecipe> _forYouRecipes = [];
   List<GeneratedRecipe> _searchResults = [];
   List<GeneratedRecipe> _filteredRecipes = [];
   bool _loading = true;
   bool _searchLoading = false;
+  bool _searchLoadingMore = false;
+  bool _searchShowSkeleton = false;
+  bool _searchTimedOut = false;
+  bool _searchHasMore = false;
+  int _searchExternalOffset = 0;
   String? _searchHint;
+  Timer? _searchSkeletonTimer;
   final Set<String> _savedIds = {};
   final Set<String> _savingIds = {};
+  final Set<String> _upgradingImageKeys = {};
+  int _imageUpgradeGeneration = 0;
 
   // User preferences for personalisation
-  List<String> _userDietary = [];
-  List<String> _userCuisines = [];
+  UserRecipePreferences _userPrefs = UserRecipePreferences.empty;
 
   List<String> get _categories {
     // Append saved cuisines as extra filter chips
-    final extras = _userCuisines
+    final extras = _userPrefs.cuisines
         .where((c) => !_baseCategories.any(
             (b) => b.toLowerCase() == c.toLowerCase()))
         .toList();
@@ -82,6 +96,7 @@ class _ExploreScreenState extends State<ExploreScreen>
       color: Color(0xFF4CAF50),
       keywords: ['salad', 'vegetable', 'tofu', 'lentil', 'vegan',
                  'mushroom', 'spinach', 'chickpea', 'avocado', 'bean'],
+      vegetarianOnly: true,
     ),
     _CollectionData(
       title: 'Quick Bites',
@@ -127,6 +142,9 @@ class _ExploreScreenState extends State<ExploreScreen>
       setState(() {
         _searchResults = [];
         _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchHasMore = false;
+        _searchExternalOffset = 0;
         _searchHint = null;
       });
       _applyFilters();
@@ -137,6 +155,9 @@ class _ExploreScreenState extends State<ExploreScreen>
       setState(() {
         _searchResults = [];
         _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchHasMore = false;
+        _searchExternalOffset = 0;
         _searchHint = null;
       });
       _applyFilters();
@@ -156,6 +177,9 @@ class _ExploreScreenState extends State<ExploreScreen>
       setState(() {
         _searchResults = [];
         _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchHasMore = false;
+        _searchExternalOffset = 0;
         _searchHint = null;
       });
       _applyFilters();
@@ -165,86 +189,263 @@ class _ExploreScreenState extends State<ExploreScreen>
     _runSearch(q);
   }
 
-  Future<void> _runSearch(String query) async {
+  Future<void> _runSearch(String query, {bool append = false}) async {
+    final generation = ++_imageUpgradeGeneration;
+    _searchSkeletonTimer?.cancel();
     setState(() {
-      _searchLoading = true;
+      if (!append) {
+        _searchLoading = true;
+        _searchShowSkeleton = false;
+        _searchTimedOut = false;
+        _searchExternalOffset = 0;
+        _searchHasMore = false;
+      } else {
+        _searchLoadingMore = true;
+      }
       _searchHint = null;
+      if (!append) _upgradingImageKeys.clear();
     });
+
+    if (!append) {
+      _searchSkeletonTimer = Timer(RecipeSearchConfig.searchSkeletonAfter, () {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        if (_searchLoading) setState(() => _searchShowSkeleton = true);
+      });
+    }
+
     try {
-      final results =
-          await RecipeService.searchCatalog(query: query, limit: 100);
-      if (!mounted || _searchController.text.trim() != query) return;
+      final conn = await Connectivity().checkConnectivity();
+      final online = conn.any((r) => r != ConnectivityResult.none);
+
+      if (!online && !append) {
+        final cached = await LocalDbService.loadSearchCache(query);
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        _searchSkeletonTimer?.cancel();
+        setState(() {
+          _searchResults = cached;
+          _searchLoading = false;
+          _searchShowSkeleton = false;
+          _searchTimedOut = false;
+          _searchHasMore = false;
+          _searchHint = cached.isEmpty
+              ? 'You\'re offline and no cached results for "$query".'
+              : 'Offline — showing cached results for "$query"';
+        });
+        _applyFilters();
+        return;
+      }
+
+      final results = await RecipeService.searchCatalog(
+        query: query,
+        limit: RecipeSearchConfig.exploreSearchLimit,
+        offset: append ? _searchExternalOffset : 0,
+        excludeIds: append
+            ? RecipeService.searchExcludeIds(_searchResults)
+            : const [],
+        preferences: _userPrefs,
+      ).timeout(RecipeSearchConfig.searchTimeout);
+
+      if (!mounted || generation != _imageUpgradeGeneration) return;
+      if (_searchController.text.trim() != query) return;
+      _searchSkeletonTimer?.cancel();
+      final catalogCount = RecipeService.lastCatalogResultCount ?? 0;
+      final externalCount = RecipeService.lastExternalResultCount ?? 0;
+      final pendingUpgrade =
+          results.where(RecipeService.needsGeminiImageUpgrade).length;
+      final warning = RecipeService.lastSearchImageWarning;
       setState(() {
-        _searchResults = results;
+        if (append) {
+          final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
+          final fresh = results.where((recipe) {
+            final keys = RecipeService.searchExcludeIds([recipe]);
+            return keys.every((key) => !seen.contains(key));
+          }).toList();
+          _searchResults = [..._searchResults, ...fresh];
+        } else {
+          _searchResults = results;
+        }
         _searchLoading = false;
-        if (results.isEmpty) {
-          _searchHint =
-              'No matches for "${_searchController.text.trim()}". '
-              'Provider: ${RecipeSearchConfig.provider}. '
-              'Check API keys in Supabase Edge secrets.';
+        _searchLoadingMore = false;
+        _searchShowSkeleton = false;
+        _searchTimedOut = false;
+        _searchHasMore = RecipeService.lastSearchHasMore;
+        _searchExternalOffset = RecipeService.lastSearchNextOffset;
+        if (_searchResults.isEmpty) {
+          _searchHint = warning?.isNotEmpty == true
+              ? warning
+              : 'No catalog or Edamam matches — check API keys if this persists';
+        } else {
+          _searchHint = _buildSearchHint(
+            total: _searchResults.length,
+            catalogCount: catalogCount,
+            externalCount: externalCount,
+            pendingUpgrade: pendingUpgrade,
+          );
         }
       });
       _applyFilters();
+      if (!append) {
+        unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
+      }
+      if (!mounted || generation != _imageUpgradeGeneration) return;
+      unawaited(RecipeRatingService.prefetchSummaries(_searchResults));
+      unawaited(_startBackgroundImageUpgrades(
+        results,
+        generation,
+        replaceTrackedKeys: !append,
+      ));
+      if (!append && _searchHasMore) {
+        unawaited(_prefetchNextSearchPage(query, generation));
+      }
       await _loadSavedIds();
+    } on TimeoutException {
+      debugPrint('Explore search timed out for "$query"');
+      if (!mounted || generation != _imageUpgradeGeneration) return;
+      _searchSkeletonTimer?.cancel();
+      final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
+      setState(() {
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchShowSkeleton = false;
+        _searchTimedOut = true;
+        if (!append && cached.isNotEmpty) {
+          _searchResults = cached;
+          _searchHint = 'Search timed out — showing cached results. Tap retry for fresh data.';
+        } else {
+          _searchHint = 'Search timed out. Check your connection and try again.';
+        }
+      });
+      _applyFilters();
     } catch (e) {
       debugPrint('Explore search error: $e');
       if (mounted) {
+        _searchSkeletonTimer?.cancel();
+        final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
         setState(() {
           _searchLoading = false;
-          _searchHint = 'Search failed. Pull to refresh and try again.';
+          _searchLoadingMore = false;
+          _searchShowSkeleton = false;
+          if (!append && cached.isNotEmpty) {
+            _searchResults = cached;
+            _searchHint = 'Search failed — showing cached results.';
+          } else {
+            _searchHint = append
+                ? _searchHint
+                : 'Search failed. Pull to refresh and try again.';
+          }
         });
         _applyFilters();
       }
     }
   }
 
+  Future<void> _loadMoreSearch() async {
+    final query = _searchController.text.trim();
+    await _runSearch(query, append: true);
+    if (!mounted) return;
+    if (_searchHasMore) {
+      unawaited(_prefetchNextSearchPage(query, _imageUpgradeGeneration));
+    }
+  }
+
+  /// Silently cache the next page so scrolling never waits on the network.
+  Future<void> _prefetchNextSearchPage(String query, int generation) async {
+    try {
+      final next = await RecipeService.searchCatalog(
+        query: query,
+        limit: RecipeSearchConfig.exploreSearchLimit,
+        offset: _searchExternalOffset,
+        excludeIds: RecipeService.searchExcludeIds(_searchResults),
+        preferences: _userPrefs,
+      );
+      if (!mounted || generation != _imageUpgradeGeneration) return;
+      if (_searchController.text.trim() != query) return;
+      if (next.isEmpty) return;
+
+      final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
+      final fresh = next.where((recipe) {
+        final keys = RecipeService.searchExcludeIds([recipe]);
+        return keys.every((key) => !seen.contains(key));
+      }).toList();
+      if (fresh.isEmpty) return;
+
+      setState(() {
+        _searchResults = [..._searchResults, ...fresh];
+        _searchHasMore = RecipeService.lastSearchHasMore;
+        _searchExternalOffset = RecipeService.lastSearchNextOffset;
+      });
+      _applyFilters();
+      unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
+      unawaited(RecipeRatingService.prefetchSummaries(fresh));
+      unawaited(_startBackgroundImageUpgrades(
+        fresh,
+        generation,
+        replaceTrackedKeys: false,
+      ));
+    } catch (e) {
+      debugPrint('prefetch next search page failed: $e');
+    }
+  }
+
+  /// Called from Home when the user taps the search bar or submits a query.
+  void openSearch(String query, {bool focusSearch = false}) {
+    _searchDebounce?.cancel();
+    _searchController.text = query;
+    final trimmed = query.trim();
+    if (trimmed.length >= _minSearchLength) {
+      _submitSearch(trimmed);
+    } else {
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchHasMore = false;
+        _searchExternalOffset = 0;
+        _searchHint = null;
+      });
+      _applyFilters();
+    }
+    if (focusSearch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _searchFocusNode.requestFocus();
+        });
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _imageUpgradeGeneration++;
     _searchDebounce?.cancel();
+    _searchSkeletonTimer?.cancel();
     _fadeCtrl.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
+  Future<void> refresh() => _loadData();
+
   Future<void> _loadData() async {
-    final uid = _client.auth.currentUser?.id;
     try {
-      final recipesFuture = RecipeService.listPublicRecipes(limit: 100);
-      final prefsFuture = uid != null
-          ? _client
-              .from('user_preferences')
-              .select('dietary_labels')
-              .eq('user_id', uid)
-              .maybeSingle()
-          : Future<Map<String, dynamic>?>.value(null);
-      final userFuture = uid != null
-          ? _client
-              .from('users')
-              .select('preferred_cuisine')
-              .eq('id', uid)
-              .maybeSingle()
-          : Future<Map<String, dynamic>?>.value(null);
-
-      final results = await Future.wait([
-        recipesFuture,
-        prefsFuture,
-        userFuture,
-      ]);
-
-      final recipes = results[0] as List<GeneratedRecipe>;
-      final prefsRow = results[1];
-      final userRow = results[2];
+      final prefs = await RecipeService.loadUserPreferences();
+      final recipes = await RecipeService.listPublicRecipes(
+        limit: 100,
+        preferences: prefs,
+      );
 
       if (mounted) {
         setState(() {
           _allRecipes = recipes;
-          _userDietary = List<String>.from((prefsRow as Map?)?['dietary_labels'] ?? []);
-          _userCuisines = List<String>.from((userRow as Map?)?['preferred_cuisine'] ?? []);
+          _forYouRecipes = RecipeService.lastForYouRecipes;
+          _userPrefs = prefs;
           _loading = false;
         });
         _applyFilters();
       }
       await _loadSavedIds();
+      unawaited(RecipeRatingService.prefetchSummaries(recipes));
     } catch (e) {
       debugPrint('ExploreScreen error: $e');
       if (mounted) setState(() => _loading = false);
@@ -264,22 +465,95 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   void _replaceRecipeInLists(GeneratedRecipe old, GeneratedRecipe updated) {
+    final oldKey = RecipeService.imageTrackKey(old);
+
     void patch(List<GeneratedRecipe> list) {
-      final i = list.indexWhere((r) {
-        if (old.id != null && r.id == old.id) return true;
-        if (old.externalId != null &&
-            r.externalId == old.externalId &&
-            r.title == old.title) {
-          return true;
-        }
-        return false;
-      });
+      final i = list.indexWhere(
+        (r) => RecipeService.imageTrackKey(r) == oldKey,
+      );
       if (i >= 0) list[i] = updated;
     }
 
-    patch(_allRecipes);
-    patch(_searchResults);
-    _applyFilters();
+    setState(() {
+      patch(_allRecipes);
+      patch(_searchResults);
+      patch(_filteredRecipes);
+      _upgradingImageKeys.remove(oldKey);
+    });
+  }
+
+  String _buildSearchHint({
+    required int total,
+    required int catalogCount,
+    required int externalCount,
+    required int pendingUpgrade,
+  }) {
+    final parts = <String>['$total recipes'];
+    if (catalogCount > 0) parts.add('$catalogCount catalog');
+    if (externalCount > 0) parts.add('$externalCount Edamam');
+    if (pendingUpgrade > 0) {
+      parts.add('enhancing $pendingUpgrade AI images');
+    }
+    return parts.join(' · ');
+  }
+
+  void _updateSearchHintAfterUpgrade() {
+    if (_searchController.text.trim().isEmpty || _searchResults.isEmpty) return;
+    final geminiReady = _searchResults
+        .where((r) => !RecipeService.needsGeminiImageUpgrade(r))
+        .length;
+    final stillUpgrading = _upgradingImageKeys.length;
+    setState(() {
+      if (stillUpgrading > 0) {
+        _searchHint =
+            '${_searchResults.length} recipes · enhancing $stillUpgrading AI images...';
+      } else if (geminiReady > 0) {
+        _searchHint =
+            '${_searchResults.length} recipes · $geminiReady AI images ready';
+      }
+    });
+  }
+
+  Future<void> _startBackgroundImageUpgrades(
+    List<GeneratedRecipe> recipes,
+    int generation, {
+    bool replaceTrackedKeys = true,
+  }) async {
+    final targets = recipes
+        .where(RecipeService.needsGeminiImageUpgrade)
+        .take(RecipeSearchConfig.exploreAiImageUpgradeLimit)
+        .toList();
+    if (targets.isEmpty) return;
+
+    setState(() {
+      if (replaceTrackedKeys) {
+        _upgradingImageKeys
+          ..clear()
+          ..addAll(targets.map(RecipeService.imageTrackKey));
+      } else {
+        _upgradingImageKeys.addAll(targets.map(RecipeService.imageTrackKey));
+      }
+      _searchHint =
+          '${_searchResults.length} recipes · enhancing ${_upgradingImageKeys.length} AI images...';
+    });
+
+    await RecipeService.upgradeRecipeImagesInBackground(
+      recipes: targets,
+      shouldContinue: () =>
+          mounted && generation == _imageUpgradeGeneration,
+      onUpdated: (old, updated) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        _replaceRecipeInLists(old, updated);
+        _updateSearchHintAfterUpgrade();
+      },
+      onFinished: (recipe) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        setState(() {
+          _upgradingImageKeys.remove(RecipeService.imageTrackKey(recipe));
+        });
+        _updateSearchHintAfterUpgrade();
+      },
+    );
   }
 
   Future<void> _toggleSave(GeneratedRecipe recipe) async {
@@ -358,35 +632,30 @@ class _ExploreScreenState extends State<ExploreScreen>
   bool _isRecipeSaved(GeneratedRecipe recipe) =>
       recipe.id != null && _savedIds.contains(recipe.id);
 
+  bool _matchesCategory(GeneratedRecipe recipe, [String? category]) {
+    final cat = category ?? _selectedCategory;
+    if (cat == 'All') return true;
+    if (cat == 'Quick') return recipe.cookTimeMinutes <= 20;
+    if (cat == 'Easy' || cat == 'Medium' || cat == 'Hard') {
+      return recipe.difficulty.toLowerCase() == cat.toLowerCase();
+    }
+    final title = recipe.title.toLowerCase();
+    return title.contains(cat.toLowerCase());
+  }
+
+  List<GeneratedRecipe> get _visibleForYouRecipes =>
+      _forYouRecipes.where(_matchesCategory).toList();
+
   void _applyFilters() {
     final isSearching = _searchController.text.trim().isNotEmpty;
-    final featuredId = _featured?.id;
+    final featuredId = _visibleFeatured?.id;
     final source = isSearching ? _searchResults : _allRecipes;
     setState(() {
       _filteredRecipes = source.where((r) {
         if (!isSearching && r.id != null && r.id == featuredId) return false;
-        final cat = _selectedCategory;
-        final matchesCategory = cat == 'All' ||
-            (cat == 'Quick' && r.cookTimeMinutes <= 20) ||
-            r.difficulty.toLowerCase() == cat.toLowerCase() ||
-            r.title.toLowerCase().contains(cat.toLowerCase());
-        return matchesCategory;
+        return _matchesCategory(r);
       }).toList();
-      _filteredRecipes.sort(GeneratedRecipe.compareByIngredientMatch);
     });
-  }
-
-  /// Recipes that match the user's dietary labels or cuisine preferences.
-  List<GeneratedRecipe> get _forYouRecipes {
-    if (_userDietary.isEmpty && _userCuisines.isEmpty) return [];
-    final keywords = [
-      ..._userDietary.map((d) => d.toLowerCase()),
-      ..._userCuisines.map((c) => c.toLowerCase()),
-    ];
-    return _allRecipes.where((r) {
-      final t = r.title.toLowerCase();
-      return keywords.any((k) => t.contains(k));
-    }).toList();
   }
 
   void _selectCategory(String cat) {
@@ -394,26 +663,35 @@ class _ExploreScreenState extends State<ExploreScreen>
     _applyFilters();
   }
 
-  List<GeneratedRecipe> get _quickRecipes =>
-      _allRecipes.where((r) => r.cookTimeMinutes <= 20).toList();
+  List<GeneratedRecipe> get _quickRecipes => _allRecipes
+      .where((r) => r.cookTimeMinutes <= 20)
+      .where(_matchesCategory)
+      .toList();
 
-  /// Count how many of the loaded recipes belong to a given collection.
   int _countForCollection(_CollectionData col) {
+    final pool = _allRecipes;
     if (col.quickOnly) {
-      return _allRecipes.where((r) => r.cookTimeMinutes <= 20).length;
+      return pool.where((r) => r.cookTimeMinutes <= 20).length;
     }
     if (col.keywords.isEmpty) return 0;
-    return _allRecipes.where((r) {
+    return pool.where((r) {
+      if (col.vegetarianOnly && !RecipePreferenceFilter.isVegetarian(r)) {
+        return false;
+      }
       final t = r.title.toLowerCase();
       return col.keywords.any((k) => t.contains(k.toLowerCase()));
     }).length;
   }
 
-  /// Rotates daily — different recipe each day of the month.
-  GeneratedRecipe? get _featured {
-    if (_allRecipes.isEmpty) return null;
-    final dayIndex = DateTime.now().day % _allRecipes.length;
-    return _allRecipes[dayIndex];
+  GeneratedRecipe? get _featured =>
+      RecipePreferenceFilter.pickFeatured(_allRecipes, _userPrefs);
+
+  GeneratedRecipe? get _visibleFeatured {
+    final featured = _featured;
+    if (featured == null || _matchesCategory(featured)) return featured;
+    final pool = _allRecipes.where(_matchesCategory).toList();
+    if (pool.isEmpty) return null;
+    return RecipePreferenceFilter.pickFeatured(pool, _userPrefs) ?? pool.first;
   }
 
   @override
@@ -440,6 +718,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                         const EdgeInsets.fromLTRB(20, 14, 20, 0),
                     child: _SearchBar(
                       controller: _searchController,
+                      focusNode: _searchFocusNode,
                       onSubmitted: _submitSearch,
                     ),
                   ),
@@ -472,26 +751,24 @@ class _ExploreScreenState extends State<ExploreScreen>
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.textDark),
                           ),
-                          if (_filteredRecipes.isNotEmpty)
-                            Text(
-                              RecipeSearchConfig.exploreSearchHint,
-                              style: const TextStyle(
-                                  fontSize: 11, color: AppColors.textMedium),
-                            ),
                         ],
                       ),
                     ),
                   ),
                   if (_searchLoading)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.primary),
-                        ),
-                      ),
+                    SliverToBoxAdapter(
+                      child: _searchShowSkeleton
+                          ? _buildSearchSkeleton()
+                          : const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 32),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                    color: AppColors.primary),
+                              ),
+                            ),
                     )
+                  else if (_searchTimedOut && _filteredRecipes.isEmpty)
+                    SliverToBoxAdapter(child: _buildSearchTimeout())
                   else if (_filteredRecipes.isEmpty)
                     SliverToBoxAdapter(child: _buildEmptySearch())
                   else
@@ -510,12 +787,18 @@ class _ExploreScreenState extends State<ExploreScreen>
                           (ctx, i) {
                             final recipe = _filteredRecipes[i];
                             return _RecipeCard(
+                              key: ValueKey(
+                                '${RecipeService.imageTrackKey(recipe)}:${recipe.imageUrl ?? ''}',
+                              ),
                               recipe: recipe,
                               isSaved: _isRecipeSaved(recipe),
                               isSaving: _savingIds.contains(
                                 recipe.id ??
                                     recipe.externalId ??
                                     recipe.title,
+                              ),
+                              isImageUpgrading: _upgradingImageKeys.contains(
+                                RecipeService.imageTrackKey(recipe),
                               ),
                               onTap: () => _openRecipe(recipe),
                               onSave: () => _toggleSave(recipe),
@@ -525,16 +808,32 @@ class _ExploreScreenState extends State<ExploreScreen>
                         ),
                       ),
                     ),
+                  if (_searchTimedOut && _filteredRecipes.isNotEmpty)
+                    SliverToBoxAdapter(child: _buildSearchTimeout(compact: true)),
+                  if (!_searchLoading &&
+                      _filteredRecipes.isNotEmpty &&
+                      _searchHasMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                        child: _LoadMoreSearchButton(
+                          loading: _searchLoadingMore,
+                          onTap: _loadMoreSearch,
+                        ),
+                      ),
+                    ),
                 ] else ...[
                   // ── For You ────────────────────────────────────────────
-                  if (_forYouRecipes.isNotEmpty) ...[
+                  if (_visibleForYouRecipes.isNotEmpty) ...[
                     SliverToBoxAdapter(
                       child: _SectionHeader(
                         title: 'For You',
-                        action: _forYouRecipes.length > 6 ? 'See all' : '',
+                        action: _visibleForYouRecipes.length > 6 ? 'See all' : '',
                         onAction: () => Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const AllRecipesScreen(),
+                            builder: (_) => AllRecipesScreen(
+                              initialFilter: _selectedCategory,
+                            ),
                           ),
                         ),
                       ),
@@ -551,7 +850,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (ctx, i) {
-                            final recipe = _forYouRecipes[i];
+                            final recipe = _visibleForYouRecipes[i];
                             return _RecipeCard(
                               recipe: recipe,
                               isSaved: _isRecipeSaved(recipe),
@@ -564,9 +863,9 @@ class _ExploreScreenState extends State<ExploreScreen>
                               onSave: () => _toggleSave(recipe),
                             );
                           },
-                          childCount: _forYouRecipes.length > 6
+                          childCount: _visibleForYouRecipes.length > 6
                               ? 6
-                              : _forYouRecipes.length,
+                              : _visibleForYouRecipes.length,
                         ),
                       ),
                     ),
@@ -583,10 +882,10 @@ class _ExploreScreenState extends State<ExploreScreen>
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _featured != null
+                      child: _visibleFeatured != null
                           ? _FeaturedCard(
-                              recipe: _featured!,
-                              onTap: () => _openRecipe(_featured!),
+                              recipe: _visibleFeatured!,
+                              onTap: () => _openRecipe(_visibleFeatured!),
                             )
                           : const _FeaturedPlaceholder(),
                     ),
@@ -638,7 +937,9 @@ class _ExploreScreenState extends State<ExploreScreen>
                       action: _filteredRecipes.length > 6 ? 'See all' : '',
                       onAction: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => const AllRecipesScreen(),
+                          builder: (_) => AllRecipesScreen(
+                            initialFilter: _selectedCategory,
+                          ),
                         ),
                       ),
                     ),
@@ -704,7 +1005,7 @@ class _ExploreScreenState extends State<ExploreScreen>
                     ),
                     SliverToBoxAdapter(
                       child: SizedBox(
-                        height: 150,
+                        height: 168,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -860,36 +1161,127 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 
   Widget _buildEmptySearch() {
-    final query = _searchController.text;
+    final term = _searchController.text.trim();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
       child: Column(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.08),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.search_off_rounded,
-                size: 28, color: AppColors.primary),
-          ),
-          const SizedBox(height: 14),
-          const Text('No recipes found',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                  fontFamily: 'Nunito')),
-          const SizedBox(height: 6),
           Text(
-            _searchHint ??
-                'No results for "$query". Try scanning a receipt with those ingredients — Quillo will generate matching recipes.',
+            term.isEmpty
+                ? 'No recipes found'
+                : 'No recipes found for "$term"',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: AppColors.textMedium, height: 1.5),
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Try a different ingredient or dish name.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.textMedium,
+            ),
+          ),
+          if (_searchHint != null &&
+              _searchHint!.isNotEmpty &&
+              !_searchHint!.startsWith('No catalog')) ...[
+            const SizedBox(height: 8),
+            Text(
+              _searchHint!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textMedium,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchTimeout({bool compact = false}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, compact ? 8 : 24, 20, 20),
+      child: Column(
+        children: [
+          Text(
+            compact
+                ? (_searchHint ?? 'Search timed out.')
+                : 'Search is taking too long',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => _submitSearch(_searchController.text.trim()),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Retry search',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchSkeleton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      child: Column(
+        children: List.generate(2, (row) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(child: _skeletonCard()),
+                const SizedBox(width: 12),
+                Expanded(child: _skeletonCard()),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _skeletonCard() {
+    return AspectRatio(
+      aspectRatio: 1.35,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.green.withValues(alpha: 0.18),
+              AppColors.primary.withValues(alpha: 0.12),
+              AppColors.green.withValues(alpha: 0.22),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -941,10 +1333,12 @@ class _SectionHeader extends StatelessWidget {
 
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final ValueChanged<String>? onSubmitted;
 
   const _SearchBar({
     required this.controller,
+    this.focusNode,
     this.onSubmitted,
   });
 
@@ -972,6 +1366,7 @@ class _SearchBar extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  focusNode: focusNode,
                   textInputAction: TextInputAction.search,
                   onSubmitted: onSubmitted,
                   style: const TextStyle(
@@ -1135,6 +1530,15 @@ class _FeaturedCard extends StatelessWidget {
                           fontWeight: FontWeight.w600))),
             ),
             Positioned(
+              bottom: 14,
+              left: 14,
+              child: RecipeRatingBadge(
+                recipe: recipe,
+                accentColor: AppColors.primary,
+                compact: true,
+              ),
+            ),
+            Positioned(
               bottom: 0,
               left: 0,
               right: 0,
@@ -1261,12 +1665,14 @@ class _CollectionData {
   final Color color;
   final List<String> keywords;
   final bool quickOnly;
+  final bool vegetarianOnly;
   const _CollectionData({
     required this.title,
     required this.emoji,
     required this.color,
     this.keywords = const [],
     this.quickOnly = false,
+    this.vegetarianOnly = false,
   });
 }
 
@@ -1290,6 +1696,7 @@ class _CollectionCard extends StatelessWidget {
             color: data.color,
             keywords: data.keywords,
             quickOnly: data.quickOnly,
+            vegetarianOnly: data.vegetarianOnly,
           ),
         ),
       ),
@@ -1357,17 +1764,120 @@ class _CollectionCard extends StatelessWidget {
 
 // ── Recipe grid card ─────────────────────────────────────────────────────────
 
+class _RecipeHeroImage extends StatefulWidget {
+  final String? imageUrl;
+  final String emoji;
+  final Color tagColor;
+  final bool isImageUpgrading;
+
+  const _RecipeHeroImage({
+    required this.imageUrl,
+    required this.emoji,
+    required this.tagColor,
+    required this.isImageUpgrading,
+  });
+
+  @override
+  State<_RecipeHeroImage> createState() => _RecipeHeroImageState();
+}
+
+class _RecipeHeroImageState extends State<_RecipeHeroImage> {
+  bool _frameReady = true;
+
+  @override
+  void didUpdateWidget(covariant _RecipeHeroImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.imageUrl != oldWidget.imageUrl) {
+      _frameReady = widget.imageUrl == null;
+    }
+  }
+
+  bool get _showUpgradeOverlay =>
+      widget.isImageUpgrading ||
+      (!_frameReady && recipeImageSource(widget.imageUrl) == RecipeImageSource.gemini);
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          switchInCurve: Curves.easeOut,
+          child: widget.imageUrl != null
+              ? Image.network(
+                  resizedRecipeImageUrl(widget.imageUrl, width: 480)!,
+                  key: ValueKey(widget.imageUrl),
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  gaplessPlayback: false,
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    final ready = frame != null || wasSynchronouslyLoaded;
+                    if (ready && !_frameReady) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _frameReady = true);
+                      });
+                    }
+                    return child;
+                  },
+                  errorBuilder: (_, __, ___) => Container(
+                    key: const ValueKey('emoji-fallback'),
+                    color: widget.tagColor.withValues(alpha: 0.1),
+                    child: Center(
+                      child: Text(
+                        widget.emoji,
+                        style: const TextStyle(fontSize: 36),
+                      ),
+                    ),
+                  ),
+                )
+              : Container(
+                  key: const ValueKey('no-image'),
+                  color: widget.tagColor.withValues(alpha: 0.1),
+                  child: Center(
+                    child: Text(
+                      widget.emoji,
+                      style: const TextStyle(fontSize: 36),
+                    ),
+                  ),
+                ),
+        ),
+        if (_showUpgradeOverlay)
+          Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  color: Colors.white.withValues(alpha: 0.28),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _RecipeCard extends StatelessWidget {
   final GeneratedRecipe recipe;
   final bool isSaved;
   final bool isSaving;
+  final bool isImageUpgrading;
   final VoidCallback onTap;
   final VoidCallback onSave;
 
   const _RecipeCard({
+    super.key,
     required this.recipe,
     required this.isSaved,
     this.isSaving = false,
+    this.isImageUpgrading = false,
     required this.onTap,
     required this.onSave,
   });
@@ -1398,24 +1908,21 @@ class _RecipeCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    recipe.imageUrl != null
-                        ? Image.network(
-                            recipe.imageUrl!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: tagColor.withValues(alpha: 0.1),
-                              child: Center(
-                                  child: Text(emoji,
-                                      style: const TextStyle(fontSize: 36))),
-                            ),
-                          )
-                        : Container(
-                            color: tagColor.withValues(alpha: 0.1),
-                            child: Center(
-                                child: Text(emoji,
-                                    style: const TextStyle(fontSize: 36))),
-                          ),
+                    _RecipeHeroImage(
+                      imageUrl: recipe.imageUrl,
+                      emoji: emoji,
+                      tagColor: tagColor,
+                      isImageUpgrading: isImageUpgrading,
+                    ),
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: tagColor,
+                        compact: true,
+                      ),
+                    ),
                     Positioned(
                       top: 6,
                       right: 6,
@@ -1525,7 +2032,7 @@ class _QuickCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 120,
+        width: 132,
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1536,71 +2043,96 @@ class _QuickCard extends StatelessWidget {
                 blurRadius: 8)
           ],
         ),
-        child: Stack(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      shape: BoxShape.circle),
-                  child: Center(
-                      child: Text(emoji,
-                          style: const TextStyle(fontSize: 28))),
+            Expanded(
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _RecipeHeroImage(
+                      imageUrl: recipe.imageUrl,
+                      emoji: emoji,
+                      tagColor: color,
+                      isImageUpgrading: false,
+                    ),
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: color,
+                        compact: true,
+                      ),
+                    ),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: GestureDetector(
+                        onTap: onSave,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isSaved
+                                ? Icons.bookmark_rounded
+                                : Icons.bookmark_border_rounded,
+                            size: 14,
+                            color: isSaved
+                                ? AppColors.primary
+                                : AppColors.textLight,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(recipe.title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    recipe.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textDark)),
-                ),
-                const SizedBox(height: 4),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.timer_outlined,
-                      size: 10, color: AppColors.textLight),
-                  const SizedBox(width: 2),
-                  Text('${recipe.cookTimeMinutes}m',
-                      style: const TextStyle(
-                          fontSize: 10, color: AppColors.textLight)),
-                ]),
-              ],
-            ),
-            Positioned(
-              top: 6,
-              right: 6,
-              child: GestureDetector(
-                onTap: onSave,
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 4,
+                      color: AppColors.textDark,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      const Icon(Icons.timer_outlined,
+                          size: 10, color: AppColors.textLight),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${recipe.cookTimeMinutes}m',
+                        style: const TextStyle(
+                            fontSize: 10, color: AppColors.textLight),
                       ),
                     ],
                   ),
-                  child: Icon(
-                    isSaved
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_border_rounded,
-                    size: 14,
-                    color:
-                        isSaved ? AppColors.primary : AppColors.textLight,
-                  ),
-                ),
+                ],
               ),
             ),
           ],
@@ -1695,6 +2227,7 @@ class _AllCollectionsSheet extends StatelessWidget {
                     color: col.color,
                     keywords: col.keywords,
                     quickOnly: col.quickOnly,
+                    vegetarianOnly: col.vegetarianOnly,
                   ),
                 ));
               },
@@ -1746,6 +2279,52 @@ class _AllCollectionsSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LoadMoreSearchButton extends StatelessWidget {
+  final bool loading;
+  final VoidCallback onTap;
+
+  const _LoadMoreSearchButton({
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.chipBorder),
+        ),
+        child: Center(
+          child: loading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: AppColors.primary,
+                  ),
+                )
+              : Text(
+                  'Load ${RecipeSearchConfig.exploreSearchLimit} more recipes',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+        ),
       ),
     );
   }

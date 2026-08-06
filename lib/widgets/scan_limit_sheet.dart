@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../screens/paywall_screen.dart';
-import '../services/daily_limit_service.dart';
+import '../services/scan_limit_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ScanLimitSheet — shown when a free user hits their 3-scan daily limit
+// ScanLimitSheet — shown when a free user hits their monthly scan limit
 // ─────────────────────────────────────────────────────────────────────────────
 
 Future<void> showScanLimitSheet(BuildContext context) {
@@ -30,7 +30,6 @@ class _ScanLimitSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Drag handle ──────────────────────────────────────────────────
           Center(
             child: Container(
               width: 40, height: 4,
@@ -40,8 +39,6 @@ class _ScanLimitSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-
-          // ── Close button ─────────────────────────────────────────────────
           Align(
             alignment: Alignment.topRight,
             child: GestureDetector(
@@ -58,8 +55,6 @@ class _ScanLimitSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-
-          // ── Illustration ─────────────────────────────────────────────────
           Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
@@ -95,10 +90,8 @@ class _ScanLimitSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-
-          // ── Title ────────────────────────────────────────────────────────
           const Text(
-            "You've reached your daily\nscan limit",
+            "You've reached your monthly\nscan limit",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 20,
@@ -109,8 +102,6 @@ class _ScanLimitSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-
-          // ── Subtitle ─────────────────────────────────────────────────────
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
@@ -119,24 +110,22 @@ class _ScanLimitSheet extends StatelessWidget {
               children: [
                 const TextSpan(text: "You've used all "),
                 TextSpan(
-                  text: '${DailyLimitService.freeLimit} free scans',
+                  text: '${ScanLimitService.freeMonthlyLimit} free scans',
                   style: const TextStyle(
                       fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E)),
                 ),
-                const TextSpan(text: ' for today.'),
+                const TextSpan(text: ' for this month.'),
               ],
             ),
           ),
           const SizedBox(height: 4),
           const Text(
-            'Upgrade to unlock unlimited scanning everyday.',
+            'Upgrade for unlimited scans, no ads, and your food waste dashboard.',
             textAlign: TextAlign.center,
             style: TextStyle(
                 fontSize: 13, color: Color(0xFF888888), height: 1.5),
           ),
           const SizedBox(height: 20),
-
-          // ── Feature list ─────────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -147,17 +136,15 @@ class _ScanLimitSheet extends StatelessWidget {
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _FeatureRow(emoji: '🧾', label: 'Unlimited daily receipt scans'),
+                _FeatureRow(emoji: '🧾', label: 'Unlimited receipt scans'),
                 SizedBox(height: 10),
-                _FeatureRow(emoji: '✨', label: 'Unlimited Quillo recipe generation'),
+                _FeatureRow(emoji: '🚫', label: 'No ads — clean, calm experience'),
                 SizedBox(height: 10),
-                _FeatureRow(emoji: '🚫', label: 'No ads, ever'),
+                _FeatureRow(emoji: '🌱', label: 'Food waste dashboard & streaks'),
               ],
             ),
           ),
           const SizedBox(height: 20),
-
-          // ── Upgrade button ───────────────────────────────────────────────
           GestureDetector(
             onTap: () {
               Navigator.pop(context);
@@ -200,7 +187,7 @@ class _ScanLimitSheet extends StatelessWidget {
                   Icon(Icons.star_outline_rounded, color: Colors.white, size: 18),
                   SizedBox(width: 8),
                   Text(
-                    'Upgrade to premium',
+                    'Upgrade to Premium',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -212,8 +199,6 @@ class _ScanLimitSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
-          // ── Maybe later ──────────────────────────────────────────────────
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(

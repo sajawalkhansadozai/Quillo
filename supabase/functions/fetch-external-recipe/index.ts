@@ -11,6 +11,10 @@ import {
   findCachedBySourceId,
   persistSingleNormalizedRecipe,
 } from '../_shared/persist_recipe.ts';
+import {
+  ensureGeminiRecipeImage,
+  needsGeminiRecipeImage,
+} from '../_shared/gemini_image.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,20 +61,79 @@ serve(async (req: Request) => {
     const recipeId = (body.recipe_id ?? '').trim();
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+
+    async function withGeminiImage(
+      row: Record<string, unknown>,
+      source?: string,
+      sourceId?: string,
+    ): Promise<Record<string, unknown>> {
+      const imageUrl = row.image_url as string | undefined;
+      if (!geminiKey || !needsGeminiRecipeImage(imageUrl)) return row;
+
+      const ingredients = (row.ingredients_used as Array<{ name: string }> | undefined) ?? [];
+      const geminiUrl = await ensureGeminiRecipeImage(admin, geminiKey, {
+        title: String(row.title ?? ''),
+        source: source ?? 'edamam',
+        source_id: sourceId ?? '',
+        image_url: imageUrl,
+        ingredients,
+      });
+
+      if (!geminiUrl || geminiUrl === imageUrl) return row;
+
+      const id = row.id as string | undefined;
+      if (id) {
+        await admin.from('recipes').update({ image_url: geminiUrl }).eq('id', id);
+      }
+      return { ...row, image_url: geminiUrl };
+    }
 
     if (recipeId) {
-      const { data: row, error } = await admin
+      const baseSelect =
+        'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url, is_public';
+      let record: Record<string, unknown> | null = null;
+
+      const { data: withSource, error: sourceError } = await admin
         .from('recipes')
-        .select('id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url, is_public')
+        .select(`${baseSelect}, source, source_id`)
         .eq('id', recipeId)
         .maybeSingle();
 
-      if (!error && row) {
-        return new Response(JSON.stringify({ recipe: row }), {
+      if (!sourceError && withSource) {
+        record = withSource as Record<string, unknown>;
+      } else {
+        const { data: withoutSource, error: baseError } = await admin
+          .from('recipes')
+          .select(baseSelect)
+          .eq('id', recipeId)
+          .maybeSingle();
+        if (!baseError && withoutSource) {
+          record = withoutSource as Record<string, unknown>;
+        }
+      }
+
+      if (record) {
+        const rowSource = (record.source as string | undefined) ?? source;
+        const rowSourceId =
+          (record.source_id as string | undefined) ?? sourceId ?? recipeId;
+        const upgraded = await withGeminiImage(record, rowSource, rowSourceId);
+        return new Response(JSON.stringify({
+          recipe: {
+            ...upgraded,
+            external_source: upgraded.source ?? rowSource,
+            external_id: upgraded.source_id ?? rowSourceId,
+          },
+        }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      return new Response(JSON.stringify({ error: 'Recipe not found' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!sourceId) {
@@ -82,7 +145,14 @@ serve(async (req: Request) => {
 
     const cached = await findCachedBySourceId(admin, source, sourceId);
     if (cached) {
-      return new Response(JSON.stringify({ recipe: cached }), {
+      const upgraded = await withGeminiImage(cached, source, sourceId);
+      return new Response(JSON.stringify({
+        recipe: {
+          ...upgraded,
+          external_source: upgraded.source ?? source,
+          external_id: upgraded.source_id ?? sourceId,
+        },
+      }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -113,6 +183,17 @@ serve(async (req: Request) => {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (geminiKey && needsGeminiRecipeImage(normalized.image_url)) {
+      const geminiUrl = await ensureGeminiRecipeImage(admin, geminiKey, {
+        title: normalized.title,
+        source: normalized.source,
+        source_id: normalized.source_id,
+        image_url: normalized.image_url,
+        ingredients: normalized.ingredients,
+      });
+      if (geminiUrl) normalized = { ...normalized, image_url: geminiUrl };
     }
 
     if (seedUserId) {

@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/generated_recipe.dart';
 import '../../theme/app_theme.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../services/recipe_service.dart';
+import '../../widgets/recipe_rating_section.dart';
+import '../../widgets/recipe_rating_sheet.dart';
+import '../../widgets/recipe_thumbnail_image.dart';
 
 enum _Phase { prep, steps, complete }
 
@@ -25,14 +30,51 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   _Phase _phase = _Phase.prep;
   int _stepIndex = 0;
   final Set<int> _preppedIngredients = {};
+  late GeneratedRecipe _recipe;
+  bool _ratingPromptShown = false;
+  int? _userRating;
+  bool _imageUpgrading = false;
 
   Timer? _countdown;
   int? _timerSecondsLeft;
   bool _timerRunning = false;
 
-  GeneratedRecipe get _recipe => widget.recipe;
   Color get _color => widget.accentColor;
   List<RecipeStep> get _steps => _recipe.steps;
+
+  @override
+  void initState() {
+    super.initState();
+    _recipe = widget.recipe;
+    _refreshUserRating();
+    unawaited(_upgradeHeroImage());
+  }
+
+  Future<void> _upgradeHeroImage() async {
+    if (!RecipeService.needsGeminiImageUpgrade(_recipe)) return;
+    setState(() => _imageUpgrading = true);
+    await RecipeService.upgradeRecipeImagesInBackground(
+      recipes: [_recipe],
+      shouldContinue: () => mounted,
+      onUpdated: (old, updated) {
+        if (!mounted) return;
+        setState(() {
+          _recipe = updated;
+          _imageUpgrading = false;
+        });
+      },
+      onFinished: (_) {
+        if (!mounted) return;
+        setState(() => _imageUpgrading = false);
+      },
+    );
+  }
+
+  Future<void> _refreshUserRating() async {
+    final rating = await RecipeRatingService.getRating(_recipe);
+    if (!mounted) return;
+    setState(() => _userRating = rating);
+  }
 
   @override
   void dispose() {
@@ -197,10 +239,30 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
     if (_stepIndex >= _steps.length - 1) {
       setState(() => _phase = _Phase.complete);
       HapticFeedback.mediumImpact();
+      _scheduleRatingPrompt();
       return;
     }
     setState(() => _stepIndex++);
     HapticFeedback.selectionClick();
+  }
+
+  Future<void> _scheduleRatingPrompt() async {
+    if (_ratingPromptShown) return;
+    _ratingPromptShown = true;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted || _phase != _Phase.complete) return;
+    final existing = await RecipeRatingService.getRating(_recipe);
+    if (!mounted || existing != null) return;
+    final result = await showRecipeRatingSheet(
+      context,
+      recipe: _recipe,
+      accentColor: _color,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _recipe = result.recipe;
+      _userRating = result.rating;
+    });
   }
 
   void _prevStep() {
@@ -272,7 +334,23 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 160,
+              child: RecipeThumbnailImage(
+                imageUrl: _recipe.imageUrl,
+                emoji: '👨‍🍳',
+                placeholderColor: _color,
+                isImageUpgrading: _imageUpgrading,
+                cacheWidth: 960,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
           child: Text(
             'Get everything ready',
             style: TextStyle(
@@ -601,6 +679,44 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 24),
+        if (_userRating == null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: RecipeRatingSection(
+              recipe: _recipe,
+              accentColor: _color,
+              showCommunitySummary: false,
+              onRated: (result) => setState(() {
+                _recipe = result.recipe;
+                _userRating = result.rating;
+              }),
+            ),
+          )
+        else
+          TextButton(
+            onPressed: () async {
+              final result = await showRecipeRatingSheet(
+                context,
+                recipe: _recipe,
+                accentColor: _color,
+                isEdit: true,
+              );
+              if (!mounted || result == null) return;
+              setState(() {
+                _recipe = result.recipe;
+                _userRating = result.rating;
+              });
+            },
+            child: Text(
+              'Change your rating',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: _color,
+              ),
+            ),
+          ),
         const Spacer(),
         _bottomBar(
           primaryLabel: 'Back to recipe',

@@ -8,11 +8,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../services/dev_recipe_seed_service.dart';
 import '../../services/subscription_service.dart';
+import '../../widgets/scan_usage_banner.dart';
 import '../../theme/app_theme.dart';
 import '../auth/sign_in_screen.dart';
 import '../onboarding/preferences_screen.dart';
+import '../food_waste/food_waste_dashboard_screen.dart';
 import '../paywall_screen.dart';
+import '../support/faq_screen.dart';
+import '../support/feedback_screen.dart';
+import '../../config/iap_config.dart';
 import '../../constants/legal_urls.dart';
+import '../../services/quick_actions_service.dart';
 import '../../utils/external_link.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -1061,8 +1067,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           slivers: [
             SliverToBoxAdapter(child: _buildHeader()),
             SliverToBoxAdapter(child: _buildProfileCard()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: ScanUsageBanner(),
+              ),
+            ),
             SliverToBoxAdapter(child: _buildPreferences()),
             SliverToBoxAdapter(child: _buildProCard()),
+            SliverToBoxAdapter(child: _buildImpactSection()),
             SliverToBoxAdapter(child: _buildSettingsSection()),
             SliverToBoxAdapter(child: _buildAccountSection()),
             SliverToBoxAdapter(child: _buildMoreSection()),
@@ -1414,19 +1427,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            _ProFeature('Unlimited recipe access'),
-            _ProFeature('Scan receipts & generate recipes by meal'),
-            _ProFeature('Nutritional info per recipe'),
-            _ProFeature('Priority suggestions'),
+            _ProFeature('Unlimited receipt scans'),
+            _ProFeature('No ads — clean, uninterrupted app'),
+            _ProFeature('Food waste dashboard & streaks'),
+            _ProFeature('Smart Pantry & smart grocery lists'),
             const SizedBox(height: 14),
             Row(
               children: [
                 const Text(
-                  '£4.99',
+                  IapConfig.monthlyDisplayPrice,
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Nunito'),
                 ),
                 Text(
-                  '/mo · or £44.99/yr',
+                  '/mo · or ${IapConfig.yearlyDisplayPrice}/yr',
                   style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75), fontFamily: 'Nunito'),
                 ),
                 const Spacer(),
@@ -1445,6 +1458,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ── Impact / food waste dashboard ───────────────────────────────────────────
+
+  Widget _buildImpactSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const FoodWasteDashboardScreen(),
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Center(
+                  child: Text('🌱', style: TextStyle(fontSize: 24)),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Food Waste Dashboard',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        if (!_isPremium) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryLight,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'PRO',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isPremium
+                          ? 'See how much you\'ve saved & share your impact'
+                          : 'Track waste avoided & money saved with Premium',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textLight),
+            ],
+          ),
         ),
       ),
     );
@@ -1625,7 +1733,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Help Center',
                   subtitle: 'FAQs and support articles',
                   trailing: '',
-                  onTap: () => _launchUrl('https://quillo.app/help'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FaqScreen()),
+                  ),
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(
@@ -1634,7 +1744,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Send Feedback',
                   subtitle: 'Help us improve Quillo',
                   trailing: '',
-                  onTap: () => _launchUrl('mailto:support@quillo.app'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const FeedbackScreen(kind: FeedbackKind.idea),
+                    ),
+                  ),
+                ),
+                _SettingDivider(),
+                _SettingArrowRow(
+                  icon: Icons.ios_share_rounded,
+                  iconColor: AppColors.primary,
+                  title: 'Share Quillo',
+                  subtitle: 'Invite friends to try the app',
+                  trailing: '',
+                  onTap: () => QuickActionsService.shareApp(),
                 ),
                 _SettingDivider(),
                 _SettingArrowRow(

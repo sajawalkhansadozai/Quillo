@@ -20,14 +20,18 @@ class LocalDbService {
     final dbPath = join(await getDatabasesPath(), 'quillo.db');
     return openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createSavedRecipesTable(db);
         await _createShoppingListsTable(db);
+        await _createSearchCacheTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createShoppingListsTable(db);
+        }
+        if (oldVersion < 3) {
+          await _createSearchCacheTable(db);
         }
       },
     );
@@ -51,6 +55,16 @@ class LocalDbService {
         recipe_id   TEXT,
         data        TEXT NOT NULL,
         created_at  TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createSearchCacheTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS search_cache (
+        search_term TEXT PRIMARY KEY,
+        data        TEXT NOT NULL,
+        cached_at   TEXT NOT NULL
       )
     ''');
   }
@@ -125,6 +139,61 @@ class LocalDbService {
   static Future<void> clearAll() async {
     final db = await _database;
     await db.delete('saved_recipes');
+  }
+
+  // ── Offline search cache (normalized term → recipe list) ───────────────────
+
+  static String normalizeSearchTerm(String term) => term.trim().toLowerCase();
+
+  static Future<void> cacheSearchResults(
+    String term,
+    List<GeneratedRecipe> recipes,
+  ) async {
+    final key = normalizeSearchTerm(term);
+    if (key.isEmpty || recipes.isEmpty) return;
+    try {
+      final db = await _database;
+      await db.insert(
+        'search_cache',
+        {
+          'search_term': key,
+          'data': jsonEncode(recipes.map((r) => r.toJson()).toList()),
+          'cached_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  static Future<List<GeneratedRecipe>> loadSearchCache(String term) async {
+    final key = normalizeSearchTerm(term);
+    if (key.isEmpty) return [];
+    try {
+      final db = await _database;
+      final rows = await db.query(
+        'search_cache',
+        where: 'search_term = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+      if (rows.isEmpty) return [];
+      final raw = jsonDecode(rows.first['data'] as String);
+      if (raw is! List) return [];
+      return raw
+          .map((e) {
+            try {
+              return GeneratedRecipe.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              );
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<GeneratedRecipe>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   // ── Shopping lists ──────────────────────────────────────────────────────────

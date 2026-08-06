@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/scan_service.dart';
-import '../../services/daily_limit_service.dart';
+import '../../services/scan_limit_service.dart';
 import '../../widgets/scan_limit_sheet.dart';
+import '../../widgets/ad_banner.dart';
+import '../../widgets/scan_usage_banner.dart';
 import '../scan/ingredient_review_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,7 +171,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // ── Daily limit gate ─────────────────────────────────────────────────────────
 
   Future<bool> _checkLimit() async {
-    final allowed = await DailyLimitService.canScan();
+    final allowed = await ScanLimitService.canScan();
     if (!allowed && mounted) {
       await showScanLimitSheet(context);
     }
@@ -201,10 +203,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         return;
       }
 
-      // Only charge the daily limit when ingredients were actually found
-      await DailyLimitService.recordScan();
+      await ScanLimitService.recordScan();
 
-      // Navigate to ingredient review screen
       await _cardCtrl.reverse();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -212,6 +212,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           builder: (_) => IngredientReviewScreen(
             scanId: result.scanId,
             ingredients: result.ingredients,
+            receiptAlreadyCounted: true,
           ),
         ),
       );
@@ -271,6 +272,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF07070F),
+      bottomNavigationBar: const AdBannerWidget(),
       body: Stack(
         children: [
           _CameraBackground(controller: _cameraReady ? _cameraCtrl : null),
@@ -280,6 +282,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
             child: Column(
               children: [
                 _buildTopBar(),
+                const ScanUsageBanner(),
                 Expanded(child: _buildViewfinder()),
                 _buildBottomBar(),
               ],

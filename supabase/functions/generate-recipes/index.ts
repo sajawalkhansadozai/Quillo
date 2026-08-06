@@ -12,7 +12,11 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { fetchGeminiRecipeImageUrl } from '../_shared/gemini_image.ts';
+import {
+  fetchGeminiRecipeImageUrlResult,
+  upsertRecipeImageCache,
+} from '../_shared/gemini_image.ts';
+import { consumeMonthlyScan } from '../_shared/scan_quota.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +36,7 @@ interface RecipeRequest {
   household_size: number;
   scan_id: string;
   user_id: string;
+  is_manual_entry?: boolean;
 }
 
 function buildRecipePrompt(req: RecipeRequest): string {
@@ -127,24 +132,25 @@ async function fetchRecipeImage(
   supabase: ReturnType<typeof createClient>,
   userId: string,
   scanId: string,
-): Promise<string | null> {
+): Promise<{ url: string | null; geminiModel?: string | null }> {
   if (geminiKey) {
-    const url = await fetchGeminiRecipeImageUrl(
+    const result = await fetchGeminiRecipeImageUrlResult(
       supabase,
       title,
       geminiKey,
       `generated/${userId}/${scanId}`,
       ingredientNames,
     );
-    if (url) return url;
+    if (result.url) return { url: result.url, geminiModel: result.model ?? null };
     console.warn(`Gemini image failed for "${title}", trying Spoonacular fallback`);
   }
 
   if (spoonacularKey) {
-    return fetchSpoonacularImage(title, spoonacularKey);
+    const url = await fetchSpoonacularImage(title, spoonacularKey);
+    return { url, geminiModel: null };
   }
 
-  return null;
+  return { url: null };
 }
 
 // ── Fetch a recipe image from Spoonacular (fallback) ──────────────────────────
@@ -202,7 +208,7 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json() as RecipeRequest;
-    const { ingredients, dietary_labels, preferred_cuisines, household_size, scan_id, user_id } = body;
+    const { ingredients, dietary_labels, preferred_cuisines, household_size, scan_id, user_id, is_manual_entry } = body;
 
     if (!ingredients?.length || !scan_id || !user_id) {
       return new Response(
@@ -213,20 +219,15 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── Rate limit check ──────────────────────────────────────────────────────
-    const today = new Date().toISOString().split('T')[0];
-    const { data: usage } = await supabase
-      .from('api_usage')
-      .select('recipe_calls, daily_limit')
-      .eq('user_id', user_id)
-      .eq('date', today)
-      .maybeSingle();
-
-    if (usage && usage.recipe_calls >= usage.daily_limit) {
-      return new Response(
-        JSON.stringify({ error: 'Daily recipe limit reached. Upgrade to Premium for more.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+    // Manual ingredient entry consumes monthly quota; receipt scans already did at OCR.
+    if (is_manual_entry) {
+      const quota = await consumeMonthlyScan(supabase, user_id);
+      if (!quota.allowed) {
+        return new Response(
+          JSON.stringify({ error: quota.message ?? 'Monthly scan limit reached. Upgrade to Premium for unlimited scans.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     // ── Build prompt and call Claude ──────────────────────────────────────────
@@ -311,7 +312,8 @@ serve(async (req: Request) => {
     const savedRecipes = [];
     for (let i = 0; i < recipes.length; i++) {
       const recipe = recipes[i];
-      const imageUrl = imageUrls[i];
+      const imageResult = imageUrls[i];
+      const imageUrl = imageResult.url;
 
       const { data: saved, error: saveErr } = await supabase
         .from('recipes')
@@ -333,14 +335,31 @@ serve(async (req: Request) => {
         .single();
 
       if (!saveErr && saved) {
+        // 2.6: Log Gemini image against the saved recipe_id
+        if (imageUrl && imageResult.geminiModel) {
+          await upsertRecipeImageCache(supabase, {
+            recipeId: saved.id,
+            title: String(recipe.title ?? ''),
+            imageUrl,
+            source: 'scan',
+            sourceId: scan_id,
+            geminiModel: imageResult.geminiModel,
+          });
+        } else if (imageUrl && String(imageUrl).includes('/recipe-images/')) {
+          await upsertRecipeImageCache(supabase, {
+            recipeId: saved.id,
+            title: String(recipe.title ?? ''),
+            imageUrl,
+            source: 'scan',
+            sourceId: scan_id,
+            geminiModel: imageResult.geminiModel ?? 'gemini_generated',
+          });
+        }
         savedRecipes.push({ ...recipe, id: saved.id, image_url: imageUrl });
       } else {
         savedRecipes.push({ ...recipe, image_url: imageUrl });
       }
     }
-
-    // ── Increment API usage ───────────────────────────────────────────────────
-    await supabase.rpc('increment_recipe_usage', { p_user_id: user_id, p_date: today });
 
     return new Response(
       JSON.stringify({ recipes: savedRecipes, scan_id }),

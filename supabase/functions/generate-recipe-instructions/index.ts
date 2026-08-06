@@ -84,6 +84,32 @@ function parseSteps(rawText: string): InstructionStep[] {
     .sort((a, b) => a.order - b.order);
 }
 
+/** Sum of per-step duration_minutes — used to derive a realistic total time. */
+function sumStepDurations(steps: unknown): number {
+  if (!Array.isArray(steps)) return 0;
+  let total = 0;
+  for (const step of steps) {
+    const d = Number((step as Record<string, unknown>)?.duration_minutes ?? 0);
+    if (Number.isFinite(d) && d > 0) total += d;
+  }
+  return Math.round(total);
+}
+
+/** Derive total cook time from stored value and step durations. */
+function resolveCookTime(stored: unknown, steps: unknown): number {
+  const storedNum = Number(stored ?? 0);
+  const summed = sumStepDurations(steps);
+  if (summed > 1 && summed > storedNum) return summed;
+  if (isPlaceholderCookTime(storedNum) && summed > 1) return summed;
+  return storedNum > 1 ? storedNum : summed > 1 ? summed : Math.max(storedNum, 0);
+}
+
+/** True when the stored cook time is missing or the bogus "1 min" placeholder. */
+function isPlaceholderCookTime(value: unknown): boolean {
+  const n = Number(value);
+  return !Number.isFinite(n) || n <= 1;
+}
+
 function isPlaceholderSteps(steps: unknown): boolean {
   if (!Array.isArray(steps) || steps.length === 0) return true;
   if (steps.length > 1) return false;
@@ -158,10 +184,25 @@ serve(async (req: Request) => {
       }
 
       if (!isPlaceholderSteps(row.steps)) {
-        return new Response(JSON.stringify({ steps: row.steps, cached: true }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        const cookTime = resolveCookTime(row.cook_time_minutes, row.steps);
+        const stored = Number(row.cook_time_minutes ?? 0);
+        if (cookTime > stored) {
+          await admin
+            .from('recipes')
+            .update({ cook_time_minutes: cookTime })
+            .eq('id', recipeId);
+        }
+        return new Response(
+          JSON.stringify({
+            steps: row.steps,
+            cached: true,
+            ...(cookTime > 1 ? { cook_time_minutes: cookTime } : {}),
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       body.title = String(row.title ?? body.title ?? 'Recipe');
@@ -181,10 +222,18 @@ serve(async (req: Request) => {
     }
 
     if (!isPlaceholderSteps(body.steps)) {
-      return new Response(JSON.stringify({ steps: body.steps, cached: true }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const cookTime = resolveCookTime(body.cook_time_minutes, body.steps);
+      return new Response(
+        JSON.stringify({
+          steps: body.steps,
+          cached: true,
+          ...(cookTime > 1 ? { cook_time_minutes: cookTime } : {}),
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
     }
 
     const prompt = buildPrompt({
@@ -240,10 +289,14 @@ serve(async (req: Request) => {
       });
     }
 
+    const cookTime = resolveCookTime(body.cook_time_minutes, steps);
+
     if (recipeId) {
+      const update: Record<string, unknown> = { steps };
+      if (cookTime > 1) update.cook_time_minutes = cookTime;
       const { error: updateError } = await admin
         .from('recipes')
-        .update({ steps })
+        .update(update)
         .eq('id', recipeId);
 
       if (updateError) {
@@ -251,10 +304,17 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response(JSON.stringify({ steps, generated: true }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        steps,
+        generated: true,
+        ...(cookTime > 1 ? { cook_time_minutes: cookTime } : {}),
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
   } catch (err) {
     console.error('generate-recipe-instructions error:', err);
     return new Response(JSON.stringify({ error: 'Failed to generate instructions' }), {

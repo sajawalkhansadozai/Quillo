@@ -3,6 +3,9 @@
 // generate-recipes Edge Function.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import '../utils/recipe_image_source.dart';
+import '../utils/ingredient_amount_scale.dart';
+
 class GeneratedRecipe {
   final String? id;
   final String title;
@@ -52,8 +55,23 @@ class GeneratedRecipe {
   }
 
   factory GeneratedRecipe.fromJson(Map<String, dynamic> json) {
+    var id = json['id']?.toString();
+    var externalSource =
+        json['external_source'] as String? ?? json['source'] as String?;
+    var externalId =
+        json['external_id']?.toString() ?? json['source_id']?.toString();
+
+    if (id != null && !isSupabaseRecipeId(id)) {
+      final prefixed = parsePrefixedProviderId(id);
+      if (prefixed != null) {
+        externalSource ??= prefixed.source;
+        externalId ??= prefixed.sourceId;
+      }
+      id = null;
+    }
+
     return GeneratedRecipe(
-      id: json['id']?.toString(),
+      id: id,
       title: json['title'] as String? ?? 'Untitled Recipe',
       difficulty: json['difficulty'] as String? ?? 'medium',
       cookTimeMinutes: (json['cook_time_minutes'] as num?)?.toInt() ?? 30,
@@ -72,10 +90,8 @@ class GeneratedRecipe {
       ),
       imageUrl: json['image_url'] as String?,
       isPublic: json['is_public'] as bool? ?? false,
-      externalSource:
-          json['external_source'] as String? ?? json['source'] as String?,
-      externalId:
-          json['external_id']?.toString() ?? json['source_id']?.toString(),
+      externalSource: externalSource,
+      externalId: externalId,
     );
   }
 
@@ -127,6 +143,32 @@ class GeneratedRecipe {
     );
   }
 
+  /// Returns a copy with ingredient amounts adjusted for [servings].
+  GeneratedRecipe scaledToServings(int servings) {
+    final base = this.servings > 0 ? this.servings : servings;
+    if (servings == base) return this;
+    final factor = servings / base;
+    return copyWith(
+      servings: servings,
+      ingredientsUsed: ingredientsUsed
+          .map(
+            (i) => RecipeIngredientUsed(
+              name: i.name,
+              amount: IngredientAmountScale.scale(i.amount, factor),
+            ),
+          )
+          .toList(),
+      missingIngredients: missingIngredients
+          .map(
+            (i) => MissingIngredient(
+              name: i.name,
+              amount: IngredientAmountScale.scale(i.amount, factor),
+            ),
+          )
+          .toList(),
+    );
+  }
+
   String get difficultyLabel {
     switch (difficulty.toLowerCase()) {
       case 'easy':
@@ -139,10 +181,29 @@ class GeneratedRecipe {
   }
 
   String get cookTimeLabel {
-    if (cookTimeMinutes < 60) return '$cookTimeMinutes min';
-    final h = cookTimeMinutes ~/ 60;
-    final m = cookTimeMinutes % 60;
+    final mins = effectiveCookTimeMinutes;
+    if (mins < 60) return '$mins min';
+    final h = mins ~/ 60;
+    final m = mins % 60;
     return m == 0 ? '${h}h' : '${h}h ${m}m';
+  }
+
+  /// Sum of per-step [durationMinutes] when present.
+  static int sumStepDurations(List<RecipeStep> steps) {
+    var total = 0;
+    for (final step in steps) {
+      final d = step.durationMinutes;
+      if (d != null && d > 0) total += d;
+    }
+    return total;
+  }
+
+  /// Prefer step durations when they exceed the stored cook time (e.g. 30 min
+  /// placeholder vs 60+ min in generated instructions).
+  int get effectiveCookTimeMinutes {
+    final fromSteps = sumStepDurations(steps);
+    if (fromSteps > cookTimeMinutes) return fromSteps;
+    return cookTimeMinutes;
   }
 
   /// Total ingredients in the recipe (from scan + still needed).

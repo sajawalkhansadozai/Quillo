@@ -13,6 +13,12 @@ class SubscriptionService {
   static final _client = Supabase.instance.client;
   static bool _configured = false;
 
+  /// Global premium flag (checklist `isPremium`). Widgets listen via [premiumNotifier].
+  static final ValueNotifier<bool> premiumNotifier = ValueNotifier(false);
+
+  /// Cached `isPremium` — use for sync UI gates; call [isPremium] to refresh from RevenueCat.
+  static bool get isPremiumCached => premiumNotifier.value;
+
   /// Set when [getOfferings] fails or returns no purchasable packages.
   static String? lastOfferingsError;
 
@@ -39,7 +45,8 @@ class SubscriptionService {
   static void _onCustomerInfoUpdated(CustomerInfo info) {
     final isPrem =
         info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
-    _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+    // Entitlement updates drive instant ad hide/show (4.4 / 4.5).
+    _applyPremiumStatus(isPrem);
   }
 
   /// Call after every successful sign-in / sign-up.
@@ -61,26 +68,45 @@ class SubscriptionService {
     } catch (_) {}
   }
 
+  /// RevenueCat entitlement is the source of truth for ads (4.1 / 4.5).
+  /// Supabase is updated only when the entitlement changes.
   static Future<bool> isPremium() async {
     try {
       final uid = _client.auth.currentUser?.id;
-      if (uid == null) return false;
+      if (uid == null) {
+        premiumNotifier.value = false;
+        return false;
+      }
+
+      if (_configured && !kIsWeb) {
+        final info = await Purchases.getCustomerInfo();
+        final prem = info.entitlements.active
+            .containsKey(IapConfig.premiumEntitlement);
+        await _applyPremiumStatus(prem);
+        return prem;
+      }
 
       final row = await _client
           .from('users')
           .select('subscription_status')
           .eq('id', uid)
           .maybeSingle();
-
-      if (row?['subscription_status'] == 'premium') return true;
-
-      if (!_configured) return false;
-
-      final info = await Purchases.getCustomerInfo();
-      return info.entitlements.active
-          .containsKey(IapConfig.premiumEntitlement);
+      final prem = row?['subscription_status'] == 'premium';
+      premiumNotifier.value = prem;
+      return prem;
     } catch (_) {
-      return false;
+      return premiumNotifier.value;
+    }
+  }
+
+  /// Re-check RevenueCat (call when opening screens — checklist 4.3).
+  static Future<bool> refreshPremiumStatus() => isPremium();
+
+  static Future<void> _applyPremiumStatus(bool isPrem) async {
+    final changed = premiumNotifier.value != isPrem;
+    premiumNotifier.value = isPrem;
+    if (changed) {
+      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
     }
   }
 
@@ -185,9 +211,8 @@ class SubscriptionService {
       );
       final isPrem = result.customerInfo.entitlements.active
           .containsKey(IapConfig.premiumEntitlement);
-      if (isPrem) {
-        await _syncStatusToSupabase('premium');
-      }
+      premiumNotifier.value = isPrem;
+      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
       return PurchaseResult(success: isPrem);
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
@@ -214,9 +239,8 @@ class SubscriptionService {
       final info = await Purchases.restorePurchases();
       final isPrem =
           info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
-      if (isPrem) {
-        await _syncStatusToSupabase('premium');
-      }
+      premiumNotifier.value = isPrem;
+      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
       return PurchaseResult(success: isPrem, restored: true);
     } catch (e) {
       return PurchaseResult(
@@ -237,6 +261,7 @@ class SubscriptionService {
       final isPrem =
           info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
       await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+      premiumNotifier.value = isPrem;
     } catch (_) {}
   }
 
@@ -252,6 +277,9 @@ class SubscriptionService {
 
       if (status == 'premium') {
         await _client.rpc('set_premium_limit', params: {'p_user_id': uid});
+        premiumNotifier.value = true;
+      } else {
+        premiumNotifier.value = false;
       }
     } catch (_) {}
   }

@@ -1,6 +1,12 @@
 # Supabase project config (CLI + Edge Functions)
 # https://supabase.com/docs/guides/functions/function-configuration
 
+[functions.search-catalog]
+verify_jwt = true
+
+[functions.list-public-recipes]
+verify_jwt = true
+
 [functions.search-external-recipes]
 verify_jwt = true
 
@@ -18,3 +24,7 @@ verify_jwt = true
 
 [functions.ocr-scan]
 verify_jwt = true
+
+[functions.upgrade-recipe-image]
+verify_jwt = true
+# wall_clock_timeout: set in Supabase Dashboard → Edge Functions → upgrade-recipe-image

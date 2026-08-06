@@ -10,6 +10,7 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { consumeMonthlyScan } from '../_shared/scan_quota.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -69,18 +70,11 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── Rate limit check ──────────────────────────────────────────────────────
-    const today = new Date().toISOString().split('T')[0];
-    const { data: usage } = await supabase
-      .from('api_usage')
-      .select('ocr_calls, daily_limit')
-      .eq('user_id', user_id)
-      .eq('date', today)
-      .maybeSingle();
-
-    if (usage && usage.ocr_calls >= usage.daily_limit) {
+    // ── Monthly scan quota (free: 2/month, premium: unlimited) ────────────────
+    const quota = await consumeMonthlyScan(supabase, user_id);
+    if (!quota.allowed) {
       return new Response(
-        JSON.stringify({ error: 'Daily scan limit reached. Upgrade to Premium for more scans.' }),
+        JSON.stringify({ error: quota.message ?? 'Monthly scan limit reached. Upgrade to Premium for unlimited scans.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -160,9 +154,6 @@ serve(async (req: Request) => {
       }));
       await supabase.from('ingredients').insert(rows);
     }
-
-    // ── Increment API usage ───────────────────────────────────────────────────
-    await supabase.rpc('increment_ocr_usage', { p_user_id: user_id, p_date: today });
 
     return new Response(
       JSON.stringify({ ingredients, scan_id }),

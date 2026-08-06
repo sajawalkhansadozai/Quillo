@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import '../../models/ingredient_item.dart';
 import '../../services/recipe_service.dart';
 import '../../services/scan_service.dart';
-import '../../services/daily_limit_service.dart';
+import '../../services/scan_limit_service.dart';
+import '../../services/streak_service.dart';
+import '../../services/food_waste_service.dart';
+import '../../services/ad_service.dart';
 import '../../widgets/scan_limit_sheet.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ad_banner.dart';
 import 'recipe_results_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,11 +20,14 @@ import 'recipe_results_screen.dart';
 class IngredientReviewScreen extends StatefulWidget {
   final String scanId;
   final List<IngredientItem> ingredients;
+  /// True when quota was already consumed during receipt OCR.
+  final bool receiptAlreadyCounted;
 
   const IngredientReviewScreen({
     super.key,
     required this.scanId,
     required this.ingredients,
+    this.receiptAlreadyCounted = false,
   });
 
   @override
@@ -53,10 +60,11 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       _showSnack('Add at least one ingredient before generating recipes.');
       return;
     }
-    // Check daily limit (covers manual entry path)
-    if (!await DailyLimitService.canScan()) {
-      if (mounted) await showScanLimitSheet(context);
-      return;
+    if (!widget.receiptAlreadyCounted) {
+      if (!await ScanLimitService.canScan()) {
+        if (mounted) await showScanLimitSheet(context);
+        return;
+      }
     }
     setState(() => _isGenerating = true);
 
@@ -64,13 +72,20 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       final recipes = await RecipeService.generateRecipes(
         scanId: widget.scanId,
         ingredients: _ingredients,
+        isManualEntry: !widget.receiptAlreadyCounted,
       ).timeout(
         const Duration(seconds: 90),
         onTimeout: () => throw const ScanException(
             'Recipe generation is taking longer than usual — tap to retry.'),
       );
 
-      await DailyLimitService.recordScan();
+      if (!widget.receiptAlreadyCounted) {
+        await ScanLimitService.recordScan();
+      }
+      await StreakService.recordScan();
+      await FoodWasteService.recordIngredientsRescued(_ingredients);
+      await AdService.showInterstitialIfFree();
+
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -240,7 +255,7 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AdScaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(

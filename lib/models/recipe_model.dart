@@ -9,8 +9,6 @@ class RecipeModel {
   final int servings;
   final String difficulty;
   final String cuisine;
-  final double rating;
-  final int reviews;
   final int calories;
   final String tag;
   final Color color;
@@ -29,8 +27,6 @@ class RecipeModel {
     required this.servings,
     required this.difficulty,
     required this.cuisine,
-    required this.rating,
-    required this.reviews,
     required this.calories,
     required this.tag,
     required this.color,
@@ -50,8 +46,6 @@ class RecipeModel {
         servings: 2,
         difficulty: 'Medium',
         cuisine: 'Japanese',
-        rating: 4.9,
-        reviews: 2341,
         calories: 490,
         tag: "Chef's Pick",
         color: AppColors.primary,
@@ -101,28 +95,28 @@ class RecipeModel {
   static const List<RecipeModel> suggested = [
     RecipeModel(
       id: '2', name: 'Lemon Butter Pasta', emoji: '🍝', time: 30, servings: 2,
-      difficulty: 'Easy', cuisine: 'Italian', rating: 4.7, reviews: 890, calories: 420,
+      difficulty: 'Easy', cuisine: 'Italian', calories: 420,
       tag: 'QUICK', color: Color(0xFFFF9800), chef: 'Chef Luca',
       tags: ['Quick', 'Italian'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 420, protein: 15, carbs: 52, fat: 18),
     ),
     RecipeModel(
       id: '3', name: 'Avocado Buddha Bowl', emoji: '🥗', time: 15, servings: 1,
-      difficulty: 'Easy', cuisine: 'Healthy', rating: 4.8, reviews: 1240, calories: 380,
+      difficulty: 'Easy', cuisine: 'Healthy', calories: 380,
       tag: 'VEGAN', color: Color(0xFF4CAF50), chef: 'Chef Aria',
       tags: ['Vegan', 'Healthy'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 380, protein: 12, carbs: 45, fat: 16),
     ),
     RecipeModel(
       id: '4', name: 'Chicken Tikka Masala', emoji: '🍛', time: 45, servings: 3,
-      difficulty: 'Medium', cuisine: 'Indian', rating: 4.9, reviews: 2100, calories: 510,
+      difficulty: 'Medium', cuisine: 'Indian', calories: 510,
       tag: 'DINNER', color: Color(0xFFE91E63), chef: 'Chef Priya',
       tags: ['Dinner', 'Indian'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 510, protein: 32, carbs: 28, fat: 22),
     ),
     RecipeModel(
       id: '5', name: 'Strawberry Mousse', emoji: '🍓', time: 30, servings: 3,
-      difficulty: 'Medium', cuisine: 'Dessert', rating: 4.6, reviews: 670, calories: 280,
+      difficulty: 'Medium', cuisine: 'Dessert', calories: 280,
       tag: 'DESSERT', color: Color(0xFFE91E63), chef: 'Chef Sophie',
       tags: ['Dessert', 'Sweet'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 280, protein: 5, carbs: 38, fat: 12),
@@ -132,21 +126,21 @@ class RecipeModel {
   static const List<RecipeModel> saved = [
     RecipeModel(
       id: '6', name: 'Fluffy Pancakes', emoji: '🥞', time: 20, servings: 2,
-      difficulty: 'Easy', cuisine: 'American', rating: 4.8, reviews: 990, calories: 340,
+      difficulty: 'Easy', cuisine: 'American', calories: 340,
       tag: '', color: AppColors.accent, chef: 'Chef Tom',
       tags: ['Breakfast'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 340, protein: 10, carbs: 48, fat: 14),
     ),
     RecipeModel(
       id: '7', name: 'Spring Green Salad', emoji: '🥗', time: 10, servings: 2,
-      difficulty: 'Easy', cuisine: 'Healthy', rating: 4.5, reviews: 450, calories: 180,
+      difficulty: 'Easy', cuisine: 'Healthy', calories: 180,
       tag: '', color: Color(0xFF4CAF50), chef: 'Chef Eva',
       tags: ['Salad'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 180, protein: 6, carbs: 22, fat: 8),
     ),
     RecipeModel(
       id: '8', name: 'Tofu Stir Fry', emoji: '🥘', time: 25, servings: 2,
-      difficulty: 'Easy', cuisine: 'Asian', rating: 4.6, reviews: 720, calories: 290,
+      difficulty: 'Easy', cuisine: 'Asian', calories: 290,
       tag: '', color: AppColors.primary, chef: 'Chef Mei',
       tags: ['Vegan'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 290, protein: 18, carbs: 30, fat: 10),
@@ -156,70 +150,70 @@ class RecipeModel {
   static const List<RecipeModel> savedAll = [
     RecipeModel(
       id: 's1', name: 'Spiced Ramen Bowl', emoji: '🍜', time: 20, servings: 2,
-      difficulty: 'Medium', cuisine: 'Japanese', rating: 4.9, reviews: 2341, calories: 490,
+      difficulty: 'Medium', cuisine: 'Japanese', calories: 490,
       tag: "CHEF'S PICK", color: Color(0xFF6C63FF), chef: 'Chef Maria R.',
       tags: ['Japanese', 'Spicy'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 490, protein: 22, carbs: 58, fat: 14), isSaved: true,
     ),
     RecipeModel(
       id: 's2', name: 'Lemon Butter Pasta', emoji: '🍝', time: 30, servings: 2,
-      difficulty: 'Easy', cuisine: 'Italian', rating: 4.7, reviews: 890, calories: 420,
+      difficulty: 'Easy', cuisine: 'Italian', calories: 420,
       tag: 'QUICK', color: Color(0xFFFF9800), chef: 'Chef Luca',
       tags: ['Quick', 'Italian'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 420, protein: 15, carbs: 52, fat: 18), isSaved: true,
     ),
     RecipeModel(
       id: 's3', name: 'Avocado Buddha Bowl', emoji: '🥗', time: 15, servings: 1,
-      difficulty: 'Easy', cuisine: 'Healthy', rating: 4.8, reviews: 1240, calories: 380,
+      difficulty: 'Easy', cuisine: 'Healthy', calories: 380,
       tag: 'VEGAN', color: Color(0xFF4CAF50), chef: 'Chef Aria',
       tags: ['Vegan', 'Healthy'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 380, protein: 12, carbs: 45, fat: 16), isSaved: true,
     ),
     RecipeModel(
       id: 's4', name: 'Chicken Tikka Masala', emoji: '🍛', time: 45, servings: 3,
-      difficulty: 'Medium', cuisine: 'Indian', rating: 4.9, reviews: 2100, calories: 510,
+      difficulty: 'Medium', cuisine: 'Indian', calories: 510,
       tag: 'DINNER', color: Color(0xFFE91E63), chef: 'Chef Priya',
       tags: ['Dinner', 'Indian'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 510, protein: 32, carbs: 28, fat: 22), isSaved: true,
     ),
     RecipeModel(
       id: 's5', name: 'Strawberry Mousse', emoji: '🍓', time: 30, servings: 3,
-      difficulty: 'Medium', cuisine: 'Dessert', rating: 4.6, reviews: 670, calories: 280,
+      difficulty: 'Medium', cuisine: 'Dessert', calories: 280,
       tag: 'DESSERT', color: Color(0xFFE91E63), chef: 'Chef Sophie',
       tags: ['Dessert', 'Sweet'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 280, protein: 5, carbs: 38, fat: 12), isSaved: true,
     ),
     RecipeModel(
       id: 's6', name: 'Fluffy Fluffy Pancakes', emoji: '🥞', time: 20, servings: 2,
-      difficulty: 'Easy', cuisine: 'American', rating: 4.8, reviews: 990, calories: 340,
+      difficulty: 'Easy', cuisine: 'American', calories: 340,
       tag: 'BREAKFAST', color: Color(0xFFFFC107), chef: 'Chef Tom',
       tags: ['Breakfast'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 340, protein: 10, carbs: 48, fat: 14), isSaved: true,
     ),
     RecipeModel(
       id: 's7', name: 'Garlic Lemon Risotto', emoji: '🍚', time: 35, servings: 2,
-      difficulty: 'Medium', cuisine: 'Italian', rating: 4.7, reviews: 543, calories: 460,
+      difficulty: 'Medium', cuisine: 'Italian', calories: 460,
       tag: 'LUNCH', color: Color(0xFF6C63FF), chef: 'Chef Marco',
       tags: ['Italian', 'Lunch'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 460, protein: 14, carbs: 62, fat: 16), isSaved: true,
     ),
     RecipeModel(
       id: 's8', name: 'Spring Green Salad', emoji: '🥗', time: 10, servings: 2,
-      difficulty: 'Easy', cuisine: 'Healthy', rating: 4.5, reviews: 450, calories: 180,
+      difficulty: 'Easy', cuisine: 'Healthy', calories: 180,
       tag: 'LIGHT', color: Color(0xFF4CAF50), chef: 'Chef Eva',
       tags: ['Salad', 'Light'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 180, protein: 6, carbs: 22, fat: 8), isSaved: true,
     ),
     RecipeModel(
       id: 's9', name: 'Carrot Ginger Soup', emoji: '🥣', time: 25, servings: 3,
-      difficulty: 'Easy', cuisine: 'Healthy', rating: 4.6, reviews: 380, calories: 210,
+      difficulty: 'Easy', cuisine: 'Healthy', calories: 210,
       tag: 'SOUP', color: Color(0xFFFF9800), chef: 'Chef Nora',
       tags: ['Soup', 'Healthy'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 210, protein: 5, carbs: 32, fat: 7), isSaved: true,
     ),
     RecipeModel(
       id: 's10', name: 'Mango Coconut Ice Cream', emoji: '🍨', time: 15, servings: 4,
-      difficulty: 'Easy', cuisine: 'Dessert', rating: 4.8, reviews: 720, calories: 240,
+      difficulty: 'Easy', cuisine: 'Dessert', calories: 240,
       tag: 'DESSERT', color: Color(0xFFFFEB3B), chef: 'Chef Mei',
       tags: ['Dessert', 'Vegan'], ingredients: [], instructions: [],
       nutrition: NutritionModel(calories: 240, protein: 3, carbs: 36, fat: 10), isSaved: true,

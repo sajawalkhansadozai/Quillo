@@ -3,12 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
+import '../../config/recipe_search_config.dart';
 import '../../services/streak_service.dart';
-import '../../services/daily_limit_service.dart';
+import '../../services/scan_limit_service.dart';
 import '../../models/generated_recipe.dart';
-import '../../widgets/ad_banner.dart';
 import '../../widgets/scan_limit_sheet.dart';
+import '../../widgets/scan_usage_banner.dart';
+import '../../models/user_recipe_preferences.dart';
+import '../../utils/recipe_preference_filter.dart';
 import '../../services/recipe_service.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../widgets/recipe_rating_badge.dart';
+import '../../widgets/recipe_thumbnail_image.dart';
 import '../scan/ingredient_review_screen.dart';
 import '../scan/recipe_detail_page.dart';
 import 'all_recipes_screen.dart';
@@ -16,7 +22,13 @@ import 'scan_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onExploreTap;
-  const HomeScreen({super.key, this.onExploreTap});
+  final void Function(String query, {bool focusSearch})? onSearchNavigate;
+
+  const HomeScreen({
+    super.key,
+    this.onExploreTap,
+    this.onSearchNavigate,
+  });
   @override
   State<HomeScreen> createState() => HomeScreenState();
 }
@@ -27,21 +39,27 @@ class HomeScreenState extends State<HomeScreen>
   late Animation<double> _fadeAnim;
 
   final _client = Supabase.instance.client;
-  final _searchCtrl = TextEditingController();
-  Timer? _searchDebounce;
 
   String _userName = '';
   String? _avatarUrl;
   int _streak = 0;
   List<Map<String, dynamic>> _recentScans = [];
   List<GeneratedRecipe> _recentRecipes = [];
-  List<GeneratedRecipe> _searchResults = [];
   List<GeneratedRecipe> _savedRecipes = [];
+  List<GeneratedRecipe> _catalogRecipes = [];
+  UserRecipePreferences _userPrefs = UserRecipePreferences.empty;
   bool _loading = true;
-  bool _searchLoading = false;
   String _selectedCategory = 'All';
-  String _searchQuery = '';
-  final _categories = ['All', 'Quick', 'Breakfast', 'Lunch', 'Dinner', 'Vegan'];
+  int _imageUpgradeGeneration = 0;
+  final Set<String> _upgradingImageKeys = {};
+
+  List<String> get _categories {
+    final extras = _userPrefs.cuisines
+        .where((c) => !['All', 'Quick', 'Breakfast', 'Lunch', 'Dinner', 'Vegan']
+            .any((b) => b.toLowerCase() == c.toLowerCase()))
+        .toList();
+    return ['All', 'Quick', ...extras, 'Breakfast', 'Lunch', 'Dinner', 'Vegan'];
+  }
 
   @override
   void initState() {
@@ -50,49 +68,93 @@ class HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 500), vsync: this);
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
-    _searchCtrl.addListener(_onSearchChanged);
     _loadData();
   }
 
-  void _onSearchChanged() {
-    final q = _searchCtrl.text.trim();
-    setState(() => _searchQuery = q.toLowerCase());
-    _searchDebounce?.cancel();
-    if (q.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _searchLoading = false;
-      });
-      return;
-    }
-    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-      _fetchSearchFromSupabase(q);
-    });
-  }
-
-  Future<void> _fetchSearchFromSupabase(String query) async {
-    setState(() => _searchLoading = true);
-    try {
-      final results = await RecipeService.searchCatalog(query: query, limit: 50);
-      if (!mounted || _searchCtrl.text.trim() != query) return;
-      setState(() {
-        _searchResults = results;
-        _searchLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _searchLoading = false);
-    }
+  void _openExploreSearch({String query = '', bool focusSearch = false}) {
+    widget.onSearchNavigate?.call(query, focusSearch: focusSearch);
   }
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
+    _imageUpgradeGeneration++;
     _fadeCtrl.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
-  /// Called by MainShell when the user taps back to the Home tab.
+  void _replaceRecipeInLists(GeneratedRecipe old, GeneratedRecipe updated) {
+    final oldKey = RecipeService.imageTrackKey(old);
+
+    void patch(List<GeneratedRecipe> list) {
+      final i = list.indexWhere(
+        (r) => RecipeService.imageTrackKey(r) == oldKey,
+      );
+      if (i >= 0) list[i] = updated;
+    }
+
+    setState(() {
+      patch(_catalogRecipes);
+      patch(_recentRecipes);
+      _upgradingImageKeys.remove(oldKey);
+    });
+  }
+
+  Future<void> _startBackgroundImageUpgrades(List<GeneratedRecipe> recipes) async {
+    final generation = ++_imageUpgradeGeneration;
+    final targets = recipes
+        .where(RecipeService.needsGeminiImageUpgrade)
+        .take(RecipeSearchConfig.exploreAiImageUpgradeLimit)
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+
+    setState(() {
+      _upgradingImageKeys
+        ..clear()
+        ..addAll(targets.map(RecipeService.imageTrackKey));
+    });
+
+    await RecipeService.upgradeRecipeImagesInBackground(
+      recipes: targets,
+      shouldContinue: () =>
+          mounted && generation == _imageUpgradeGeneration,
+      onUpdated: (old, updated) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        _replaceRecipeInLists(old, updated);
+      },
+      onFinished: (recipe) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        setState(() {
+          _upgradingImageKeys.remove(RecipeService.imageTrackKey(recipe));
+        });
+      },
+    );
+  }
+
+  /// Called by MainShell when the user returns to the Home tab.
+  Future<void> refresh() async {
+    await Future.wait([refreshName(), _reloadPreferencesAndCatalog()]);
+  }
+
+  Future<void> _reloadPreferencesAndCatalog() async {
+    try {
+      final prefs = await RecipeService.loadUserPreferences();
+      final catalog = await RecipeService.listPublicRecipes(
+        limit: 40,
+        preferences: prefs,
+      );
+      if (!mounted) return;
+      setState(() {
+        _userPrefs = prefs;
+        _catalogRecipes = catalog;
+        _recentRecipes = RecipePreferenceFilter.apply(_recentRecipes, prefs);
+      });
+      unawaited(_startBackgroundImageUpgrades([
+        ...catalog,
+        ..._recentRecipes,
+      ]));
+    } catch (_) {}
+  }
+
   Future<void> refreshName() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return;
@@ -121,31 +183,46 @@ class HomeScreenState extends State<HomeScreen>
     final uid = _client.auth.currentUser?.id;
     if (uid == null) { setState(() => _loading = false); return; }
     try {
-      final userRow = await _client
+      final prefsFuture = RecipeService.loadUserPreferences();
+      final userRowFuture = _client
           .from('users')
           .select('email, full_name, avatar_url, scan_streak, last_scan_date')
           .eq('id', uid)
           .maybeSingle();
-      final email = (userRow?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
-      final dbFullName = (userRow?['full_name'] as String?)?.trim() ?? '';
-      final ssoName = (_client.auth.currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
-      final rawStreak = await StreakService.getCurrentStreak();
-
-      final scansData = await _client
+      final scansFuture = _client
           .from('scans').select('id, scan_date, status')
           .eq('user_id', uid).eq('status', 'complete')
           .order('scan_date', ascending: false).limit(5);
-
-      final recipesData = await _client
+      final recipesFuture = _client
           .from('recipes')
           .select('id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url')
           .eq('user_id', uid)
           .order('created_at', ascending: false).limit(10);
-
-      final savedData = await _client
+      final savedFuture = _client
           .from('saved_recipes').select('cached_data')
           .eq('user_id', uid)
           .order('saved_at', ascending: false).limit(6);
+
+      final prefs = await prefsFuture;
+      final catalogFuture = RecipeService.listPublicRecipes(
+        limit: 40,
+        preferences: prefs,
+      );
+      final streakFuture = StreakService.getCurrentStreak();
+
+      final results = await Future.wait<dynamic>([
+        userRowFuture,
+        scansFuture,
+        recipesFuture,
+        savedFuture,
+        catalogFuture,
+        streakFuture,
+      ]);
+
+      final userRow = results[0] as Map<String, dynamic>?;
+      final email = (userRow?['email'] as String?) ?? _client.auth.currentUser?.email ?? '';
+      final dbFullName = (userRow?['full_name'] as String?)?.trim() ?? '';
+      final ssoName = (_client.auth.currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
 
       if (!mounted) return;
       setState(() {
@@ -155,12 +232,26 @@ class HomeScreenState extends State<HomeScreen>
                 ? ssoName
                 : _firstName(email);
         _avatarUrl = _resolveAvatarUrl(userRow);
-        _streak = rawStreak;
-        _recentScans = List<Map<String, dynamic>>.from(scansData);
-        _recentRecipes = _parseRecipes(recipesData);
-        _savedRecipes = _parseSavedRecipes(savedData);
+        _streak = results[5] as int;
+        _recentScans = List<Map<String, dynamic>>.from(results[1] as List);
+        _recentRecipes = RecipePreferenceFilter.apply(
+          _parseRecipes(results[2] as List),
+          prefs,
+        );
+        _savedRecipes = _parseSavedRecipes(results[3] as List);
+        _catalogRecipes = results[4] as List<GeneratedRecipe>;
+        _userPrefs = prefs;
         _loading = false;
       });
+      RecipeRatingService.prefetchSummaries([
+        ..._catalogRecipes,
+        ..._recentRecipes,
+        ..._savedRecipes,
+      ]);
+      unawaited(_startBackgroundImageUpgrades([
+        ..._catalogRecipes,
+        ..._recentRecipes,
+      ]));
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
@@ -225,22 +316,74 @@ class HomeScreenState extends State<HomeScreen>
     return 'Good evening';
   }
 
-  bool get _isSearching => _searchQuery.isNotEmpty;
+  List<GeneratedRecipe> get _suggestedPool {
+    final seen = <String>{};
+    final merged = <GeneratedRecipe>[];
+    for (final r in [..._catalogRecipes, ..._recentRecipes]) {
+      final key = r.id ?? r.title.toLowerCase();
+      if (seen.add(key)) merged.add(r);
+    }
+    return RecipePreferenceFilter.apply(merged, _userPrefs);
+  }
 
   List<GeneratedRecipe> get _filtered {
-    var list = _isSearching ? _searchResults : _recentRecipes;
+    var list = _suggestedPool;
     if (_selectedCategory == 'All') return list;
-    return list.where((r) {
-      final t = r.title.toLowerCase();
-      switch (_selectedCategory) {
-        case 'Quick': return r.cookTimeMinutes <= 20;
-        case 'Breakfast': return t.contains('egg') || t.contains('pancake') || t.contains('toast') || t.contains('omelette');
-        case 'Lunch': return t.contains('salad') || t.contains('soup') || t.contains('sandwich') || t.contains('wrap');
-        case 'Dinner': return t.contains('chicken') || t.contains('beef') || t.contains('pasta') || t.contains('steak') || t.contains('salmon');
-        case 'Vegan': return t.contains('vegan') || t.contains('salad') || t.contains('tofu') || t.contains('avocado') || t.contains('lentil');
-        default: return true;
-      }
-    }).toList();
+    return list.where((r) => _matchesHomeCategory(r, _selectedCategory)).toList();
+  }
+
+  /// Category chips must match the same rules as the Suggested tile badges.
+  static bool _matchesHomeCategory(GeneratedRecipe r, String category) {
+    final t = r.title.toLowerCase();
+    switch (category) {
+      case 'Quick':
+        // Match badge: QUICK is cook time ≤ 20 only (do NOT use maxCookTime prefs).
+        return r.cookTimeMinutes > 0 && r.cookTimeMinutes <= 20;
+      case 'Breakfast':
+        return t.contains('egg') ||
+            t.contains('pancake') ||
+            t.contains('toast') ||
+            t.contains('omelette') ||
+            t.contains('oatmeal') ||
+            t.contains('breakfast');
+      case 'Lunch':
+        return t.contains('salad') ||
+            t.contains('soup') ||
+            t.contains('sandwich') ||
+            t.contains('wrap') ||
+            t.contains('lunch');
+      case 'Dinner':
+        return t.contains('dinner') ||
+            t.contains('chicken') ||
+            t.contains('beef') ||
+            t.contains('pasta') ||
+            t.contains('steak') ||
+            t.contains('salmon') ||
+            t.contains('lamb') ||
+            t.contains('pork') ||
+            t.contains('roast');
+      case 'Vegan':
+        if (t.contains('vegan')) return true;
+        if (!RecipePreferenceFilter.isVegetarian(r)) return false;
+        return t.contains('salad') ||
+            t.contains('tofu') ||
+            t.contains('avocado') ||
+            t.contains('lentil') ||
+            t.contains('chickpea') ||
+            t.contains('bean');
+      default:
+        // Cuisine chips from onboarding prefs (Greek, Turkish, Italian, …).
+        return RecipePreferenceFilter.matchesCuisine(r, category);
+    }
+  }
+
+  GeneratedRecipe? get _featuredRecipe {
+    final fromScans = _recentRecipes.isNotEmpty ? _recentRecipes : null;
+    if (fromScans != null && fromScans.isNotEmpty) {
+      return RecipePreferenceFilter.pickFeatured(fromScans, _userPrefs) ??
+          fromScans.first;
+    }
+    return RecipePreferenceFilter.pickFeatured(_catalogRecipes, _userPrefs);
   }
 
   void _goToScan() {
@@ -271,7 +414,7 @@ class HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 12),
               _ScanOption(icon: Icons.edit_note_rounded, color: const Color(0xFF4CAF50), title: 'Enter Manually', subtitle: 'Type your ingredients yourself', onTap: () async {
                 Navigator.pop(ctx);
-                if (!await DailyLimitService.canScan()) {
+                if (!await ScanLimitService.canScan()) {
                   if (context.mounted) await showScanLimitSheet(context);
                   return;
                 }
@@ -301,7 +444,6 @@ class HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FF),
-      bottomNavigationBar: const AdBannerWidget(),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: RefreshIndicator(
@@ -312,6 +454,7 @@ class HomeScreenState extends State<HomeScreen>
             slivers: [
               // ── Header ──────────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildHeader()),
+              const SliverToBoxAdapter(child: ScanUsageBanner()),
 
               // ── Search bar ───────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildSearchBar()),
@@ -322,47 +465,39 @@ class HomeScreenState extends State<HomeScreen>
                 )
               else ...[
                 // ── Featured Recipe ──────────────────────────────────────
-                if (_recentRecipes.isNotEmpty) ...[
+                if (_featuredRecipe != null) ...[
                   SliverToBoxAdapter(child: _sectionHeader('Featured Recipe', 'View all', onTap: () => _goToAllRecipes())),
                   SliverToBoxAdapter(child: _buildFeaturedCard()),
                 ],
 
                 // ── AI Banner ────────────────────────────────────────────
-                if (_recentRecipes.isNotEmpty)
+                if (_featuredRecipe != null || _suggestedPool.isNotEmpty)
                   SliverToBoxAdapter(child: _buildAIBanner()),
 
                 // ── Categories ───────────────────────────────────────────
                 SliverToBoxAdapter(child: _buildCategories()),
 
-                // ── Suggested for You / Search results ───────────────────
+                // ── Suggested for You ───────────────────────────────────
                 SliverToBoxAdapter(
                   child: _sectionHeader(
-                    _isSearching ? 'Search results' : 'Suggested for You',
+                    'Suggested for You',
                     'See all',
                     onTap: () => _goToAllRecipes(),
                   ),
                 ),
-                if (_searchLoading)
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(
-                        child: CircularProgressIndicator(color: AppColors.primary),
-                      ),
-                    ),
-                  )
-                else if (_filtered.isEmpty)
+                if (_filtered.isEmpty)
                   SliverToBoxAdapter(child: _buildEmptyRecipes())
                 else
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) => _SuggestedTile(
                         recipe: _filtered[i],
+                        isImageUpgrading: _upgradingImageKeys.contains(
+                          RecipeService.imageTrackKey(_filtered[i]),
+                        ),
                         onTap: () => _openRecipe(_filtered[i]),
                       ),
-                      childCount: _isSearching
-                          ? _filtered.length
-                          : _filtered.length.clamp(0, 6),
+                      childCount: _filtered.length.clamp(0, 6),
                     ),
                   ),
 
@@ -400,7 +535,7 @@ class HomeScreenState extends State<HomeScreen>
 
   Widget _buildHeader() {
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 0),
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 20),
       child: Row(
         children: [
           Expanded(
@@ -534,30 +669,28 @@ class HomeScreenState extends State<HomeScreen>
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Container(
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-        ),
-        child: Row(children: [
-          const SizedBox(width: 14),
-          const Icon(Icons.search_rounded, color: AppColors.textLight, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: _searchCtrl,
-              style: const TextStyle(fontSize: 14, color: AppColors.textDark),
-              decoration: InputDecoration(
-                hintText: 'Search 1200+ recipes...',
-                hintStyle: const TextStyle(fontSize: 14, color: AppColors.textLight),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openExploreSearch(focusSearch: true),
+        child: Container(
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+          ),
+          child: Row(children: [
+            const SizedBox(width: 14),
+            const Icon(Icons.search_rounded, color: AppColors.textLight, size: 20),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Search recipes...',
+                style: TextStyle(fontSize: 14, color: AppColors.textLight),
               ),
             ),
-          ),
-        ]),
+          ]),
+        ),
       ),
     );
   }
@@ -565,7 +698,7 @@ class HomeScreenState extends State<HomeScreen>
   // ── Featured Recipe ──────────────────────────────────────────────────────────
 
   Widget _buildFeaturedCard() {
-    final recipe = _recentRecipes[DateTime.now().day % _recentRecipes.length];
+    final recipe = _featuredRecipe!;
     final emoji = _emojiFor(recipe.title);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
@@ -582,20 +715,15 @@ class HomeScreenState extends State<HomeScreen>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Background
-                recipe.imageUrl != null
-                    ? Image.network(recipe.imageUrl!, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1A1A2E),
-                            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80)))))
-                    : Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
-                            begin: Alignment.topLeft, end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 80))),
-                      ),
+                RecipeThumbnailImage(
+                  imageUrl: recipe.imageUrl,
+                  emoji: emoji,
+                  placeholderColor: const Color(0xFF1A1A2E),
+                  isImageUpgrading: _upgradingImageKeys.contains(
+                    RecipeService.imageTrackKey(recipe),
+                  ),
+                  cacheWidth: 960,
+                ),
                 // Dark overlay
                 Container(
                   decoration: BoxDecoration(
@@ -684,11 +812,6 @@ class HomeScreenState extends State<HomeScreen>
                           _FeaturedStat(
                             icon: Icons.restaurant_rounded,
                             label: _cuisineHint(recipe.title),
-                          ),
-                          const SizedBox(width: 12),
-                          const _FeaturedStat(
-                            icon: Icons.star_rounded,
-                            label: '4.9',
                           ),
                         ],
                       ),
@@ -828,26 +951,23 @@ class HomeScreenState extends State<HomeScreen>
   // ── Empty recipes ────────────────────────────────────────────────────────────
 
   Widget _buildEmptyRecipes() {
-    final searching = _isSearching;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
         child: Column(children: [
-          Text(searching ? '🔍' : '🍽️', style: const TextStyle(fontSize: 36)),
+          const Text('🍽️', style: TextStyle(fontSize: 36)),
           const SizedBox(height: 8),
-          Text(
-            searching ? 'No recipes found' : 'No recipes yet',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark),
+          const Text(
+            'No recipes yet',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark),
           ),
           const SizedBox(height: 4),
-          Text(
-            searching
-                ? 'Try a different search term or category.'
-                : 'Scan a receipt to get recipes!',
+          const Text(
+            'Scan a receipt to get recipes!',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: AppColors.textMedium),
+            style: TextStyle(fontSize: 12, color: AppColors.textMedium),
           ),
         ]),
       ),
@@ -1259,8 +1379,13 @@ class _NotificationsSheet extends StatelessWidget {
 
 class _SuggestedTile extends StatefulWidget {
   final GeneratedRecipe recipe;
+  final bool isImageUpgrading;
   final VoidCallback onTap;
-  const _SuggestedTile({required this.recipe, required this.onTap});
+  const _SuggestedTile({
+    required this.recipe,
+    this.isImageUpgrading = false,
+    required this.onTap,
+  });
 
   @override
   State<_SuggestedTile> createState() => _SuggestedTileState();
@@ -1322,14 +1447,27 @@ class _SuggestedTileState extends State<_SuggestedTile> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
-                width: 104,
-                child: recipe.imageUrl != null
-                    ? Image.network(
-                        recipe.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _thumbPlaceholder(badgeBg, emoji),
-                      )
-                    : _thumbPlaceholder(badgeBg, emoji),
+                width: 124,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    RecipeThumbnailImage(
+                      imageUrl: recipe.imageUrl,
+                      emoji: emoji,
+                      placeholderColor: badgeBg,
+                      isImageUpgrading: widget.isImageUpgrading,
+                    ),
+                    Positioned(
+                      bottom: 4,
+                      left: 4,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: badgeFg,
+                        compact: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Expanded(
                 child: Padding(
@@ -1443,13 +1581,6 @@ class _SuggestedTileState extends State<_SuggestedTile> {
     );
   }
 
-  Widget _thumbPlaceholder(Color badgeBg, String emoji) {
-    return ColoredBox(
-      color: badgeBg,
-      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 36))),
-    );
-  }
-
   static (Color, Color) _badgeStyle(String badge) {
     switch (badge) {
       case 'QUICK':
@@ -1517,13 +1648,27 @@ class _SavedCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: 4 / 3,
-              child: recipe.imageUrl != null
-                  ? Image.network(
-                      recipe.imageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imagePlaceholder(emoji),
-                    )
-                  : _imagePlaceholder(emoji),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  recipe.imageUrl != null
+                      ? Image.network(
+                          recipe.imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _imagePlaceholder(emoji),
+                        )
+                      : _imagePlaceholder(emoji),
+                  Positioned(
+                    bottom: 6,
+                    left: 6,
+                    child: RecipeRatingBadge(
+                      recipe: recipe,
+                      accentColor: AppColors.primary,
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),

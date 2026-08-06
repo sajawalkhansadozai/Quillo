@@ -4,7 +4,9 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   type NormalizedSearchRecipe,
   type QuilloRecipePayload,
+  type RecipeApiSource,
   normalizedToQuillo,
+  prefixedId,
   titleHash,
 } from './recipe_types.ts';
 import { spoonacularToQuillo } from './spoonacular.ts';
@@ -72,6 +74,47 @@ async function normalizedToDbRow(
     license: licenseMap[recipe.source] ?? 'Imported via external API',
     title_hash: await titleHash(recipe.title),
   };
+}
+
+/** Batch lookup of recipes already stored in Supabase (keyed by prefixed search id). */
+export async function findCachedRecipesForSearchResults(
+  admin: SupabaseClient,
+  recipes: NormalizedSearchRecipe[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const map = new Map<string, Record<string, unknown>>();
+  if (recipes.length === 0) return map;
+  if (!(await sourceColumnsAvailable(admin))) return map;
+
+  const bySource = new Map<RecipeApiSource, string[]>();
+  for (const recipe of recipes) {
+    const ids = bySource.get(recipe.source) ?? [];
+    ids.push(recipe.source_id);
+    bySource.set(recipe.source, ids);
+  }
+
+  for (const [source, sourceIds] of bySource) {
+    const uniqueIds = [...new Set(sourceIds)];
+    const { data, error } = await admin
+      .from('recipes')
+      .select(`${RECIPE_CLIENT_COLUMNS}, source, source_id`)
+      .eq('source', source)
+      .in('source_id', uniqueIds);
+
+    if (error) {
+      if (!isMissingColumnError(error)) {
+        console.error('findCachedRecipesForSearchResults:', error);
+      }
+      continue;
+    }
+
+    for (const row of data ?? []) {
+      const record = row as Record<string, unknown>;
+      const sourceId = String(record.source_id);
+      map.set(prefixedId(source, sourceId), record);
+    }
+  }
+
+  return map;
 }
 
 export async function findCachedBySourceId(

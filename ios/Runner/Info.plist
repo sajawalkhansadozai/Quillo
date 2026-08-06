@@ -82,5 +82,50 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
+
+	<!-- Home Screen Quick Actions (long-press app icon) -->
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>faq</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Have a question?</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Visit our FAQs</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeLove</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>bug</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Bugs or issues?</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Tell us what broke</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTask</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>idea</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Share an idea</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Tell us how to improve</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCompose</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>share</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Share</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Invite friends to Quillo</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeShare</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../models/generated_recipe.dart';
+import '../../utils/recipe_preference_filter.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../widgets/recipe_rating_badge.dart';
 import '../scan/recipe_detail_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,6 +19,8 @@ class CollectionDetailScreen extends StatefulWidget {
   final List<String> keywords;
   /// If true, filter by cook_time_minutes <= 20 instead of keywords.
   final bool quickOnly;
+  /// If true, exclude recipes with meat, poultry, or seafood.
+  final bool vegetarianOnly;
 
   const CollectionDetailScreen({
     super.key,
@@ -24,6 +29,7 @@ class CollectionDetailScreen extends StatefulWidget {
     required this.color,
     this.keywords = const [],
     this.quickOnly = false,
+    this.vegetarianOnly = false,
   });
 
   @override
@@ -75,6 +81,8 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
               }
             })
             .whereType<GeneratedRecipe>()
+            .where((r) =>
+                !widget.vegetarianOnly || RecipePreferenceFilter.isVegetarian(r))
             .toList(),
       );
 
@@ -83,6 +91,7 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           _recipes = recipes;
           _loading = false;
         });
+        RecipeRatingService.prefetchSummaries(recipes);
       }
     } catch (e) {
       debugPrint('CollectionDetailScreen error: $e');
@@ -300,23 +309,37 @@ class _RecipeTile extends StatelessWidget {
               child: SizedBox(
                 height: 100,
                 width: double.infinity,
-                child: recipe.imageUrl != null
-                    ? Image.network(
-                        recipe.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: accentColor.withValues(alpha: 0.1),
-                          child: Center(
-                              child: Text(emoji,
-                                  style: const TextStyle(fontSize: 44))),
-                        ),
-                      )
-                    : Container(
-                        color: accentColor.withValues(alpha: 0.1),
-                        child: Center(
-                            child: Text(emoji,
-                                style: const TextStyle(fontSize: 44))),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    recipe.imageUrl != null
+                        ? Image.network(
+                            recipe.imageUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: accentColor.withValues(alpha: 0.1),
+                              child: Center(
+                                  child: Text(emoji,
+                                      style: const TextStyle(fontSize: 44))),
+                            ),
+                          )
+                        : Container(
+                            color: accentColor.withValues(alpha: 0.1),
+                            child: Center(
+                                child: Text(emoji,
+                                    style: const TextStyle(fontSize: 44))),
+                          ),
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: accentColor,
+                        compact: true,
                       ),
+                    ),
+                  ],
+                ),
               ),
             ),
             // Info

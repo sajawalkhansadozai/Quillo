@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../theme/app_theme.dart';
+import '../../config/recipe_search_config.dart';
 import '../../models/generated_recipe.dart';
 import '../../services/recipe_service.dart';
+import '../../services/recipe_rating_service.dart';
 import '../../services/local_db_service.dart';
+import '../../widgets/recipe_rating_badge.dart';
+import '../../widgets/recipe_thumbnail_image.dart';
 import '../scan/recipe_detail_page.dart' show GeneratedRecipeDetailPage;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +31,8 @@ class _SavedScreenState extends State<SavedScreen> {
   bool _loading = true;
   bool _offline = false;
   String _search = '';
+  int _imageUpgradeGeneration = 0;
+  final Set<String> _upgradingImageKeys = {};
 
   final _searchCtrl = TextEditingController();
 
@@ -37,8 +45,49 @@ class _SavedScreenState extends State<SavedScreen> {
 
   @override
   void dispose() {
+    _imageUpgradeGeneration++;
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _replaceRecipe(GeneratedRecipe old, GeneratedRecipe updated) {
+    final oldKey = RecipeService.imageTrackKey(old);
+    setState(() {
+      final i = _recipes.indexWhere(
+        (r) => RecipeService.imageTrackKey(r) == oldKey,
+      );
+      if (i >= 0) _recipes[i] = updated;
+      _upgradingImageKeys.remove(oldKey);
+    });
+  }
+
+  Future<void> _startBackgroundImageUpgrades(List<GeneratedRecipe> recipes) async {
+    final generation = ++_imageUpgradeGeneration;
+    final targets = recipes
+        .where(RecipeService.needsGeminiImageUpgrade)
+        .take(RecipeSearchConfig.exploreAiImageUpgradeLimit)
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+    setState(() {
+      _upgradingImageKeys
+        ..clear()
+        ..addAll(targets.map(RecipeService.imageTrackKey));
+    });
+    await RecipeService.upgradeRecipeImagesInBackground(
+      recipes: targets,
+      shouldContinue: () =>
+          mounted && generation == _imageUpgradeGeneration,
+      onUpdated: (old, updated) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        _replaceRecipe(old, updated);
+      },
+      onFinished: (recipe) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        setState(() {
+          _upgradingImageKeys.remove(RecipeService.imageTrackKey(recipe));
+        });
+      },
+    );
   }
 
   Future<void> _loadRecipes() async {
@@ -58,6 +107,8 @@ class _SavedScreenState extends State<SavedScreen> {
             _offline = false;
             _loading = false;
           });
+          RecipeRatingService.prefetchSummaries(online);
+          unawaited(_startBackgroundImageUpgrades(online));
         }
         return;
       } catch (_) {}
@@ -70,6 +121,7 @@ class _SavedScreenState extends State<SavedScreen> {
         _offline = !isOnline;
         _loading = false;
       });
+      RecipeRatingService.prefetchSummaries(cached);
     }
   }
 
@@ -154,6 +206,9 @@ class _SavedScreenState extends State<SavedScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                     child: _FeaturedCard(
                       recipe: recipes.first,
+                      isImageUpgrading: _upgradingImageKeys.contains(
+                        RecipeService.imageTrackKey(recipes.first),
+                      ),
                       onTap: () => _openDetail(recipes.first),
                       onUnsave: () => _unsave(recipes.first),
                     ),
@@ -174,6 +229,9 @@ class _SavedScreenState extends State<SavedScreen> {
                       delegate: SliverChildBuilderDelegate(
                         (ctx, i) => _GridCard(
                           recipe: recipes[i + 1],
+                          isImageUpgrading: _upgradingImageKeys.contains(
+                            RecipeService.imageTrackKey(recipes[i + 1]),
+                          ),
                           onTap: () => _openDetail(recipes[i + 1]),
                           onUnsave: () => _unsave(recipes[i + 1]),
                         ),
@@ -452,10 +510,12 @@ class _OfflineBanner extends StatelessWidget {
 
 class _FeaturedCard extends StatelessWidget {
   final GeneratedRecipe recipe;
+  final bool isImageUpgrading;
   final VoidCallback onTap;
   final VoidCallback onUnsave;
   const _FeaturedCard({
     required this.recipe,
+    this.isImageUpgrading = false,
     required this.onTap,
     required this.onUnsave,
   });
@@ -481,15 +541,13 @@ class _FeaturedCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Image
-              if (recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty)
-                Image.network(
-                  recipe.imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _FallbackBg(title: recipe.title),
-                )
-              else
-                _FallbackBg(title: recipe.title),
+              RecipeThumbnailImage(
+                imageUrl: recipe.imageUrl,
+                emoji: '🍽️',
+                placeholderColor: const Color(0xFF2C2C3E),
+                isImageUpgrading: isImageUpgrading,
+                cacheWidth: 960,
+              ),
               // Gradient overlay
               Container(
                 decoration: BoxDecoration(
@@ -595,8 +653,6 @@ class _FeaturedCard extends StatelessWidget {
                               color: Colors.white70,
                               fontWeight: FontWeight.w600),
                         ),
-                        const Spacer(),
-                        _Stars(rating: 4.5),
                       ],
                     ),
                   ],
@@ -614,10 +670,12 @@ class _FeaturedCard extends StatelessWidget {
 
 class _GridCard extends StatelessWidget {
   final GeneratedRecipe recipe;
+  final bool isImageUpgrading;
   final VoidCallback onTap;
   final VoidCallback onUnsave;
   const _GridCard({
     required this.recipe,
+    this.isImageUpgrading = false,
     required this.onTap,
     required this.onUnsave,
   });
@@ -641,24 +699,20 @@ class _GridCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image section
+            // Image section — fills remaining card height above the text block.
             Expanded(
-              flex: 5,
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(18)),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty)
-                      Image.network(
-                        recipe.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            _FallbackBg(title: recipe.title),
-                      )
-                    else
-                      _FallbackBg(title: recipe.title),
+                    RecipeThumbnailImage(
+                      imageUrl: recipe.imageUrl,
+                      emoji: '🍽️',
+                      placeholderColor: category.color,
+                      isImageUpgrading: isImageUpgrading,
+                    ),
                     // Category badge top-left
                     Positioned(
                       top: 8,
@@ -678,6 +732,15 @@ class _GridCard extends StatelessWidget {
                               color: Colors.white,
                               letterSpacing: 0.3),
                         ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: category.color,
+                        compact: true,
                       ),
                     ),
                     // Remove from saved (bookmark)
@@ -711,74 +774,42 @@ class _GridCard extends StatelessWidget {
                 ),
               ),
             ),
-            // Info section
-            Expanded(
-              flex: 3,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      recipe.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
-                          height: 1.3),
-                    ),
-                    Row(
-                      children: [
-                        const Icon(Icons.access_time_rounded,
-                            size: 11, color: AppColors.textLight),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${recipe.cookTimeMinutes} min',
-                          style: const TextStyle(
-                              fontSize: 10, color: AppColors.textLight),
-                        ),
-                        const Spacer(),
-                        _Stars(rating: 4.0, size: 9),
-                      ],
-                    ),
-                  ],
-                ),
+            // Info section — intrinsic height so no dead space below cook time.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    recipe.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                        height: 1.3),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          size: 11, color: AppColors.textLight),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${recipe.cookTimeMinutes} min',
+                        style: const TextStyle(
+                            fontSize: 10, color: AppColors.textLight),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Star rating ───────────────────────────────────────────────────────────────
-
-class _Stars extends StatelessWidget {
-  final double rating;
-  final double size;
-  const _Stars({required this.rating, this.size = 11});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(5, (i) {
-        final filled = i < rating.floor();
-        final half = !filled && i < rating;
-        return Icon(
-          half
-              ? Icons.star_half_rounded
-              : filled
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-          size: size,
-          color: const Color(0xFFFFB300),
-        );
-      }),
     );
   }
 }

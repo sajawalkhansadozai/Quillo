@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/recipe_search_config.dart';
 import '../models/ingredient_item.dart';
 import '../models/generated_recipe.dart';
+import '../models/user_recipe_preferences.dart';
+import '../utils/recipe_image_source.dart';
 import 'scan_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,8 +17,70 @@ import 'scan_service.dart';
 class RecipeService {
   static final _client = Supabase.instance.client;
 
-  static const _recipeColumns =
+  static const _recipeColumnsBase =
       'id, title, difficulty, cook_time_minutes, servings, steps, ingredients_used, missing_ingredients, nutrition, image_url, is_public';
+
+  static const _recipeSourceColumns = 'source, source_id';
+
+  static bool? _recipeSourceColumnsAvailable;
+
+  static String get _recipeColumns {
+    if (_recipeSourceColumnsAvailable == false) return _recipeColumnsBase;
+    return '$_recipeColumnsBase, $_recipeSourceColumns';
+  }
+
+  static bool _isMissingSourceColumnError(Object error) {
+    if (error is PostgrestException) {
+      return error.code == '42703' &&
+          (error.message.contains('source') ||
+              error.message.contains('source_id'));
+    }
+    return false;
+  }
+
+  static Future<T> _withRecipeColumns<T>(
+    Future<T> Function(String columns) run,
+  ) async {
+    if (_recipeSourceColumnsAvailable == false) {
+      return run(_recipeColumnsBase);
+    }
+
+    try {
+      final result = await run(_recipeColumns);
+      _recipeSourceColumnsAvailable = true;
+      return result;
+    } catch (e) {
+      if (_isMissingSourceColumnError(e)) {
+        _recipeSourceColumnsAvailable = false;
+        debugPrint(
+          'recipes.source columns missing — using base recipe columns only',
+        );
+        return run(_recipeColumnsBase);
+      }
+      rethrow;
+    }
+  }
+
+  /// Latest image-generation stats from the most recent external catalog search.
+  static String? lastSearchImageWarning;
+  static int? lastGeminiImageCount;
+  static int? lastProviderImageCount;
+  static int? lastCatalogResultCount;
+  static int? lastExternalResultCount;
+  static int? lastImagesPendingUpgrade;
+  static bool lastSearchHasMore = false;
+  static int lastSearchNextOffset = 0;
+  static List<GeneratedRecipe> lastForYouRecipes = [];
+
+  static Map<String, dynamic> _preferencesBody(
+    UserRecipePreferences? preferences,
+  ) =>
+      {'preferences': (preferences ?? UserRecipePreferences.empty).toJson()};
+
+  static List<GeneratedRecipe> _parseRecipeList(dynamic raw) {
+    if (raw is! List) return [];
+    return parseRecipeRows(raw);
+  }
 
   static List<GeneratedRecipe> parseRecipeRows(List<dynamic> rows) =>
       GeneratedRecipe.sortedByIngredientMatch(
@@ -34,38 +98,112 @@ class RecipeService {
             .toList(),
       );
 
-  /// Browse the public Explore catalog (is_public = true).
+  /// Browse the public Explore catalog via edge function (preference-filtered).
   static Future<List<GeneratedRecipe>> listPublicRecipes({
     int limit = 100,
+    UserRecipePreferences? preferences,
   }) async {
     if (_client.auth.currentUser == null) return [];
     try {
-      final rows = await _client
-          .from('recipes')
-          .select(_recipeColumns)
-          .eq('is_public', true)
-          .order('created_at', ascending: false)
-          .limit(limit);
-      return parseRecipeRows(rows as List);
+      final prefs = preferences ?? await loadUserPreferences();
+      final response = await _client.functions.invoke(
+        'list-public-recipes',
+        body: {
+          'limit': limit,
+          ..._preferencesBody(prefs),
+        },
+      );
+      final data = _parseFunctionData(response.data);
+      if (response.status != 200) {
+        debugPrint(
+          'list-public-recipes HTTP ${response.status}: '
+          '${data?['error'] ?? response.data} '
+          'detail=${data?['detail']}',
+        );
+        return [];
+      }
+      lastForYouRecipes = _parseRecipeList(data?['for_you']);
+      return _parseRecipeList(data?['recipes']);
     } catch (e) {
       debugPrint('listPublicRecipes failed: $e');
       return [];
     }
   }
 
-  /// Search public catalog in Supabase plus Edamam (BigOven fallback via edge function).
+  /// Search public catalog via edge function (Supabase + external APIs).
   static Future<List<GeneratedRecipe>> searchCatalog({
     required String query,
     int limit = 50,
+    int offset = 0,
+    List<String> excludeIds = const [],
+    UserRecipePreferences? preferences,
   }) async {
-    final localFuture = searchPublicRecipes(query: query, limit: limit);
-    // Edge function caps external API results at 30 per request.
-    final externalFuture = _searchExternalRecipes(
-      query: query,
-      limit: limit.clamp(1, 30),
-    );
-    final results = await Future.wait([localFuture, externalFuture]);
-    return _mergeCatalogResults(results[0], results[1], limit);
+    final term = query.trim();
+    if (term.isEmpty) return [];
+
+    if (_client.auth.currentUser == null) return [];
+
+    final prefs = preferences ?? await loadUserPreferences();
+    final cap = limit.clamp(1, 50);
+
+    try {
+      final response = await _client.functions.invoke(
+        'search-catalog',
+        body: {
+          'query': term,
+          'limit': cap,
+          'offset': offset,
+          if (excludeIds.isNotEmpty) 'exclude_ids': excludeIds,
+          'provider': RecipeSearchConfig.provider,
+          ..._preferencesBody(prefs),
+        },
+      );
+      final data = _parseFunctionData(response.data);
+      if (response.status != 200) {
+        debugPrint(
+          'search-catalog HTTP ${response.status}: ${data?['error'] ?? response.data}',
+        );
+        lastSearchHasMore = false;
+        return [];
+      }
+
+      final recipes = _parseRecipeList(data?['recipes']);
+      lastSearchImageWarning = data?['warning'] as String?;
+      lastGeminiImageCount = data?['gemini_image_count'] as int?;
+      lastProviderImageCount = data?['provider_image_count'] as int?;
+      lastCatalogResultCount = data?['catalog_count'] as int?;
+      lastExternalResultCount = data?['external_count'] as int?;
+      lastImagesPendingUpgrade = data?['images_pending_upgrade'] as int?;
+      lastSearchHasMore = data?['has_more'] as bool? ?? false;
+      lastSearchNextOffset = data?['next_offset'] as int? ?? offset;
+      debugPrint(
+        'searchCatalog "$term": ${recipes.length} recipes '
+        '(catalog=${lastCatalogResultCount ?? 0}, '
+        'external=${lastExternalResultCount ?? 0}, '
+        'provider=${data?['provider']}, '
+        'warning=${lastSearchImageWarning ?? 'none'})',
+      );
+      return recipes;
+    } catch (e) {
+      debugPrint('searchCatalog failed: $e');
+      lastSearchHasMore = false;
+      return [];
+    }
+  }
+
+  /// Stable keys for recipes already shown in a paginated search.
+  static List<String> searchExcludeIds(Iterable<GeneratedRecipe> recipes) {
+    final keys = <String>{};
+    for (final recipe in recipes) {
+      final id = recipe.id;
+      if (id != null && id.isNotEmpty) keys.add(id);
+      final source = recipe.externalSource;
+      final sourceId = recipe.externalId;
+      if (source != null && sourceId != null && sourceId.isNotEmpty) {
+        keys.add('$source:$sourceId');
+      }
+    }
+    return keys.toList();
   }
 
   static Map<String, dynamic>? _parseFunctionData(dynamic data) {
@@ -81,100 +219,15 @@ class RecipeService {
     return null;
   }
 
-  static Future<List<GeneratedRecipe>> _searchExternalRecipes({
-    required String query,
-    int limit = 20,
-  }) async {
-    if (_client.auth.currentUser == null) {
-      debugPrint('search-external-recipes skipped: not signed in');
-      return [];
-    }
-    final term = query.trim();
-    if (term.isEmpty) return [];
-
-    try {
-      final response = await _client.functions.invoke(
-        'search-external-recipes',
-        body: {
-          'query': term,
-          'limit': limit,
-          'provider': RecipeSearchConfig.provider,
-        },
-      );
-      final data = _parseFunctionData(response.data);
-      if (response.status != 200) {
-        debugPrint(
-          'search-external-recipes HTTP ${response.status}: ${data?['error'] ?? response.data}',
-        );
-        return [];
-      }
-      final activeProvider = data?['provider'] as String?;
-      final warning = data?['warning'] as String?;
-      debugPrint(
-        'search-external-recipes provider=${activeProvider ?? RecipeSearchConfig.provider}',
-      );
-      if (warning != null) debugPrint('search-external-recipes: $warning');
-
-      final raw = data?['recipes'] as List<dynamic>? ?? [];
-      final recipes = raw
-          .map((r) {
-            try {
-              return GeneratedRecipe.fromJson(
-                Map<String, dynamic>.from(r as Map),
-              );
-            } catch (e) {
-              debugPrint('search-external-recipes parse error: $e');
-              return null;
-            }
-          })
-          .whereType<GeneratedRecipe>()
-          .toList();
-      debugPrint('search-external-recipes returned ${recipes.length} for "$term"');
-      return recipes;
-    } catch (e) {
-      debugPrint('search-external-recipes failed: $e');
-      return [];
-    }
-  }
-
-  static List<GeneratedRecipe> _mergeCatalogResults(
-    List<GeneratedRecipe> local,
-    List<GeneratedRecipe> external,
-    int limit,
-  ) {
-    final seenIds = <String>{};
-    final seenTitles = <String>{};
-    final merged = <GeneratedRecipe>[];
-
-    void add(GeneratedRecipe r) {
-      if (r.id != null) {
-        if (seenIds.contains(r.id)) return;
-        seenIds.add(r.id!);
-      }
-      final key = r.title.trim().toLowerCase();
-      if (key.isEmpty || seenTitles.contains(key)) return;
-      seenTitles.add(key);
-      merged.add(r);
-    }
-
-    for (final r in local) {
-      add(r);
-    }
-    for (final r in external) {
-      add(r);
-    }
-    if (merged.length > limit) {
-      return merged.sublist(0, limit);
-    }
-    return merged;
-  }
-
   /// Generate cooking steps via Claude when an external API only returned a URL.
-  static Future<List<RecipeStep>?> generateInstructions(
+  static Future<({List<RecipeStep> steps, int? cookTimeMinutes})?>
+      generateInstructions(
     GeneratedRecipe recipe,
   ) async {
     if (_client.auth.currentUser == null) return null;
-    if (!recipe.needsGeneratedInstructions) return recipe.steps;
+    if (!recipe.needsGeneratedInstructions) {
+      return (steps: recipe.steps, cookTimeMinutes: null);
+    }
 
     try {
       final response = await _client.functions.invoke(
@@ -199,9 +252,14 @@ class RecipeService {
         return null;
       }
       final raw = data?['steps'] as List<dynamic>? ?? [];
-      return raw
+      final steps = raw
           .map((s) => RecipeStep.fromJson(Map<String, dynamic>.from(s as Map)))
           .toList();
+      final ct = data?['cook_time_minutes'];
+      return (
+        steps: steps,
+        cookTimeMinutes: ct is num ? ct.toInt() : null,
+      );
     } catch (e) {
       debugPrint('generate-recipe-instructions failed: $e');
       return null;
@@ -210,17 +268,20 @@ class RecipeService {
 
   /// Load a web recipe into Supabase (or return cached row).
   static Future<GeneratedRecipe?> fetchExternalRecipe({
-    required String source,
-    required String sourceId,
+    String? source,
+    String? sourceId,
+    String? recipeId,
   }) async {
     if (_client.auth.currentUser == null) return null;
+    if (recipeId == null && (source == null || sourceId == null)) return null;
 
     try {
       final response = await _client.functions.invoke(
         'fetch-external-recipe',
         body: {
-          'source': source,
-          'source_id': sourceId,
+          if (source != null) 'source': source,
+          if (sourceId != null) 'source_id': sourceId,
+          if (recipeId != null) 'recipe_id': recipeId,
         },
       );
       final data = _parseFunctionData(response.data);
@@ -236,6 +297,238 @@ class RecipeService {
     } catch (e) {
       debugPrint('fetch-external-recipe failed: $e');
       return null;
+    }
+  }
+
+  static String imageTrackKey(GeneratedRecipe recipe) => recipeImageTrackKey(
+        id: recipe.id,
+        externalSource: recipe.externalSource,
+        externalId: recipe.externalId,
+        title: recipe.title,
+      );
+
+  static bool needsGeminiImageUpgrade(GeneratedRecipe recipe) =>
+      needsGeminiRecipeImage(recipe.imageUrl);
+
+  /// Generate a Gemini hero image and return the recipe with an updated image URL.
+  /// Backoff before each retry. Transient Gemini "high demand" errors usually
+  /// clear within seconds; spacing attempts out maximizes eventual success.
+  static const List<Duration> _upgradeRetryBackoff = [
+    Duration(seconds: 5),
+    Duration(seconds: 12),
+    Duration(seconds: 25),
+  ];
+
+  static Future<GeneratedRecipe?> upgradeRecipeHeroImage(
+    GeneratedRecipe recipe, {
+    int maxAttempts = 4,
+  }) async {
+    if (!needsGeminiImageUpgrade(recipe)) return recipe;
+
+    final source = recipe.externalSource;
+    final sourceId = recipe.externalId;
+
+    debugPrint(
+      'upgradeRecipeHeroImage: title="${recipe.title}" '
+      'id=${recipe.id} source=$source sourceId=$sourceId '
+      'imageUrl=${recipe.imageUrl}',
+    );
+
+    if (!isSupabaseRecipeId(recipe.id) &&
+        (source == null || sourceId == null || sourceId.isEmpty)) {
+      debugPrint(
+        'upgradeRecipeHeroImage: skipping "${recipe.title}" — no valid id or source+sourceId',
+      );
+      return null;
+    }
+
+    final requestBody = <String, dynamic>{
+      if (isSupabaseRecipeId(recipe.id)) 'recipe_id': recipe.id,
+      if (source != null) 'source': source,
+      if (sourceId != null) 'source_id': sourceId,
+      'title': recipe.title,
+      // Omit large Edamam signed URLs — edge function does not need them.
+      if (recipe.imageUrl != null &&
+          recipe.imageUrl!.contains('/recipe-images/'))
+        'image_url': recipe.imageUrl,
+      'ingredients': recipe.ingredientsUsed
+          .take(6)
+          .map((i) => {'name': i.name})
+          .toList(growable: false),
+    };
+    debugPrint('upgrade-recipe-image request body: $requestBody');
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final response = await _client.functions.invoke(
+          'upgrade-recipe-image',
+          body: requestBody,
+        );
+        final data = _parseFunctionData(response.data);
+        debugPrint(
+          'upgrade-recipe-image response status=${response.status} '
+          'elapsed=${data?['elapsed_ms']}ms data=$data',
+        );
+
+        if (response.status == 404) {
+          return _upgradeRecipeHeroImageLegacy(recipe);
+        }
+
+        if (response.status != 200) {
+          final geminiError = data?['gemini_error'] as String?;
+          final retriable = data?['retriable'] == true ||
+              _isRetriableGeminiError(geminiError);
+          if (retriable && attempt < maxAttempts) {
+            debugPrint(
+              'upgrade-recipe-image retry $attempt/$maxAttempts for "${recipe.title}" '
+              '(${geminiError ?? response.status})',
+            );
+            await Future<void>.delayed(_backoffForAttempt(attempt));
+            continue;
+          }
+          debugPrint(
+            'upgrade-recipe-image gave up for "${recipe.title}": '
+            '${geminiError ?? data?['error'] ?? response.data}',
+          );
+          return null;
+        }
+
+        final imageUrl = data?['image_url'] as String?;
+        if (imageUrl == null || needsGeminiRecipeImage(imageUrl)) {
+          debugPrint(
+            'upgrade-recipe-image: no valid AI url returned (got $imageUrl)',
+          );
+          return null;
+        }
+
+        debugPrint(
+          'upgrade-recipe-image SUCCESS: "${recipe.title}" → $imageUrl',
+        );
+        return recipe.copyWith(imageUrl: imageUrl);
+      } on FunctionException catch (e) {
+        final details = e.details;
+        final geminiError =
+            details is Map ? details['gemini_error'] as String? : null;
+        final retriable = details is Map && details['retriable'] == true ||
+            _isRetriableGeminiError(geminiError);
+        debugPrint(
+          'upgrade-recipe-image failed: $e'
+          '${geminiError != null ? ' gemini_error=$geminiError' : ''}',
+        );
+        if (e.status == 404) {
+          return _upgradeRecipeHeroImageLegacy(recipe);
+        }
+        if (retriable && attempt < maxAttempts) {
+          debugPrint(
+            'upgrade-recipe-image retry $attempt/$maxAttempts for "${recipe.title}" '
+            '(${geminiError ?? 'transient error'})',
+          );
+          await Future<void>.delayed(_backoffForAttempt(attempt));
+          continue;
+        }
+        debugPrint(
+          'upgrade-recipe-image gave up for "${recipe.title}": $e'
+          '${geminiError != null ? ' gemini_error=$geminiError' : ''}',
+        );
+        return null;
+      } catch (e) {
+        debugPrint('upgrade-recipe-image failed: $e');
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  static Duration _backoffForAttempt(int attempt) {
+    final idx = (attempt - 1).clamp(0, _upgradeRetryBackoff.length - 1);
+    return _upgradeRetryBackoff[idx];
+  }
+
+  static bool _isRetriableGeminiError(String? error) {
+    if (error == null || error.isEmpty) return true;
+    final lower = error.toLowerCase();
+    return lower.contains('high demand') ||
+        lower.contains('overloaded') ||
+        lower.contains('try again') ||
+        lower.contains('timed out') ||
+        lower.contains('timeout') ||
+        lower.contains('signal') ||
+        lower.contains('resource exhausted');
+  }
+
+  static Future<GeneratedRecipe?> _upgradeRecipeHeroImageLegacy(
+    GeneratedRecipe recipe,
+  ) async {
+    final upgraded = await fetchExternalRecipe(
+      recipeId: recipe.id,
+      source: recipe.externalSource,
+      sourceId: recipe.externalId,
+    );
+
+    final imageUrl = upgraded?.imageUrl;
+    if (upgraded == null ||
+        imageUrl == null ||
+        needsGeminiRecipeImage(imageUrl)) {
+      return null;
+    }
+
+    return recipe.copyWith(
+      imageUrl: imageUrl,
+      id: upgraded.id ?? recipe.id,
+      externalSource: upgraded.externalSource ?? recipe.externalSource,
+      externalId: upgraded.externalId ?? recipe.externalId,
+    );
+  }
+
+  /// Upgrade provider thumbnails to Gemini images without blocking the UI.
+  static Future<void> upgradeRecipeImagesInBackground({
+    required List<GeneratedRecipe> recipes,
+    bool Function()? shouldContinue,
+    required void Function(GeneratedRecipe original, GeneratedRecipe upgraded)
+        onUpdated,
+    void Function(GeneratedRecipe original)? onFinished,
+  }) async {
+    final targets =
+        recipes.where(needsGeminiImageUpgrade).toList(growable: false);
+    if (targets.isEmpty) return;
+
+    bool keepGoing() => shouldContinue == null || shouldContinue();
+
+    // Returns true if the card was upgraded, false if it should be retried.
+    Future<bool> attempt(GeneratedRecipe original, int maxAttempts) async {
+      final upgraded =
+          await upgradeRecipeHeroImage(original, maxAttempts: maxAttempts);
+      if (!keepGoing()) return true;
+
+      final aiUrl = upgraded?.imageUrl;
+      if (upgraded != null &&
+          aiUrl != null &&
+          aiUrl != original.imageUrl &&
+          !needsGeminiRecipeImage(aiUrl)) {
+        onUpdated(original, upgraded);
+        return true;
+      }
+      return false;
+    }
+
+    // First pass: one quick attempt per card so images appear fast and a
+    // slow/failing card never blocks the others.
+    final pending = <GeneratedRecipe>[];
+    for (final original in targets) {
+      if (!keepGoing()) return;
+      final ok = await attempt(original, 1);
+      if (!ok) pending.add(original);
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+
+    // Retry pass: only the cards that failed, with internal backoff. Since
+    // generated images are cached permanently, every card eventually succeeds.
+    for (final original in pending) {
+      if (!keepGoing()) return;
+      final ok = await attempt(original, 4);
+      if (!ok) onFinished?.call(original);
+      await Future<void>.delayed(const Duration(seconds: 2));
     }
   }
 
@@ -257,13 +550,15 @@ class RecipeService {
       return parseRecipeRows(rows as List);
     } catch (e) {
       debugPrint('search_public_recipes RPC failed, using title filter: $e');
-      final rows = await _client
-          .from('recipes')
-          .select(_recipeColumns)
-          .eq('is_public', true)
-          .ilike('title', '%$term%')
-          .order('created_at', ascending: false)
-          .limit(limit);
+      final rows = await _withRecipeColumns(
+        (columns) => _client
+            .from('recipes')
+            .select(columns)
+            .eq('is_public', true)
+            .ilike('title', '%$term%')
+            .order('created_at', ascending: false)
+            .limit(limit),
+      );
       return parseRecipeRows(rows as List);
     }
   }
@@ -329,13 +624,15 @@ class RecipeService {
       return parseRecipeRows(rows as List);
     } catch (e) {
       debugPrint('search_user_recipes RPC failed, using title filter: $e');
-      final rows = await _client
-          .from('recipes')
-          .select(_recipeColumns)
-          .eq('user_id', user.id)
-          .ilike('title', '%$term%')
-          .order('created_at', ascending: false)
-          .limit(limit);
+      final rows = await _withRecipeColumns(
+        (columns) => _client
+            .from('recipes')
+            .select(columns)
+            .eq('user_id', user.id)
+            .ilike('title', '%$term%')
+            .order('created_at', ascending: false)
+            .limit(limit),
+      );
       return parseRecipeRows(rows as List);
     }
   }
@@ -345,6 +642,7 @@ class RecipeService {
   static Future<List<GeneratedRecipe>> generateRecipes({
     required String scanId,
     required List<IngredientItem> ingredients,
+    bool isManualEntry = false,
   }) async {
     final user = _client.auth.currentUser;
     if (user == null) throw const ScanException('You must be signed in.');
@@ -382,6 +680,7 @@ class RecipeService {
           'household_size': prefs.$3,
           'scan_id': effectiveScanId,
           'user_id': user.id,
+          'is_manual_entry': isManualEntry,
         },
       );
     } catch (e) {
@@ -391,7 +690,7 @@ class RecipeService {
 
     if (response.status == 429) {
       throw const RateLimitException(
-          'You have reached your daily recipe limit. Upgrade to Premium for more.');
+          'You have reached your monthly scan limit. Upgrade to Premium for unlimited scans.');
     }
     if (response.status != 200) {
       final errorData = response.data as Map<String, dynamic>?;
@@ -501,32 +800,37 @@ class RecipeService {
     }
   }
 
-  // ── Helper: load user dietary + cuisine + household from DB ────────────────
-
-  static Future<(List<String>, List<String>, int)> _loadUserPreferences(
-      String userId) async {
+  static Future<UserRecipePreferences> loadUserPreferences() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return UserRecipePreferences.empty;
     try {
       final userRow = await _client
           .from('users')
           .select('household_size, preferred_cuisine')
-          .eq('id', userId)
+          .eq('id', uid)
           .maybeSingle();
 
       final prefsRow = await _client
           .from('user_preferences')
-          .select('dietary_labels')
-          .eq('user_id', userId)
+          .select('dietary_labels, cooking_skill, max_cook_time')
+          .eq('user_id', uid)
           .maybeSingle();
 
-      final householdSize = (userRow?['household_size'] as int?) ?? 2;
-      final cuisines = List<String>.from(
-          userRow?['preferred_cuisine'] as List? ?? []);
-      final dietary = List<String>.from(
-          prefsRow?['dietary_labels'] as List? ?? []);
-
-      return (dietary, cuisines, householdSize);
+      return UserRecipePreferences(
+        dietary: List<String>.from(prefsRow?['dietary_labels'] as List? ?? []),
+        cuisines: List<String>.from(userRow?['preferred_cuisine'] as List? ?? []),
+        maxCookTimeMinutes: (prefsRow?['max_cook_time'] as int?) ?? 45,
+        cookingSkill: (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate',
+        householdSize: (userRow?['household_size'] as int?) ?? 2,
+      );
     } catch (_) {
-      return (const <String>[], const <String>[], 2);
+      return UserRecipePreferences.empty;
     }
+  }
+
+  static Future<(List<String>, List<String>, int)> _loadUserPreferences(
+      String userId) async {
+    final prefs = await loadUserPreferences();
+    return (prefs.dietary, prefs.cuisines, prefs.householdSize);
   }
 }

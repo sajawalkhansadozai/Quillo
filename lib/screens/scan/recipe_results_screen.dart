@@ -1,7 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../models/generated_recipe.dart';
+import '../../config/recipe_search_config.dart';
 import '../../services/recipe_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ad_banner.dart';
+import '../../services/recipe_rating_service.dart';
+import '../../widgets/recipe_rating_badge.dart';
+import '../../widgets/recipe_thumbnail_image.dart';
 import 'recipe_detail_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +33,59 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
   final Set<String> _savedIds = {};
   bool _selectAll = false;
   String _sort = 'Best Match'; // Best Match | Quick | Easy | Hard
+  late List<GeneratedRecipe> _recipes;
+  int _imageUpgradeGeneration = 0;
+  final Set<String> _upgradingImageKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _recipes = List<GeneratedRecipe>.from(widget.recipes);
+    RecipeRatingService.prefetchSummaries(_recipes);
+    unawaited(_startBackgroundImageUpgrades());
+  }
+
+  @override
+  void dispose() {
+    _imageUpgradeGeneration++;
+    super.dispose();
+  }
+
+  Future<void> _startBackgroundImageUpgrades() async {
+    final generation = ++_imageUpgradeGeneration;
+    final targets = _recipes
+        .where(RecipeService.needsGeminiImageUpgrade)
+        .take(RecipeSearchConfig.exploreAiImageUpgradeLimit)
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+    setState(() {
+      _upgradingImageKeys
+        ..clear()
+        ..addAll(targets.map(RecipeService.imageTrackKey));
+    });
+    await RecipeService.upgradeRecipeImagesInBackground(
+      recipes: targets,
+      shouldContinue: () =>
+          mounted && generation == _imageUpgradeGeneration,
+      onUpdated: (old, updated) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        final oldKey = RecipeService.imageTrackKey(old);
+        setState(() {
+          final i = _recipes.indexWhere(
+            (r) => RecipeService.imageTrackKey(r) == oldKey,
+          );
+          if (i >= 0) _recipes[i] = updated;
+          _upgradingImageKeys.remove(oldKey);
+        });
+      },
+      onFinished: (recipe) {
+        if (!mounted || generation != _imageUpgradeGeneration) return;
+        setState(() {
+          _upgradingImageKeys.remove(RecipeService.imageTrackKey(recipe));
+        });
+      },
+    );
+  }
 
   Future<void> _toggleSave(GeneratedRecipe recipe) async {
     if (recipe.id == null) return;
@@ -47,7 +107,7 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
   }
 
   List<GeneratedRecipe> get _sorted {
-    final list = List<GeneratedRecipe>.from(widget.recipes);
+    final list = List<GeneratedRecipe>.from(_recipes);
     switch (_sort) {
       case 'Quick':
         list.sort((a, b) => a.cookTimeMinutes.compareTo(b.cookTimeMinutes));
@@ -82,7 +142,7 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
         .toSet()
         .length;
 
-    return Scaffold(
+    return AdScaffold(
       backgroundColor: const Color(0xFFF4F5FA),
       body: SafeArea(
         child: Column(
@@ -101,6 +161,9 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
                     child: RecipeListCard(
                       recipe: recipe,
                       isSaved: _savedIds.contains(recipe.id),
+                      isImageUpgrading: _upgradingImageKeys.contains(
+                        RecipeService.imageTrackKey(recipe),
+                      ),
                       onTap: () => _openDetail(recipe),
                       onSave: () => _toggleSave(recipe),
                     ),
@@ -290,6 +353,7 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
 class RecipeListCard extends StatelessWidget {
   final GeneratedRecipe recipe;
   final bool isSaved;
+  final bool isImageUpgrading;
   final VoidCallback onTap;
   final VoidCallback onSave;
 
@@ -297,6 +361,7 @@ class RecipeListCard extends StatelessWidget {
     super.key,
     required this.recipe,
     required this.isSaved,
+    this.isImageUpgrading = false,
     required this.onTap,
     required this.onSave,
   });
@@ -331,11 +396,12 @@ class RecipeListCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Photo or gradient fallback
-                    recipe.imageUrl != null
-                        ? Image.network(recipe.imageUrl!, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _EmojiBg(emoji: emoji))
-                        : _EmojiBg(emoji: emoji),
+                    RecipeThumbnailImage(
+                      imageUrl: recipe.imageUrl,
+                      emoji: emoji,
+                      placeholderColor: AppColors.primary,
+                      isImageUpgrading: isImageUpgrading,
+                    ),
                     // Bottom gradient
                     Positioned(
                       bottom: 0, left: 0, right: 0, height: 60,
@@ -376,6 +442,15 @@ class RecipeListCard extends StatelessWidget {
                             size: 18,
                           ),
                         ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 10,
+                      left: 12,
+                      child: RecipeRatingBadge(
+                        recipe: recipe,
+                        accentColor: badgeColor,
+                        compact: true,
                       ),
                     ),
                   ],

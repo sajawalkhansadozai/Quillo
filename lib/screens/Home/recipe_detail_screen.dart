@@ -87,24 +87,6 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                         color: recipe.color.withOpacity(0.12),
                         child: Center(child: Text(recipe.emoji, style: const TextStyle(fontSize: 100))),
                       ),
-                      // Rating overlay
-                      Positioned(
-                        bottom: 14,
-                        left: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.star_rounded, color: AppColors.accent, size: 14),
-                              const SizedBox(width: 4),
-                              Text('${recipe.rating}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textDark)),
-                              Text(' (${_formatReviews(recipe.reviews)})', style: const TextStyle(fontSize: 11, color: AppColors.textMedium)),
-                            ],
-                          ),
-                        ),
-                      ),
                       // Match badge
                       Positioned(
                         bottom: 14,
@@ -410,11 +392,6 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
         ],
       ),
     );
-  }
-
-  String _formatReviews(int count) {
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
-    return count.toString();
   }
 }
 

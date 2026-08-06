@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:quillo/theme/app_theme.dart';
+import '../../services/subscription_service.dart';
+import '../../widgets/ad_banner.dart';
 import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
@@ -16,13 +18,40 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final _homeKey = GlobalKey<HomeScreenState>();
+  final _exploreKey = GlobalKey<ExploreScreenState>();
+
+  void _openExploreSearch(String query, {bool focusSearch = false}) {
+    setState(() => _currentIndex = 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _exploreKey.currentState?.openSearch(query, focusSearch: focusSearch);
+    });
+  }
+
   late final List<Widget> _screens = [
-    HomeScreen(key: _homeKey, onExploreTap: () => setState(() => _currentIndex = 1)),
-    const ExploreScreen(),
+    HomeScreen(
+      key: _homeKey,
+      onExploreTap: () => setState(() => _currentIndex = 1),
+      onSearchNavigate: _openExploreSearch,
+    ),
+    ExploreScreen(key: _exploreKey),
     const ScanPlaceholderScreen(),
     const SavedScreen(),
     const ProfileScreen(),
   ];
+
+  /// Refresh premium when opening a tab that shows ads (checklist 4.3).
+  Future<void> _onTabSelected(int i) async {
+    if (i == 2) {
+      _showScanSheet(context);
+      return;
+    }
+    if (i == 0 || i == 1) {
+      await SubscriptionService.refreshPremiumStatus();
+    }
+    if (i == 0) _homeKey.currentState?.refresh();
+    if (i == 1) _exploreKey.currentState?.refresh();
+    if (mounted) setState(() => _currentIndex = i);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,16 +61,17 @@ class _MainShellState extends State<MainShell> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: _QuilloTabBar(
-        currentIndex: _currentIndex,
-        onTap: (i) {
-          if (i == 2) {
-            _showScanSheet(context);
-            return;
-          }
-          if (i == 0) _homeKey.currentState?.refreshName();
-          setState(() => _currentIndex = i);
-        },
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 3.1 / 3.2 — banner only on Home & Explore (above tab bar, no overlap)
+          if (_currentIndex == 0 || _currentIndex == 1)
+            const AdBannerWidget(safeArea: false),
+          _QuilloTabBar(
+            currentIndex: _currentIndex,
+            onTap: _onTabSelected,
+          ),
+        ],
       ),
     );
   }

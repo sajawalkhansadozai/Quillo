@@ -12,6 +12,7 @@ import { searchBigOven } from './bigoven.ts';
 import { searchSpoonacular } from './spoonacular.ts';
 import { mergeAndRankRecipes } from './recipe_search_merge.ts';
 import type { NormalizedSearchRecipe, RecipeApiSource } from './recipe_types.ts';
+import type { EdamamSearchFilters, SpoonacularSearchFilters } from './preference_filters.ts';
 
 export type SearchProviderMode =
   | 'edamam'
@@ -61,6 +62,9 @@ export async function searchByProvider(
   limit: number,
   mode: SearchProviderMode,
   creds: ProviderCredentials,
+  edamamFilters?: EdamamSearchFilters,
+  offset = 0,
+  spoonacularFilters?: SpoonacularSearchFilters,
 ): Promise<ProviderSearchResult> {
   const warnings: string[] = [];
   let edamam: NormalizedSearchRecipe[] = [];
@@ -76,7 +80,7 @@ export async function searchByProvider(
       warnings.push('Edamam not configured (EDAMAM_APP_ID, EDAMAM_APP_KEY)');
       return;
     }
-    edamam = await searchEdamam(query, creds.edamamAppId!, creds.edamamAppKey!, limit);
+    edamam = await searchEdamam(query, creds.edamamAppId!, creds.edamamAppKey!, limit, edamamFilters, offset);
     if (edamam.length === 0) warnings.push('Edamam returned no results');
   };
 
@@ -85,7 +89,7 @@ export async function searchByProvider(
       warnings.push('BigOven not configured (BIGOVEN_API_KEY)');
       return;
     }
-    bigoven = await searchBigOven(query, creds.bigovenKey!, limit);
+    bigoven = await searchBigOven(query, creds.bigovenKey!, limit, offset);
     if (bigoven.length === 0) warnings.push('BigOven returned no results');
   };
 
@@ -94,7 +98,13 @@ export async function searchByProvider(
       warnings.push('Spoonacular not configured (SPOONACULAR_API_KEY)');
       return;
     }
-    spoonacular = await searchSpoonacular(query, creds.spoonacularKey!, limit);
+    spoonacular = await searchSpoonacular(
+      query,
+      creds.spoonacularKey!,
+      limit,
+      offset,
+      spoonacularFilters,
+    );
     if (spoonacular.length === 0) warnings.push('Spoonacular returned no results');
   };
 

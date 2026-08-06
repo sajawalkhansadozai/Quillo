@@ -167,15 +167,33 @@ export async function searchSpoonacular(
   query: string,
   apiKey: string,
   limit: number,
+  offset = 0,
+  filters?: {
+    diet?: string;
+    intolerances?: string[];
+    cuisine?: string[];
+    maxReadyTime?: number;
+  },
 ): Promise<NormalizedSearchRecipe[]> {
   const url = new URL('https://api.spoonacular.com/recipes/complexSearch');
   url.searchParams.set('apiKey', apiKey);
   url.searchParams.set('query', query);
   url.searchParams.set('number', String(Math.min(Math.max(limit, 1), 30)));
+  url.searchParams.set('offset', String(Math.max(0, offset)));
   url.searchParams.set('addRecipeInformation', 'true');
   url.searchParams.set('addRecipeNutrition', 'true');
   url.searchParams.set('fillIngredients', 'true');
   url.searchParams.set('instructionsRequired', 'false');
+  if (filters?.diet) url.searchParams.set('diet', filters.diet);
+  if (filters?.intolerances?.length) {
+    url.searchParams.set('intolerances', filters.intolerances.join(','));
+  }
+  if (filters?.cuisine?.length) {
+    url.searchParams.set('cuisine', filters.cuisine.join(','));
+  }
+  if (filters?.maxReadyTime && filters.maxReadyTime > 0) {
+    url.searchParams.set('maxReadyTime', String(filters.maxReadyTime));
+  }
 
   try {
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });

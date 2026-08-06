@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
+import 'navigation/app_navigator.dart';
 import 'screens/Home/main_shell.dart';
 import 'screens/onboarding/gdpr_screen.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'services/ad_service.dart';
+import 'services/quick_actions_service.dart';
 import 'services/subscription_service.dart';
 import 'theme/app_theme.dart';
 
@@ -25,10 +27,10 @@ Future<void> main() async {
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
 
-  // Initialise AdMob SDK
+  // Initialise AdMob SDK first (no ad requests yet).
   await AdService.initialise();
 
-  // Configure RevenueCat (non-fatal — only works after real API keys are set)
+  // Configure RevenueCat and set global isPremium before UI (checklist 4.1).
   try {
     await SubscriptionService.configure();
     await SubscriptionService.syncOnLaunch();
@@ -36,15 +38,32 @@ Future<void> main() async {
     debugPrint('RevenueCat configure failed: $e\n$st');
   }
 
+  // Only request ads for free users (checklist 4.6).
+  await AdService.startAdsIfFree();
+
   runApp(const QuilloApp());
 }
 
-class QuilloApp extends StatelessWidget {
+class QuilloApp extends StatefulWidget {
   const QuilloApp({super.key});
+
+  @override
+  State<QuilloApp> createState() => _QuilloAppState();
+}
+
+class _QuilloAppState extends State<QuilloApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      QuickActionsService.initialize();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'Quillo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
