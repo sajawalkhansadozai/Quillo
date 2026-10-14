@@ -18,6 +18,9 @@ class RecipeThumbnailImage extends StatefulWidget {
   final bool isImageUpgrading;
   final int cacheWidth;
 
+  /// < 1 zooms out (e.g. 0.86) so more of the meal is visible inside the crop.
+  final double zoom;
+
   const RecipeThumbnailImage({
     super.key,
     required this.imageUrl,
@@ -25,6 +28,7 @@ class RecipeThumbnailImage extends StatefulWidget {
     required this.placeholderColor,
     this.isImageUpgrading = false,
     this.cacheWidth = 480,
+    this.zoom = 0.86,
   });
 
   @override
@@ -54,21 +58,47 @@ class _RecipeThumbnailImageState extends State<RecipeThumbnailImage>
   Widget build(BuildContext context) {
     final url = resizedRecipeImageUrl(widget.imageUrl, width: widget.cacheWidth);
     final showUpgradeOverlay = widget.isImageUpgrading;
+    final zoom = widget.zoom.clamp(0.5, 1.0);
 
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Soft fill behind image while loading / on error.
+        Positioned.fill(
+          child: ColoredBox(color: AppColors.green.withValues(alpha: 0.08)),
+        ),
         if (url != null && url.isNotEmpty)
           Positioned.fill(
-            child: CachedNetworkImage(
-              key: ValueKey(url),
-              imageUrl: url,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.medium,
-              memCacheWidth: widget.cacheWidth,
-              fadeInDuration: const Duration(milliseconds: 250),
-              placeholder: (_, __) => _greenPulseSkeleton(),
-              errorWidget: (_, __, ___) => _greenPulseSkeleton(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Paint cover into a larger box, then clip — reveals more of the meal.
+                final w = constraints.maxWidth / zoom;
+                final h = constraints.maxHeight / zoom;
+                return ClipRect(
+                  child: OverflowBox(
+                    minWidth: w,
+                    maxWidth: w,
+                    minHeight: h,
+                    maxHeight: h,
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: w,
+                      height: h,
+                      child: CachedNetworkImage(
+                        key: ValueKey(url),
+                        imageUrl: url,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.medium,
+                        memCacheWidth: widget.cacheWidth,
+                        fadeInDuration: const Duration(milliseconds: 250),
+                        placeholder: (_, __) => _greenPulseSkeleton(),
+                        errorWidget: (_, __, ___) => _greenPulseSkeleton(),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           )
         else

@@ -1,10 +1,8 @@
-/// Public legal pages (GitHub Pages).
+/// Public legal pages on quilloai.co.uk.
 class LegalUrls {
   LegalUrls._();
 
-  static const privacyPolicy =
-      'https://mehroozkhan50.github.io/quillo-privacypolicy/';
+  static const privacyPolicy = 'https://quilloai.co.uk/privacy-policy';
 
-  static const termsAndConditions =
-      'https://mehroozkhan50.github.io/quillo-terms/';
+  static const termsAndConditions = 'https://quilloai.co.uk/terms-of-service';
 }

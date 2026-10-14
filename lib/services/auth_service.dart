@@ -1,8 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import '../utils/cooking_skill_labels.dart';
+import 'analytics_service.dart';
+import 'local_db_service.dart';
+import 'onboarding_router.dart';
 import 'subscription_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +58,7 @@ class AuthService {
       final res = await _client.auth.signUp(
         email: email.trim(),
         password: password,
+        emailRedirectTo: SupabaseConfig.emailConfirmRedirectUrl,
         data: fullName != null && fullName.isNotEmpty
             ? {'full_name': fullName}
             : null,
@@ -91,7 +97,10 @@ class AuthService {
 
   static Future<AuthResult> sendPasswordReset(String email) async {
     try {
-      await _client.auth.resetPasswordForEmail(email.trim());
+      await _client.auth.resetPasswordForEmail(
+        email.trim(),
+        redirectTo: SupabaseConfig.emailConfirmRedirectUrl,
+      );
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.err(_friendlyError(e.message));
@@ -178,7 +187,64 @@ class AuthService {
 
   static Future<void> signOut() async {
     await SubscriptionService.logOut();
+    await AnalyticsService.reset();
+    await OnboardingRouter.clearLocalOnboardingPrefs();
     await _client.auth.signOut();
+  }
+
+  /// Permanently deletes the signed-in account and associated server data.
+  /// BlindSpots 6.2 — must actually purge, not just show a snackbar.
+  static Future<AuthResult> deleteAccount() async {
+    final user = currentUser;
+    if (user == null) {
+      return AuthResult.err('You must be signed in to delete your account.');
+    }
+
+    try {
+      await SubscriptionService.logOut();
+    } catch (_) {
+      // Continue — account delete must not fail solely on RevenueCat logout.
+    }
+
+    try {
+      final response = await _client.functions.invoke('delete-account');
+      final data = response.data;
+      Map<String, dynamic>? map;
+      if (data is Map<String, dynamic>) {
+        map = data;
+      } else if (data is Map) {
+        map = Map<String, dynamic>.from(data);
+      }
+
+      if (response.status != 200) {
+        final msg = map?['error'] as String? ??
+            'Could not delete account. Please try again.';
+        return AuthResult.err(msg);
+      }
+
+      try {
+        await LocalDbService.clearAllUserData();
+      } catch (_) {}
+
+      try {
+        await _client.auth.signOut();
+      } catch (_) {
+        // Session may already be invalid after server-side delete.
+      }
+
+      return AuthResult.ok();
+    } on FunctionException catch (e) {
+      final details = e.details;
+      String msg = 'Could not delete account. Please try again.';
+      if (details is Map && details['error'] is String) {
+        msg = details['error'] as String;
+      }
+      return AuthResult.err(msg);
+    } catch (_) {
+      return AuthResult.err(
+        'Could not delete account. Check your connection and try again.',
+      );
+    }
   }
 
   // ── User profile upsert ────────────────────────────────────────────────────
@@ -231,23 +297,86 @@ class AuthService {
     } catch (_) {}
   }
 
-  /// Saves dietary labels and excluded ingredients to user_preferences table.
+  /// Saves dietary labels and cooking constraints to user_preferences.
+  /// Only provided fields are written (null/omitted = leave existing).
   static Future<void> saveUserPreferences({
-    List<String> dietaryLabels = const [],
-    List<String> excludeIngredients = const [],
+    List<String>? dietaryLabels,
+    List<String>? excludeIngredients,
+    String? cookingSkill,
+    int? maxCookTimeMinutes,
+    bool? onboardingCompleted,
   }) async {
     final uid = currentUser?.id;
     if (uid == null) return;
     try {
+      final payload = <String, dynamic>{
+        'user_id': uid,
+        if (dietaryLabels != null) 'dietary_labels': dietaryLabels,
+        if (excludeIngredients != null) 'exclude_ingredients': excludeIngredients,
+        if (cookingSkill != null && cookingSkill.isNotEmpty)
+          'cooking_skill': cookingSkill,
+        if (maxCookTimeMinutes != null && maxCookTimeMinutes > 0)
+          'max_cook_time': maxCookTimeMinutes,
+        if (onboardingCompleted != null)
+          'onboarding_completed': onboardingCompleted,
+      };
       await _client.from('user_preferences').upsert(
-        {
-          'user_id': uid,
-          'dietary_labels': dietaryLabels,
-          'exclude_ingredients': excludeIngredients,
-        },
+        payload,
         onConflict: 'user_id',
       );
     } catch (_) {}
+  }
+
+  /// §2.2 — true only when [user_preferences.onboarding_completed] is true.
+  static Future<bool> hasCompletedOnboarding() async {
+    final uid = currentUser?.id;
+    if (uid == null) return false;
+    try {
+      final row = await _client
+          .from('user_preferences')
+          .select('onboarding_completed')
+          .eq('user_id', uid)
+          .maybeSingle();
+      return isOnboardingCompletedFlag(row?['onboarding_completed']);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Pure helper for tests / routing — null/false/missing ⇒ not complete.
+  static bool isOnboardingCompletedFlag(Object? value) => value == true;
+
+  /// §2.4–2.5 — write all onboarding prefs + set completed=true in one finish step.
+  /// Does not wipe recipes / scans / waste — only preference fields.
+  static Future<void> completeOnboardingFromLocalPrefs() async {
+    final uid = currentUser?.id;
+    if (uid == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final gdprConsent = prefs.getBool('gdpr_analytics') ?? false;
+    final householdSize = prefs.getInt('onboarding_household_size') ?? 2;
+    final dietary = prefs.getStringList('onboarding_dietary') ?? [];
+    final cuisines = prefs.getStringList('onboarding_cuisines') ?? [];
+    final skillRaw = prefs.getString('onboarding_skill_level') ?? 'Home Cook';
+    final maxCookTime = prefs.getInt('onboarding_max_cook_time') ?? 45;
+    final cookingSkill = CookingSkillLabels.normalize(skillRaw);
+    final email = currentUser?.email ?? '';
+    final fullName =
+        (currentUser?.userMetadata?['full_name'] as String?)?.trim() ?? '';
+
+    await initUserProfile(
+      email: email,
+      fullName: fullName,
+      gdprConsent: gdprConsent,
+      householdSize: householdSize,
+      preferredCuisines: cuisines,
+    );
+    await saveUserPreferences(
+      dietaryLabels: dietary,
+      cookingSkill: cookingSkill,
+      maxCookTimeMinutes: maxCookTime,
+      onboardingCompleted: true,
+    );
   }
 
   /// Updates the signed-in user's password.

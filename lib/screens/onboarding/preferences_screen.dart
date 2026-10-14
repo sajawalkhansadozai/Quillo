@@ -13,11 +13,15 @@ class PreferencesScreen extends StatefulWidget {
   final List<String>? initialCuisines;
   final void Function(List<String> dietary, List<String> cuisines)? onSaved;
 
+  /// §3.2 — existing account with incomplete preferences.
+  final bool returningUser;
+
   const PreferencesScreen({
     super.key,
     this.initialDietary,
     this.initialCuisines,
     this.onSaved,
+    this.returningUser = false,
   });
 
   bool get isEditMode => onSaved != null;
@@ -180,7 +184,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
           children: [
             // ── Top nav ─────────────────────────────────────────────────
             Padding(
@@ -224,6 +231,27 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       Expanded(child: Divider(color: AppColors.divider, thickness: 1)),
                     ]),
                     const SizedBox(height: 10),
+                    if (widget.returningUser) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDE7F6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          "Let's finish setting up your preferences so we can personalise your recipes.",
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                            fontFamily: 'Nunito',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     // ── Title ──────────────────────────────────────────
                     RichText(
                       text: const TextSpan(
@@ -312,6 +340,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );

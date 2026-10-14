@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/iap_config.dart';
+import 'analytics_service.dart';
+import 'push_notification_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SubscriptionService — RevenueCat in-app purchases & subscriptions
@@ -22,12 +24,43 @@ class SubscriptionService {
   /// Set when [getOfferings] fails or returns no purchasable packages.
   static String? lastOfferingsError;
 
+  /// Tracks whether Supabase has been updated this session (server gates OCR quota).
+  static bool? _supabaseSyncedPremium;
+
+  /// RevenueCat entitlement check — also accepts any active entitlement (single-tier app).
+  static bool _hasActivePremium(CustomerInfo info) =>
+      hasActivePremiumEntitlements(info.entitlements.active.keys);
+
+  /// Pure helper so expiry / unlock logic can be unit-tested without RevenueCat.
+  @visibleForTesting
+  static bool hasActivePremiumEntitlements(Iterable<String> activeIds) {
+    final ids = activeIds.toSet();
+    if (ids.contains(IapConfig.premiumEntitlement)) return true;
+    return ids.isNotEmpty;
+  }
+
+  static Future<bool> _fetchSupabasePremium(String uid) async {
+    final row = await _client
+        .from('users')
+        .select('subscription_status')
+        .eq('id', uid)
+        .maybeSingle();
+    return row?['subscription_status'] == 'premium';
+  }
+
   static Future<void> configure() async {
     if (kIsWeb) return;
 
     final apiKey = Platform.isIOS
         ? IapConfig.iosApiKey
         : IapConfig.androidApiKey;
+
+    // RevenueCat force-closes release builds that use a Test Store key
+    // ("The app will close now..."). Skip IAP instead of crashing on launch.
+    if (kReleaseMode && apiKey.startsWith('test_')) {
+      debugPrint('RevenueCat test key in release build; subscriptions disabled.');
+      return;
+    }
 
     await Purchases.setLogLevel(kDebugMode ? LogLevel.debug : LogLevel.warn);
 
@@ -43,8 +76,7 @@ class SubscriptionService {
   }
 
   static void _onCustomerInfoUpdated(CustomerInfo info) {
-    final isPrem =
-        info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
+    final isPrem = _hasActivePremium(info);
     // Entitlement updates drive instant ad hide/show (4.4 / 4.5).
     _applyPremiumStatus(isPrem);
   }
@@ -57,19 +89,21 @@ class SubscriptionService {
       if (uid == null) return;
       await Purchases.logIn(uid);
       await syncOnLaunch();
+      await AnalyticsService.identify(uid);
+      await PushNotificationService.login(uid);
     } catch (_) {}
   }
 
   /// Call on sign-out.
   static Future<void> logOut() async {
+    _supabaseSyncedPremium = null;
     if (!_configured || kIsWeb) return;
     try {
       await Purchases.logOut();
     } catch (_) {}
   }
 
-  /// RevenueCat entitlement is the source of truth for ads (4.1 / 4.5).
-  /// Supabase is updated only when the entitlement changes.
+  /// RevenueCat is the source of truth; Supabase must stay in sync for server gates.
   static Future<bool> isPremium() async {
     try {
       final uid = _client.auth.currentUser?.id;
@@ -80,18 +114,14 @@ class SubscriptionService {
 
       if (_configured && !kIsWeb) {
         final info = await Purchases.getCustomerInfo();
-        final prem = info.entitlements.active
-            .containsKey(IapConfig.premiumEntitlement);
-        await _applyPremiumStatus(prem);
-        return prem;
+        // RevenueCat is source of truth on a successful fetch — including expiry.
+        // (Network failures fall through to the catch and keep the cached flag.)
+        final rcPrem = _hasActivePremium(info);
+        await _applyPremiumStatus(rcPrem);
+        return rcPrem;
       }
 
-      final row = await _client
-          .from('users')
-          .select('subscription_status')
-          .eq('id', uid)
-          .maybeSingle();
-      final prem = row?['subscription_status'] == 'premium';
+      final prem = await _fetchSupabasePremium(uid);
       premiumNotifier.value = prem;
       return prem;
     } catch (_) {
@@ -103,10 +133,22 @@ class SubscriptionService {
   static Future<bool> refreshPremiumStatus() => isPremium();
 
   static Future<void> _applyPremiumStatus(bool isPrem) async {
-    final changed = premiumNotifier.value != isPrem;
+    final wasPrem = premiumNotifier.value;
     premiumNotifier.value = isPrem;
-    if (changed) {
-      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+
+    if (isPrem) {
+      // Always push to Supabase while premium — server OCR/quota reads DB, not RC.
+      if (_supabaseSyncedPremium != true) {
+        await _syncStatusToSupabase('premium');
+      }
+      if (!wasPrem) {
+        await AnalyticsService.capture(AnalyticsService.upgradedToPremium);
+      }
+    } else if (wasPrem || _supabaseSyncedPremium == true) {
+      await _syncStatusToSupabase('free');
+      if (wasPrem) {
+        await AnalyticsService.capture(AnalyticsService.cancelledPremium);
+      }
     }
   }
 
@@ -209,10 +251,29 @@ class SubscriptionService {
       final result = await Purchases.purchase(
         PurchaseParams.package(package),
       );
-      final isPrem = result.customerInfo.entitlements.active
-          .containsKey(IapConfig.premiumEntitlement);
-      premiumNotifier.value = isPrem;
-      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+      final isPrem = _hasActivePremium(result.customerInfo);
+      if (!isPrem) {
+        // Sandbox can lag — retry once via restore.
+        final restored = await Purchases.restorePurchases();
+        final restoredPrem = _hasActivePremium(restored);
+        if (restoredPrem) {
+          await _applyPremiumStatus(true);
+          return const PurchaseResult(success: true);
+        }
+        debugPrint(
+          'Purchase completed but entitlement "${IapConfig.premiumEntitlement}" inactive. '
+          'Active: ${result.customerInfo.entitlements.active.keys.join(", ")}',
+        );
+        await _applyPremiumStatus(false);
+        return const PurchaseResult(
+          success: false,
+          error:
+              'Payment received but Premium did not activate. '
+              'Tap Restore Purchases on the paywall. '
+              'If it still shows Free Plan, the store setup needs checking in RevenueCat.',
+        );
+      }
+      await _applyPremiumStatus(isPrem);
       return PurchaseResult(success: isPrem);
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
@@ -237,10 +298,8 @@ class SubscriptionService {
     }
     try {
       final info = await Purchases.restorePurchases();
-      final isPrem =
-          info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
-      premiumNotifier.value = isPrem;
-      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
+      final isPrem = _hasActivePremium(info);
+      await _applyPremiumStatus(isPrem);
       return PurchaseResult(success: isPrem, restored: true);
     } catch (e) {
       return PurchaseResult(
@@ -258,10 +317,7 @@ class SubscriptionService {
 
       await Purchases.logIn(uid);
       final info = await Purchases.getCustomerInfo();
-      final isPrem =
-          info.entitlements.active.containsKey(IapConfig.premiumEntitlement);
-      await _syncStatusToSupabase(isPrem ? 'premium' : 'free');
-      premiumNotifier.value = isPrem;
+      await _applyPremiumStatus(_hasActivePremium(info));
     } catch (_) {}
   }
 
@@ -276,12 +332,20 @@ class SubscriptionService {
           .eq('id', uid);
 
       if (status == 'premium') {
-        await _client.rpc('set_premium_limit', params: {'p_user_id': uid});
+        try {
+          await _client.rpc('set_premium_limit', params: {'p_user_id': uid});
+        } catch (e) {
+          debugPrint('set_premium_limit failed (non-fatal): $e');
+        }
+        _supabaseSyncedPremium = true;
         premiumNotifier.value = true;
       } else {
+        _supabaseSyncedPremium = false;
         premiumNotifier.value = false;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Supabase subscription sync failed: $e');
+    }
   }
 
   static String _friendlyError(PurchasesErrorCode code) {
@@ -294,10 +358,14 @@ class SubscriptionService {
         return 'Payment is pending approval.';
       case PurchasesErrorCode.purchaseNotAllowedError:
         return 'Purchases are not allowed on this device.';
+      case PurchasesErrorCode.storeProblemError:
+        return 'Please check your payment method in the App Store or Google Play, then try again.';
+      case PurchasesErrorCode.purchaseInvalidError:
+        return 'Please check your payment method in the App Store or Google Play, then try again.';
       case PurchasesErrorCode.configurationError:
         return 'Store is not configured. Check RevenueCat setup.';
       default:
-        return 'Purchase failed. Please try again.';
+        return 'Please check your payment method in the App Store or Google Play, then try again.';
     }
   }
 }

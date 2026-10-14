@@ -7,6 +7,9 @@ import '../models/ingredient_item.dart';
 import '../models/generated_recipe.dart';
 import '../models/user_recipe_preferences.dart';
 import '../utils/recipe_image_source.dart';
+import '../utils/recipe_preference_filter.dart';
+import '../utils/non_food_ingredient_filter.dart';
+import 'crash_reporting_service.dart';
 import 'scan_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,10 +125,51 @@ class RecipeService {
         );
         return [];
       }
-      lastForYouRecipes = _parseRecipeList(data?['for_you']);
-      return _parseRecipeList(data?['recipes']);
+      lastForYouRecipes = RecipePreferenceFilter.apply(
+        _parseRecipeList(data?['for_you']),
+        prefs,
+      );
+      return RecipePreferenceFilter.apply(
+        _parseRecipeList(data?['recipes']),
+        prefs,
+      );
     } catch (e) {
       debugPrint('listPublicRecipes failed: $e');
+      return [];
+    }
+  }
+
+  /// Autocomplete from search_popularity (checklist 6.x).
+  static Future<List<String>> suggestSearchTerms(
+    String prefix, {
+    int limit = 5,
+  }) async {
+    final term = prefix.trim();
+    if (term.length < 2) return [];
+    if (_client.auth.currentUser == null) return [];
+    try {
+      final rows = await _client.rpc(
+        'suggest_search_terms',
+        params: {
+          'p_prefix': term,
+          'p_limit': limit.clamp(1, 10),
+        },
+      );
+      if (rows is! List) return [];
+      final out = <String>[];
+      final seen = <String>{};
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final value = (row['search_term'] as String?)?.trim() ?? '';
+        if (value.isEmpty) continue;
+        final key = value.toLowerCase();
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        out.add(value);
+      }
+      return out;
+    } catch (e) {
+      debugPrint('suggestSearchTerms failed: $e');
       return [];
     }
   }
@@ -167,7 +211,10 @@ class RecipeService {
         return [];
       }
 
-      final recipes = _parseRecipeList(data?['recipes']);
+      final recipes = RecipePreferenceFilter.apply(
+        _parseRecipeList(data?['recipes']),
+        prefs,
+      );
       lastSearchImageWarning = data?['warning'] as String?;
       lastGeminiImageCount = data?['gemini_image_count'] as int?;
       lastProviderImageCount = data?['provider_image_count'] as int?;
@@ -356,7 +403,7 @@ class RecipeService {
           .map((i) => {'name': i.name})
           .toList(growable: false),
     };
-    debugPrint('upgrade-recipe-image request body: $requestBody');
+    debugPrint('upgrade-recipe-image "${recipe.title}"');
 
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -367,7 +414,7 @@ class RecipeService {
         final data = _parseFunctionData(response.data);
         debugPrint(
           'upgrade-recipe-image response status=${response.status} '
-          'elapsed=${data?['elapsed_ms']}ms data=$data',
+          'elapsed=${data?['elapsed_ms']}ms',
         );
 
         if (response.status == 404) {
@@ -387,8 +434,12 @@ class RecipeService {
             continue;
           }
           debugPrint(
-            'upgrade-recipe-image gave up for "${recipe.title}": '
-            '${geminiError ?? data?['error'] ?? response.data}',
+            'upgrade-recipe-image gave up for "${recipe.title}"',
+          );
+          await CrashReportingService.capture(
+            StateError('gemini_image_failed'),
+            context: 'gemini_image',
+            extras: {'recipe_id': recipe.id ?? '', 'title': recipe.title},
           );
           return null;
         }
@@ -427,12 +478,17 @@ class RecipeService {
           continue;
         }
         debugPrint(
-          'upgrade-recipe-image gave up for "${recipe.title}": $e'
-          '${geminiError != null ? ' gemini_error=$geminiError' : ''}',
+          'upgrade-recipe-image gave up for "${recipe.title}"',
+        );
+        await CrashReportingService.capture(
+          StateError('gemini_image_failed'),
+          context: 'gemini_image',
+          extras: {'recipe_id': recipe.id ?? '', 'title': recipe.title},
         );
         return null;
       } catch (e) {
-        debugPrint('upgrade-recipe-image failed: $e');
+        debugPrint('upgrade-recipe-image failed');
+        await CrashReportingService.capture(e, context: 'gemini_image');
         return null;
       }
     }
@@ -666,18 +722,32 @@ class RecipeService {
       }
     }
 
-    // Load user preferences from Supabase
-    final prefs = await _loadUserPreferences(user.id);
+    // Strip non-food items before calling the edge function (checklist 2.6)
+    final foodIngredients = NonFoodIngredientFilter.filter(
+      ingredients,
+      (i) => i.name,
+    );
+    if (foodIngredients.isEmpty) {
+      throw const ScanException(
+        'No food ingredients left after filtering. Remove bags, cleaning products, etc. and try again.',
+      );
+    }
+
+    // Load full user preferences (dietary, cuisine, cook time, skill, exclusions)
+    final prefs = await loadUserPreferences();
 
     final FunctionResponse response;
     try {
       response = await _client.functions.invoke(
         'generate-recipes',
         body: {
-          'ingredients': ingredients.map((i) => i.toJson()).toList(),
-          'dietary_labels': prefs.$1,
-          'preferred_cuisines': prefs.$2,
-          'household_size': prefs.$3,
+          'ingredients': foodIngredients.map((i) => i.toJson()).toList(),
+          'dietary_labels': prefs.dietary,
+          'preferred_cuisines': prefs.cuisines,
+          'household_size': prefs.householdSize,
+          'max_cook_time_minutes': prefs.maxCookTimeMinutes,
+          'cooking_skill': prefs.cookingSkill,
+          'preferences': prefs.toJson(),
           'scan_id': effectiveScanId,
           'user_id': user.id,
           'is_manual_entry': isManualEntry,
@@ -704,7 +774,9 @@ class RecipeService {
     final recipes = rawList
         .map((r) => GeneratedRecipe.fromJson(r as Map<String, dynamic>))
         .toList();
-    return GeneratedRecipe.sortedByIngredientMatch(recipes);
+    // Client-side hard filter safety net (must never show diet/time violations)
+    final filtered = RecipePreferenceFilter.apply(recipes, prefs);
+    return GeneratedRecipe.sortedByIngredientMatch(filtered);
   }
 
   /// Ensures a web recipe exists in `recipes` and returns it with a Supabase [id].
@@ -812,7 +884,7 @@ class RecipeService {
 
       final prefsRow = await _client
           .from('user_preferences')
-          .select('dietary_labels, cooking_skill, max_cook_time')
+          .select('dietary_labels, cooking_skill, max_cook_time, exclude_ingredients')
           .eq('user_id', uid)
           .maybeSingle();
 
@@ -822,15 +894,11 @@ class RecipeService {
         maxCookTimeMinutes: (prefsRow?['max_cook_time'] as int?) ?? 45,
         cookingSkill: (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate',
         householdSize: (userRow?['household_size'] as int?) ?? 2,
+        excludedIngredients:
+            List<String>.from(prefsRow?['exclude_ingredients'] as List? ?? []),
       );
     } catch (_) {
       return UserRecipePreferences.empty;
     }
-  }
-
-  static Future<(List<String>, List<String>, int)> _loadUserPreferences(
-      String userId) async {
-    final prefs = await loadUserPreferences();
-    return (prefs.dietary, prefs.cuisines, prefs.householdSize);
   }
 }

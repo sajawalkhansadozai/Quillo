@@ -19,11 +19,26 @@ function nutrientAmount(nutrients: Record<string, unknown>, key: string): number
 
 function extractEdamamNutrition(recipe: Record<string, unknown>): NormalizedNutrition {
   const nutrients = (recipe.totalNutrients ?? {}) as Record<string, unknown>;
-  return {
+  const base = {
     calories: nutrientAmount(nutrients, 'ENERC_KCAL'),
     protein: nutrientAmount(nutrients, 'PROCNT'),
     carbs: nutrientAmount(nutrients, 'CHOCDF'),
     fat: nutrientAmount(nutrients, 'FAT'),
+  };
+  const fiber = nutrientAmount(nutrients, 'FIBTG');
+  const sodium = nutrientAmount(nutrients, 'NA');
+  const sugar = nutrientAmount(nutrients, 'SUGAR');
+  const saturated_fat = nutrientAmount(nutrients, 'FASAT');
+  const cholesterol = nutrientAmount(nutrients, 'CHOLE');
+  const potassium = nutrientAmount(nutrients, 'K');
+  return {
+    ...base,
+    ...(fiber > 0 ? { fiber } : {}),
+    ...(sodium > 0 ? { sodium } : {}),
+    ...(sugar > 0 ? { sugar } : {}),
+    ...(saturated_fat > 0 ? { saturated_fat } : {}),
+    ...(cholesterol > 0 ? { cholesterol } : {}),
+    ...(potassium > 0 ? { potassium } : {}),
   };
 }
 

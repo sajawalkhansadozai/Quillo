@@ -20,14 +20,20 @@ class _ScanLimitSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
+    final maxH = MediaQuery.sizeOf(context).height * 0.88;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 560, maxHeight: maxH),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Center(
@@ -141,6 +147,8 @@ class _ScanLimitSheet extends StatelessWidget {
                 _FeatureRow(emoji: '🚫', label: 'No ads — clean, calm experience'),
                 SizedBox(height: 10),
                 _FeatureRow(emoji: '🌱', label: 'Food waste dashboard & streaks'),
+                SizedBox(height: 10),
+                _FeatureRow(emoji: '🥗', label: 'Full nutritional info on every recipe'),
               ],
             ),
           ),
@@ -212,7 +220,7 @@ class _ScanLimitSheet extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Maybe later',
+                    'Remind me next month',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -226,6 +234,9 @@ class _ScanLimitSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+          ),
+        ),
       ),
     );
   }

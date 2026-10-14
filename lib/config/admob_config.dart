@@ -34,25 +34,21 @@ class AdMobConfig {
   /// iOS App ID (from AdMob → Apps → Quillo iOS)
   static const String iosAppId = 'ca-app-pub-7601438767779235~3005580086';
 
-  /// Android App ID — add yours from AdMob when the Android app is registered
-  static const String androidAppId = String.fromEnvironment(
-    'ADMOB_ANDROID_APP_ID',
-    defaultValue: 'ca-app-pub-$testPublisherId~3347511713',
-  );
+  /// Android App ID (AdMob → Apps → Quillo Android)
+  static const String androidAppId = 'ca-app-pub-7601438767779235~5190871597';
 
   /// iOS banner (AdMob → Ad units)
   static const String iosBannerAdUnitId =
       'ca-app-pub-7601438767779235/5350569606';
 
-  static const String androidBannerAdUnitId = String.fromEnvironment(
-    'ADMOB_ANDROID_BANNER_ID',
-    defaultValue: _testBannerAndroid,
-  );
+  /// Android banner (AdMob → Ad units)
+  static const String androidBannerAdUnitId =
+      'ca-app-pub-7601438767779235/3838311809';
 
-  /// iOS interstitial — create a unit in AdMob when ready; test ID until then.
+  /// iOS interstitial (AdMob → Ad units)
   static const String iosInterstitialAdUnitId = String.fromEnvironment(
     'ADMOB_IOS_INTERSTITIAL_ID',
-    defaultValue: _testInterstitialIOS,
+    defaultValue: 'ca-app-pub-7601438767779235/4199732862',
   );
 
   static const String androidInterstitialAdUnitId = String.fromEnvironment(

@@ -22,6 +22,7 @@ import {
   isAppHostedRecipeImage,
   needsGeminiRecipeImage,
 } from '../_shared/gemini_image.ts';
+import { searchQueriesForApis } from '../_shared/search_normalise.ts';
 import type { QuilloRecipePayload } from '../_shared/recipe_types.ts';
 import { normalizedToQuillo } from '../_shared/recipe_types.ts';
 import { resolveUserPreferences } from '../_shared/user_preferences.ts';
@@ -43,9 +44,17 @@ function titleRelevance(title: string, query: string): number {
     steak: ['sirloin', 'ribeye', 'rib-eye', 'striploin', 'filet', 'fillet', 'beef'],
     chicken: ['poultry', 'hen'],
     pasta: ['spaghetti', 'penne', 'linguine', 'noodle'],
+    shrimp: ['prawn'],
+    prawn: ['shrimp'],
+    eggplant: ['aubergine'],
+    aubergine: ['eggplant'],
   };
   for (const token of related[q] ?? []) {
     if (t.includes(token)) return 60;
+  }
+  // Token overlap for expanded queries ("prawn shrimp")
+  for (const part of q.split(/\s+/).filter((p) => p.length >= 3)) {
+    if (t.includes(part)) return 80;
   }
   return 0;
 }
@@ -121,6 +130,50 @@ async function searchLocalCatalog(
     .slice(0, limit);
 }
 
+async function searchFuzzyCache(
+  admin: ReturnType<typeof createClient>,
+  query: string,
+  limit: number,
+): Promise<QuilloRecipePayload[]> {
+  const { data, error } = await admin.rpc('search_recipe_cache_fuzzy', {
+    p_query: query,
+    p_limit: limit,
+  });
+  if (error) {
+    console.warn('search_recipe_cache_fuzzy failed:', error.message);
+    return [];
+  }
+  return (data ?? [])
+    .map((row: { recipe_payload?: QuilloRecipePayload }) => row.recipe_payload)
+    .filter((r: QuilloRecipePayload | undefined): r is QuilloRecipePayload => !!r?.title);
+}
+
+async function recordSearchActivity(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  rawTerm: string,
+  normalised: string,
+  cachedCount: number,
+): Promise<void> {
+  try {
+    await admin.from('user_searches').insert({
+      user_id: userId,
+      raw_term: rawTerm,
+      normalised_term: normalised,
+    });
+  } catch (err) {
+    console.warn('user_searches insert failed:', err);
+  }
+  try {
+    await admin.rpc('record_search_popularity', {
+      p_term: normalised,
+      p_cached_count: cachedCount,
+    });
+  } catch (err) {
+    console.warn('record_search_popularity failed:', err);
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -152,7 +205,9 @@ serve(async (req: Request) => {
     }
 
     const body = await parseRequestBody(req);
-    const query = String(body.query ?? '').trim();
+    const rawQuery = String(body.query ?? '').trim();
+    const { normalised: cacheTerm, expanded: apiQuery } = searchQueriesForApis(rawQuery);
+    const query = cacheTerm;
     const cap = Math.min(Math.max(Number(body.limit) || 50, 1), 50);
     const externalOffset = Math.max(Number(body.offset) || 0, 0);
     const excludeIds = new Set<string>(
@@ -195,52 +250,73 @@ serve(async (req: Request) => {
     );
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
-    const cacheTerm = query.trim().toLowerCase();
     const pageStart = externalOffset + 1;
     const pageEnd = externalOffset + cap;
 
     // Serve from shared recipe_cache when a full page is already stored.
+    // Exact normalised term only — dietary prefs applied AFTER fetch (1.3).
     if (excludeIds.size === 0) {
       const { data: cachedRows } = await admin
         .from('recipe_cache')
         .select('result_position, recipe_payload')
-        .eq('search_term', cacheTerm)
+        .eq('normalised_search_term', cacheTerm)
         .gte('result_position', pageStart)
         .lte('result_position', pageEnd)
         .order('result_position', { ascending: true });
 
-      if (cachedRows && cachedRows.length >= Math.min(cap, 3)) {
-        const recipes = cachedRows
+      // Fallback for rows written before normalised_search_term existed.
+      const exactRows = cachedRows && cachedRows.length > 0
+        ? cachedRows
+        : (await admin
+            .from('recipe_cache')
+            .select('result_position, recipe_payload')
+            .eq('search_term', cacheTerm)
+            .gte('result_position', pageStart)
+            .lte('result_position', pageEnd)
+            .order('result_position', { ascending: true })).data;
+
+      if (exactRows && exactRows.length >= Math.min(cap, 3)) {
+        const recipes = exactRows
           .map((row) => row.recipe_payload as QuilloRecipePayload)
           .filter(Boolean);
         const filtered = applyRecipePreferences(recipes, prefs, { limit: cap });
-        await admin.from('search_popularity').upsert({
-          search_term: cacheTerm,
-          hit_count: 1,
-          last_searched_at: new Date().toISOString(),
-          cached_count: cachedRows.length,
-        }, { onConflict: 'search_term' });
+        await recordSearchActivity(admin, user.id, rawQuery, cacheTerm, exactRows.length);
         console.log(
           `search-catalog: cache hit q="${cacheTerm}" page=${pageStart}-${pageEnd} n=${filtered.length}`,
         );
         return new Response(
           JSON.stringify({
-            recipes: filtered.length > 0 ? filtered : recipes.slice(0, cap),
+            recipes: filtered,
             provider: mode,
             catalog_count: 0,
             external_count: filtered.length,
             gemini_image_count: countGeminiImages(filtered),
             provider_image_count: 0,
             images_pending_upgrade: 0,
-            has_more: cachedRows.length >= cap,
-            next_offset: externalOffset + cachedRows.length,
+            has_more: exactRows.length >= cap,
+            next_offset: externalOffset + exactRows.length,
             from_cache: true,
             preferences_applied: prefs,
+            ...(filtered.length === 0
+              ? { warning: 'No preference-compliant recipes in cache for this page' }
+              : {}),
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
     }
+
+    // Fuzzy cache titles as extra local candidates (chick → chicken dishes).
+    const fuzzyCached = excludeIds.size === 0
+      ? await searchFuzzyCache(admin, query, Math.min(cap, 10))
+      : [];
+    const fuzzyLocal = fuzzyCached.filter((r) => !excludeIds.has(String(r.id ?? '')));
+    const localWithFuzzy = mergeCatalogResults(
+      [...localForMerge, ...fuzzyLocal],
+      [],
+      apiQuery,
+      Math.min(cap, 8),
+    );
 
     let externalRecipes: QuilloRecipePayload[] = [];
     const warnings: string[] = [];
@@ -264,8 +340,9 @@ serve(async (req: Request) => {
         ? spoonacularFilters
         : undefined;
 
+      // Use synonym-expanded query for APIs (prawn → "prawn shrimp").
       let search = await searchByProvider(
-        query,
+        apiQuery,
         cap,
         mode,
         creds,
@@ -275,31 +352,45 @@ serve(async (req: Request) => {
       );
       warnings.push(...search.warnings);
 
-      // Preference cuisine/health filters can over-constrain Edamam (e.g. diet AND
-      // cuisine). Retry once with the raw query so Explore isn't DB-only.
+      // Cuisine-only filters can over-constrain Edamam. Retry WITHOUT cuisine
+      // but KEEP dietary + max cook time (hard constraints — never relax).
       if (search.merged.length === 0 && (preferenceFilters || spoonFilters)) {
-        console.warn(
-          `search-catalog: ${mode} returned 0 with preference filters — retrying unfiltered for "${query}"`,
+        const dietOnlyEdamam = mapPreferencesToEdamamFilters(
+          [],
+          prefs.dietary,
+          prefs.max_cook_time_minutes,
         );
-        const retry = await searchByProvider(
-          query,
-          cap,
-          mode,
-          creds,
-          undefined,
-          externalOffset,
-          undefined,
+        const dietOnlySpoon = mapPreferencesToSpoonacularFilters(
+          [],
+          prefs.dietary,
+          prefs.max_cook_time_minutes,
         );
-        warnings.push(...retry.warnings);
-        if (retry.merged.length > 0) {
-          warnings.push('Relaxed preference filters to find matching recipes');
-          search = retry;
+        const softEdamam = hasAnyEdamamFilter(dietOnlyEdamam) ? dietOnlyEdamam : undefined;
+        const softSpoon = hasAnySpoonacularFilter(dietOnlySpoon) ? dietOnlySpoon : undefined;
+        if (prefs.cuisines.length > 0 && (softEdamam || softSpoon || softEdamam !== preferenceFilters)) {
+          console.warn(
+            `search-catalog: ${mode} returned 0 with cuisine filters — retrying with dietary+time only for "${apiQuery}"`,
+          );
+          const retry = await searchByProvider(
+            apiQuery,
+            cap,
+            mode,
+            creds,
+            softEdamam,
+            externalOffset,
+            softSpoon,
+          );
+          warnings.push(...retry.warnings);
+          if (retry.merged.length > 0) {
+            warnings.push('Relaxed cuisine preference filters (dietary + cook time still applied)');
+            search = retry;
+          }
         }
       }
 
       externalFetched = search.merged.length;
       console.log(
-        `search-catalog: q="${query}" local=${localForMerge.length} external=${externalFetched} mode=${mode}`,
+        `search-catalog: q="${apiQuery}" local=${localWithFuzzy.length} external=${externalFetched} mode=${mode}`,
       );
 
       if (search.merged.length > 0) {
@@ -335,14 +426,14 @@ serve(async (req: Request) => {
       }
     }
 
-    const merged = mergeCatalogResults(localForMerge, externalRecipes, query, cap);
+    const merged = mergeCatalogResults(localWithFuzzy, externalRecipes, apiQuery, cap);
+    // Hard dietary + cook-time + exclusions — never fall back to unfiltered.
     let recipes = applyRecipePreferences(merged, prefs, { limit: cap });
-    // Don't let soft preference scoring wipe an otherwise successful search.
     if (recipes.length === 0 && merged.length > 0) {
-      warnings.push('Preferences filtered all matches — showing unfiltered results');
-      recipes = merged.slice(0, cap);
+      warnings.push(
+        'All matches violated dietary, cook-time, skill, or excluded-ingredient preferences',
+      );
     }
-    // Prefer relevance order from merge over preference reordering for text search.
     const byId = new Map(recipes.map((r) => [r.id ?? r.title, r]));
     recipes = merged
       .filter((r) => byId.has(r.id ?? r.title))
@@ -353,6 +444,8 @@ serve(async (req: Request) => {
     try {
       const upserts = recipes.map((recipe, index) => ({
         search_term: cacheTerm,
+        normalised_search_term: cacheTerm,
+        recipe_title: recipe.title ?? '',
         result_position: externalOffset + index + 1,
         recipe_id: recipe.id ?? null,
         recipe_payload: recipe,
@@ -363,17 +456,12 @@ serve(async (req: Request) => {
           onConflict: 'search_term,result_position',
         });
       }
-      await admin.from('search_popularity').upsert({
-        search_term: cacheTerm,
-        hit_count: 1,
-        last_searched_at: new Date().toISOString(),
-        cached_count: upserts.length,
-      }, { onConflict: 'search_term' });
+      await recordSearchActivity(admin, user.id, rawQuery, cacheTerm, upserts.length);
     } catch (cacheErr) {
       console.warn('recipe_cache write failed:', cacheErr);
     }
 
-    const catalogCount = localForMerge.length;
+    const catalogCount = localWithFuzzy.length;
     const geminiImageCount = countGeminiImages(recipes);
 
     return new Response(

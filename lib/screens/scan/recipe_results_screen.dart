@@ -391,7 +391,7 @@ class RecipeListCard extends StatelessWidget {
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               child: SizedBox(
-                height: 185,
+                height: 210,
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
@@ -401,6 +401,7 @@ class RecipeListCard extends StatelessWidget {
                       emoji: emoji,
                       placeholderColor: AppColors.primary,
                       isImageUpgrading: isImageUpgrading,
+                      zoom: 0.84,
                     ),
                     // Bottom gradient
                     Positioned(

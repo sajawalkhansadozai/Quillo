@@ -8,6 +8,7 @@ class UserRecipePreferences {
   final int maxCookTimeMinutes;
   final String cookingSkill;
   final int householdSize;
+  final List<String> excludedIngredients;
 
   const UserRecipePreferences({
     this.dietary = const [],
@@ -15,11 +16,20 @@ class UserRecipePreferences {
     this.maxCookTimeMinutes = 45,
     this.cookingSkill = 'Intermediate',
     this.householdSize = 2,
+    this.excludedIngredients = const [],
   });
 
   bool get hasAny =>
       dietary.isNotEmpty ||
       cuisines.isNotEmpty ||
+      maxCookTimeMinutes > 0 ||
+      cookingSkill.isNotEmpty ||
+      excludedIngredients.isNotEmpty;
+
+  /// Hard constraints that must never be relaxed (diet, time, exclusions, skill).
+  bool get hasHardConstraints =>
+      dietary.isNotEmpty ||
+      excludedIngredients.isNotEmpty ||
       maxCookTimeMinutes > 0 ||
       cookingSkill.isNotEmpty;
 
@@ -31,5 +41,6 @@ class UserRecipePreferences {
         'max_cook_time_minutes': maxCookTimeMinutes,
         'cooking_skill': cookingSkill,
         'household_size': householdSize,
+        'excluded_ingredients': excludedIngredients,
       };
 }

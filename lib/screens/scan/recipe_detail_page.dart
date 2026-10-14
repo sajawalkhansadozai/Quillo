@@ -11,8 +11,13 @@ import '../../widgets/recipe_rating_section.dart';
 import '../../widgets/recipe_rating_badge.dart';
 import '../../widgets/recipe_rating_sheet.dart';
 import '../../services/recipe_rating_service.dart';
+import '../../services/subscription_service.dart';
+import '../../services/analytics_service.dart';
+import '../../services/push_notification_service.dart';
+import '../../utils/premium_nutrition.dart';
 import '../../widgets/ad_banner.dart';
 import '../cooking/cooking_mode_screen.dart';
+import '../paywall_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GeneratedRecipeDetailPage — full-screen detail view matching design reference
@@ -46,6 +51,8 @@ class _GeneratedRecipeDetailPageState
   bool _saveInProgress = false;
   late GeneratedRecipe _recipe;
   int _servings = 2;
+  int _householdSize = 2;
+  bool _isPremium = false;
   int _ratingRevision = 0;
   int? _userRating;
   bool _userRatingLoading = true;
@@ -57,10 +64,16 @@ class _GeneratedRecipeDetailPageState
   void initState() {
     super.initState();
     _recipe = _reconcileCookTime(widget.recipe);
-    _servings = _recipe.servings;
+    _servings = _recipe.servings > 0 ? _recipe.servings : 2;
     _scrollController.addListener(_onScroll);
     _initSavedStatus();
     _loadUserRating();
+    _applyHouseholdServings();
+    AnalyticsService.capture(
+      AnalyticsService.viewedRecipe,
+      properties: {'title': _recipe.title},
+    );
+    PushNotificationService.requestAfterFirstRecipe();
     if (_needsExternalHydration) {
       _hydrateExternalRecipe();
     } else {
@@ -69,6 +82,20 @@ class _GeneratedRecipeDetailPageState
         _generateInstructionsIfNeeded();
       }
     }
+  }
+
+  /// Checklist 1.8 — open recipes already scaled to household size.
+  Future<void> _applyHouseholdServings() async {
+    final prefs = await RecipeService.loadUserPreferences();
+    final premium = await SubscriptionService.isPremium();
+    if (!mounted) return;
+    final household = prefs.householdSize > 0 ? prefs.householdSize : 2;
+    setState(() {
+      _isPremium = premium;
+      _householdSize = household;
+      // Prefer household when recipe servings differ (catalog recipes often serve 2–4).
+      _servings = household;
+    });
   }
 
   Future<void> _loadUserRating() async {
@@ -143,7 +170,8 @@ class _GeneratedRecipeDetailPageState
     if (full != null) {
       setState(() {
         _recipe = _reconcileCookTime(full);
-        _servings = full.servings;
+        // Keep household scaling (1.8) — don't snap back to catalog servings.
+        _servings = _householdSize > 0 ? _householdSize : full.servings;
         _hydratingExternal = false;
       });
       await _initSavedStatus();
@@ -234,6 +262,10 @@ class _GeneratedRecipeDetailPageState
           (await ShoppingListService.getAll())
               .any((l) => l.recipeId == recipe.id);
       await ShoppingListService.saveFromRecipe(recipe);
+      await AnalyticsService.capture(
+        AnalyticsService.addedToShoppingList,
+        properties: {'title': recipe.title},
+      );
       if (!mounted) return;
       final wasUpdate = hadExisting;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -516,27 +548,79 @@ class _GeneratedRecipeDetailPageState
                               fontFamily: 'Nunito')),
                       Row(
                         children: [
-                          _CounterBtn(
-                            icon: Icons.remove_rounded,
-                            onTap: () {
-                              if (_servings > 1) setState(() => _servings--);
-                            },
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              '$_servings',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textDark,
+                          if (_isPremium) ...[
+                            _CounterBtn(
+                              icon: Icons.remove_rounded,
+                              onTap: () {
+                                if (_servings > 1) setState(() => _servings--);
+                              },
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                '$_servings',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textDark,
+                                ),
                               ),
                             ),
-                          ),
-                          _CounterBtn(
-                            icon: Icons.add_rounded,
-                            onTap: () => setState(() => _servings++),
-                          ),
+                            _CounterBtn(
+                              icon: Icons.add_rounded,
+                              onTap: () => setState(() => _servings++),
+                            ),
+                          ] else ...[
+                            // Free: fixed at household size (checklist 2.10)
+                            Text(
+                              '$_servings servings',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textMedium,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  PageRouteBuilder(
+                                    pageBuilder: (_, anim, __) =>
+                                        const PaywallScreen(),
+                                    transitionsBuilder: (_, anim, __, child) =>
+                                        SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, 1),
+                                        end: Offset.zero,
+                                      ).animate(CurvedAnimation(
+                                        parent: anim,
+                                        curve: Curves.easeOutCubic,
+                                      )),
+                                      child: child,
+                                    ),
+                                    transitionDuration:
+                                        const Duration(milliseconds: 400),
+                                    fullscreenDialog: true,
+                                  ),
+                                ).then((_) async {
+                                  final prem =
+                                      await SubscriptionService.isPremium();
+                                  if (mounted) {
+                                    setState(() => _isPremium = prem);
+                                  }
+                                });
+                              },
+                              child: const Text(
+                                'Adjust · Pro',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -688,16 +772,9 @@ class _GeneratedRecipeDetailPageState
                             ),
                           ),
                           const Spacer(),
-                          GestureDetector(
-                            onTap: () {},
-                            child: const Text(
-                              'Full info',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                              ),
-                            ),
+                          FullNutritionLink(
+                            recipe: recipe,
+                            initialServings: _servings,
                           ),
                         ],
                       ),

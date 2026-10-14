@@ -83,6 +83,7 @@ serve(async (req: Request) => {
     const edamamFilters = mapPreferencesToEdamamFilters(
       prefs.cuisines,
       prefs.dietary,
+      prefs.max_cook_time_minutes,
     );
 
     const search = await searchByProvider(query, limit, mode, {

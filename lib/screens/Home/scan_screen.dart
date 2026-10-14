@@ -2,13 +2,17 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../services/scan_service.dart';
 import '../../services/scan_limit_service.dart';
+import '../../services/analytics_service.dart';
+import '../../services/crash_reporting_service.dart';
+import '../../utils/app_settings_launcher.dart';
 import '../../widgets/scan_limit_sheet.dart';
 import '../../widgets/ad_banner.dart';
 import '../../widgets/scan_usage_banner.dart';
 import '../scan/ingredient_review_screen.dart';
+import '../scan/receipt_preview_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scan states
@@ -27,13 +31,15 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
+class _ScanScreenState extends State<ScanScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   _ScanState _state = _ScanState.idle;
   String? _errorMessage;
 
   // Camera
   CameraController? _cameraCtrl;
   bool _cameraReady = false;
+  bool _cameraPermissionDenied = false;
   bool _flashOn = false;
   bool _isCapturing = false;
 
@@ -62,6 +68,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     _scanLineCtrl = AnimationController(
@@ -81,10 +88,34 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _initCamera();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _cameraPermissionDenied) {
+      _initCamera();
+    }
+  }
+
   Future<void> _initCamera() async {
     try {
+      final status = await requestCameraPermission();
+      if (!status.isGranted) {
+        if (!mounted) return;
+        setState(() {
+          _cameraPermissionDenied = true;
+          _cameraReady = false;
+        });
+        return;
+      }
+
       final cameras = await availableCameras();
-      if (cameras.isEmpty) return;
+      if (cameras.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _cameraPermissionDenied = true;
+          _cameraReady = false;
+        });
+        return;
+      }
       final back = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -103,14 +134,41 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       setState(() {
         _cameraCtrl = ctrl;
         _cameraReady = true;
+        _cameraPermissionDenied = false;
       });
-    } catch (_) {
-      // Camera unavailable — fall back to gradient background silently.
+    } on CameraException catch (e) {
+      debugPrint('Camera init failed: ${e.code} ${e.description}');
+      if (!mounted) return;
+      setState(() {
+        _cameraPermissionDenied = true;
+        _cameraReady = false;
+      });
+    } catch (e) {
+      debugPrint('Camera init failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _cameraPermissionDenied = true;
+        _cameraReady = false;
+      });
+    }
+  }
+
+  Future<void> _openCameraSettings() async {
+    final opened = await openSystemAppSettings();
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Open Settings → Quillo → enable Camera so we can photograph receipts.',
+          ),
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     _scanLineCtrl.dispose();
     _cardCtrl.dispose();
@@ -128,9 +186,20 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     final ctrl = _cameraCtrl;
     if (ctrl == null || !_cameraReady || !ctrl.value.isInitialized) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera is still starting — please wait a moment.')),
-        );
+        if (_cameraPermissionDenied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Camera access is required to photograph receipts. Enable it in Settings.',
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Camera is still starting — please wait a moment.')),
+          );
+        }
       }
       return;
     }
@@ -138,7 +207,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     setState(() => _isCapturing = true);
     try {
       final file = await ctrl.takePicture();
-      await _processScan(file);
+      await _openPreviewThenScan(file);
     } catch (_) {
       if (mounted) {
         _showError('Could not capture photo. Please try again.');
@@ -165,7 +234,19 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     if (!await _checkLimit()) return;
     final file = await ScanService.pickFromGallery();
     if (file == null) return;
-    await _processScan(file);
+    await _openPreviewThenScan(file);
+  }
+
+  /// Brightness preview (§04) — Retake returns null and stays on camera.
+  Future<void> _openPreviewThenScan(XFile file) async {
+    if (!mounted) return;
+    final prepared = await Navigator.of(context).push<XFile?>(
+      MaterialPageRoute(
+        builder: (_) => ReceiptPreviewScreen(imageFile: file),
+      ),
+    );
+    if (prepared == null || !mounted) return;
+    await _processScan(prepared);
   }
 
   // ── Daily limit gate ─────────────────────────────────────────────────────────
@@ -190,7 +271,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
     try {
       final result = await ScanService.runScan(file).timeout(
-        const Duration(seconds: 60),
+        const Duration(seconds: 120),
         onTimeout: () => throw const ScanException(
             'Scan is taking too long — please check your connection and try again.'),
       );
@@ -198,12 +279,27 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       _stepTimer?.cancel();
       if (!mounted) return;
 
-      if (result.ingredients.isEmpty) {
-        _showError('No ingredients detected. Try a clearer photo or better lighting.');
-        return;
+      // Partial / empty: still open review so user can add ingredients (§06).
+      // Credit only when server says so (≥3 food items) (§05).
+      if (result.isPartial || result.ingredients.length < 3) {
+        await CrashReportingService.capture(
+          StateError('partial_ocr'),
+          context: 'ocr_partial',
+          extras: {
+            'ingredient_count': result.ingredients.length,
+            'best_pass': result.bestPass ?? 0,
+            'credit_consumed': result.creditConsumed,
+            'width': result.meta?['width'] ?? 0,
+            'height': result.meta?['height'] ?? 0,
+            'mean_brightness': result.meta?['meanBrightness'] ?? 0,
+          },
+        );
       }
 
-      await ScanLimitService.recordScan();
+      if (result.creditConsumed) {
+        await ScanLimitService.recordScan();
+        await AnalyticsService.capture(AnalyticsService.scannedReceipt);
+      }
 
       await _cardCtrl.reverse();
       if (!mounted) return;
@@ -212,16 +308,29 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           builder: (_) => IngredientReviewScreen(
             scanId: result.scanId,
             ingredients: result.ingredients,
-            receiptAlreadyCounted: true,
+            receiptAlreadyCounted: result.creditConsumed,
+            isPartial: result.isPartial || result.ingredients.length < 3,
+            partialMessage: result.message,
           ),
         ),
       );
     } on RateLimitException catch (e) {
       _showError(e.message);
     } on ScanException catch (e) {
-      _showError(e.message);
-    } catch (e) {
-      _showError('Could not read your receipt — please try again in better lighting.');
+      await CrashReportingService.capture(e, context: 'ocr_failure');
+      _showError(
+        '${e.message}\n\nThis scan did not use one of your credits.',
+      );
+    } catch (e, st) {
+      await CrashReportingService.capture(
+        e,
+        stackTrace: st,
+        context: 'ocr_failure',
+      );
+      _showError(
+        'We could not read this receipt. Try placing it flat in better lighting.\n\n'
+        'This scan did not use one of your credits.',
+      );
     }
   }
 
@@ -266,6 +375,20 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _openManualEntry() async {
+    if (!await _checkLimit()) return;
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const IngredientReviewScreen(
+          scanId: '',
+          ingredients: [],
+          receiptAlreadyCounted: false,
+        ),
+      ),
+    );
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
@@ -283,13 +406,98 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               children: [
                 _buildTopBar(),
                 const ScanUsageBanner(),
-                Expanded(child: _buildViewfinder()),
+                Expanded(
+                  child: _cameraPermissionDenied
+                      ? _buildCameraPermissionCard()
+                      : _buildViewfinder(),
+                ),
                 _buildBottomBar(),
               ],
             ),
           ),
           if (_state != _ScanState.idle) _buildStateOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCameraPermissionCard() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.photo_camera_outlined,
+                  color: Color(0xFFFFC107), size: 40),
+              const SizedBox(height: 14),
+              const Text(
+                'Camera access needed',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Quillo needs the camera to photograph your receipt and find recipes from the ingredients. Enable Camera in Settings, then return here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _openCameraSettings,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFC107),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Open Settings',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: _initCamera,
+                child: Text(
+                  'I enabled Camera — try again',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                'You can still pick a receipt from your gallery below.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -340,14 +548,32 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   // ── Viewfinder ──────────────────────────────────────────────────────────────
 
+  static const double _viewfinderWidth = 260;
+  static const double _viewfinderHeight = 360;
+
   Widget _buildViewfinder() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          if (_state == _ScanState.idle) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Column(
+                children: const [
+                  _CameraTip('Place the receipt on a dark flat surface'),
+                  SizedBox(height: 6),
+                  _CameraTip('Avoid shadows and direct sunlight'),
+                  SizedBox(height: 6),
+                  _CameraTip('Hold your phone directly above the receipt'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           SizedBox(
-            width: 280,
-            height: 200,
+            width: _viewfinderWidth,
+            height: _viewfinderHeight,
             child: Stack(
               children: [
                 const _CornerBrackets(),
@@ -355,7 +581,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                   AnimatedBuilder(
                     animation: _scanLineAnim,
                     builder: (_, __) {
-                      final y = 10 + (_scanLineAnim.value * 180);
+                      final y = 10 +
+                          (_scanLineAnim.value * (_viewfinderHeight - 20));
                       return Positioned(
                         left: 16,
                         right: 16,
@@ -517,6 +744,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                     message: _errorMessage,
                     onTryAgain: _reset,
                     onUpload: _onGallery,
+                    onAddManually: _openManualEntry,
                   ),
                 _ScanState.idle => const SizedBox(),
               },
@@ -639,12 +867,17 @@ class _ErrorCard extends StatelessWidget {
   final String? message;
   final VoidCallback onTryAgain;
   final VoidCallback onUpload;
-  const _ErrorCard(
-      {this.message, required this.onTryAgain, required this.onUpload});
+  final VoidCallback onAddManually;
+  const _ErrorCard({
+    this.message,
+    required this.onTryAgain,
+    required this.onUpload,
+    required this.onAddManually,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isRateLimit = message?.contains('daily') ?? false;
+    final isRateLimit = message?.toLowerCase().contains('limit') ?? false;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -680,7 +913,7 @@ class _ErrorCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             message ??
-                "Could not read your receipt — please try again in better lighting.",
+                "We could not read this receipt. Try placing it flat in better lighting, or add ingredients manually.",
             textAlign: TextAlign.center,
             style: TextStyle(
                 fontSize: 12,
@@ -695,7 +928,7 @@ class _ErrorCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Column(
+              child: const Column(
                 children: [
                   _ErrorTip('Make sure the receipt is fully visible'),
                   _ErrorTip('Hold the camera steady in good lighting'),
@@ -749,6 +982,29 @@ class _ErrorCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: onAddManually,
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFFC107).withValues(alpha: 0.55)),
+                  color: const Color(0xFFFFC107).withValues(alpha: 0.12),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Add ingredients manually',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFC107),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ] else ...[
             const SizedBox(height: 8),
@@ -804,6 +1060,41 @@ class _ErrorTip extends StatelessWidget {
                   fontSize: 11,
                   color: Colors.white.withValues(alpha: 0.6),
                   height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CameraTip extends StatelessWidget {
+  final String text;
+  const _CameraTip(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle_outline,
+              size: 14, color: Colors.white.withValues(alpha: 0.7)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.8),
+                height: 1.3,
+              ),
             ),
           ),
         ],

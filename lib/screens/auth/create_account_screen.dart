@@ -1,22 +1,65 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
 import '../../widgets/quillo_button.dart';
 import '../../widgets/sso_button.dart';
 import '../../services/auth_service.dart';
+import '../../services/analytics_service.dart';
+import '../../services/onboarding_router.dart';
 import '../Home/main_shell.dart';
 import 'sign_in_screen.dart';
 import '../../constants/legal_urls.dart';
 import '../../utils/external_link.dart';
+import '../../utils/cooking_skill_labels.dart';
 
 class CreateAccountScreen extends StatefulWidget {
   const CreateAccountScreen({super.key});
 
   @override
   State<CreateAccountScreen> createState() => _CreateAccountScreenState();
+
+  /// Reads onboarding selections from SharedPreferences and persists them
+  /// to the Supabase users + user_preferences tables.
+  /// Sets [onboarding_completed] when [markCompleted] is true (§2.4).
+  static Future<void> saveOnboardingDataToDb({bool markCompleted = true}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final gdprConsent = prefs.getBool('gdpr_analytics') ?? false;
+    final householdSize = prefs.getInt('onboarding_household_size') ?? 2;
+    final dietary = prefs.getStringList('onboarding_dietary') ?? [];
+    final cuisines = prefs.getStringList('onboarding_cuisines') ?? [];
+    final skillRaw = prefs.getString('onboarding_skill_level') ?? 'Home Cook';
+    final maxCookTime = prefs.getInt('onboarding_max_cook_time') ?? 45;
+    final cookingSkill = CookingSkillLabels.normalize(skillRaw);
+    final user = AuthService.currentUser;
+    final email = user?.email ?? '';
+    final fullName = user?.userMetadata?['full_name'] as String? ?? '';
+
+    await AuthService.initUserProfile(
+      email: email,
+      fullName: fullName,
+      gdprConsent: gdprConsent,
+      householdSize: householdSize,
+      preferredCuisines: cuisines,
+    );
+    await AuthService.saveUserPreferences(
+      dietaryLabels: dietary,
+      cookingSkill: cookingSkill,
+      maxCookTimeMinutes: maxCookTime,
+      onboardingCompleted: markCompleted ? true : null,
+    );
+    if (markCompleted) {
+      await OnboardingRouter.clearLocalOnboardingPrefs();
+    }
+    await AnalyticsService.capture(AnalyticsService.signedUp);
+    final uid = user?.id;
+    if (uid != null) await AnalyticsService.identify(uid);
+  }
 }
 
 class _CreateAccountScreenState extends State<CreateAccountScreen>
@@ -82,13 +125,15 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.needsEmailVerification) {
-      await saveOnboardingDataToDb();
+      // No session yet — do not open Home. Ask them to confirm email, then sign in.
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AllSetScreen()),
+        MaterialPageRoute(
+          builder: (_) => CheckEmailScreen(email: email),
+        ),
       );
-    } else if (result.success) {
-      await saveOnboardingDataToDb();
+    } else     if (result.success) {
+      await CreateAccountScreen.saveOnboardingDataToDb(markCompleted: true);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AllSetScreen()),
@@ -104,7 +149,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
-      await saveOnboardingDataToDb();
+      // Came through pref screens → mark complete, then home.
+      await CreateAccountScreen.saveOnboardingDataToDb(markCompleted: true);
       if (!mounted) return;
       _goHome();
     } else if (result.error != null && !result.error!.contains('cancelled')) {
@@ -118,7 +164,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
-      await saveOnboardingDataToDb();
+      await CreateAccountScreen.saveOnboardingDataToDb(markCompleted: true);
       if (!mounted) return;
       _goHome();
     } else if (result.error != null && !result.error!.contains('cancelled')) {
@@ -131,30 +177,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       MaterialPageRoute(builder: (_) => const MainShell()),
       (_) => false,
     );
-  }
-
-  /// Reads onboarding selections from SharedPreferences and persists them
-  /// to the Supabase users + user_preferences tables.
-  static Future<void> saveOnboardingDataToDb() async {
-    final prefs = await SharedPreferences.getInstance();
-    final gdprConsent = prefs.getBool('gdpr_analytics') ?? false;
-    final householdSize = prefs.getInt('onboarding_household_size') ?? 2;
-    final dietary = prefs.getStringList('onboarding_dietary') ?? [];
-    final cuisines = prefs.getStringList('onboarding_cuisines') ?? [];
-    final user = AuthService.currentUser;
-    final email = user?.email ?? '';
-    final fullName = user?.userMetadata?['full_name'] as String? ?? '';
-
-    await AuthService.initUserProfile(
-      email: email,
-      fullName: fullName,
-      gdprConsent: gdprConsent,
-      householdSize: householdSize,
-      preferredCuisines: cuisines,
-    );
-    if (dietary.isNotEmpty) {
-      await AuthService.saveUserPreferences(dietaryLabels: dietary);
-    }
   }
 
   void _showError(String message) {
@@ -196,7 +218,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                         ),
                       ],
                     ),
-                    child: SingleChildScrollView(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,6 +415,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                           ),
                         ],
                       ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -505,6 +532,115 @@ class _LoadingButton extends StatelessWidget {
   }
 }
 
+/// Shown after signup when Supabase requires email confirmation (no session yet).
+class CheckEmailScreen extends StatefulWidget {
+  final String email;
+
+  const CheckEmailScreen({super.key, required this.email});
+
+  @override
+  State<CheckEmailScreen> createState() => _CheckEmailScreenState();
+}
+
+class _CheckEmailScreenState extends State<CheckEmailScreen> {
+  late final StreamSubscription<AuthState> _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // If they confirm via deep link while this screen is open, finish onboarding.
+    _authSub = AuthService.authStateChanges.listen((state) async {
+      if (state.session == null || !mounted) return;
+      await CreateAccountScreen.saveOnboardingDataToDb();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AllSetScreen()),
+        (_) => false,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
+  }
+
+  void _goSignIn() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const AuthIllustration(type: IllustrationType.allSet),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.mark_email_unread_rounded,
+                          color: AppColors.primary,
+                          size: 40,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Check your email',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textDark,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'We sent a confirmation link to\n${widget.email}\n\n'
+                      'Open it to verify your account, then sign in.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textMedium,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    QuilloButton(
+                      label: 'Go to Sign In',
+                      onTap: _goSignIn,
+                      backgroundColor: AppColors.primary,
+                      textColor: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AllSetScreen extends StatefulWidget {
   const AllSetScreen({super.key});
 
@@ -533,6 +669,20 @@ class _AllSetScreenState extends State<AllSetScreen>
   void dispose() {
     _ctrl.dispose();
     super.dispose();
+  }
+
+  void _goHome() {
+    if (!AuthService.isSignedIn) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SignInScreen()),
+        (_) => false,
+      );
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (_) => false,
+    );
   }
 
   @override
@@ -589,10 +739,7 @@ class _AllSetScreenState extends State<AllSetScreen>
                       const SizedBox(height: 36),
                       QuilloButton(
                         label: 'Go to Home',
-                        onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (_) => const MainShell()),
-                          (_) => false,
-                        ),
+                        onTap: _goHome,
                         backgroundColor: AppColors.primary,
                         textColor: Colors.white,
                       ),

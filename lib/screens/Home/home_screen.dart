@@ -13,6 +13,7 @@ import '../../models/user_recipe_preferences.dart';
 import '../../utils/recipe_preference_filter.dart';
 import '../../services/recipe_service.dart';
 import '../../services/recipe_rating_service.dart';
+import '../../services/in_app_notification_service.dart';
 import '../../widgets/recipe_rating_badge.dart';
 import '../../widgets/recipe_thumbnail_image.dart';
 import '../scan/ingredient_review_screen.dart';
@@ -52,6 +53,7 @@ class HomeScreenState extends State<HomeScreen>
   String _selectedCategory = 'All';
   int _imageUpgradeGeneration = 0;
   final Set<String> _upgradingImageKeys = {};
+  String? _expiryIngredient;
 
   List<String> get _categories {
     final extras = _userPrefs.cuisines
@@ -243,6 +245,8 @@ class HomeScreenState extends State<HomeScreen>
         _userPrefs = prefs;
         _loading = false;
       });
+      final ageing = await InAppNotificationService.ageingIngredientName();
+      if (mounted) setState(() => _expiryIngredient = ageing);
       RecipeRatingService.prefetchSummaries([
         ..._catalogRecipes,
         ..._recentRecipes,
@@ -455,6 +459,8 @@ class HomeScreenState extends State<HomeScreen>
               // ── Header ──────────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildHeader()),
               const SliverToBoxAdapter(child: ScanUsageBanner()),
+              if (_expiryIngredient != null)
+                SliverToBoxAdapter(child: _buildExpiryBanner()),
 
               // ── Search bar ───────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildSearchBar()),
@@ -532,6 +538,40 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   // ── Header ──────────────────────────────────────────────────────────────────
+
+  Widget _buildExpiryBanner() {
+    final name = _expiryIngredient;
+    if (name == null) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: () => _openExploreSearch(query: name, focusSearch: true),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3E0),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFFB74D)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.timer_outlined, size: 18, color: Color(0xFFE65100)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Your $name may go off soon — tap for recipe ideas',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE65100),
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFFE65100), size: 18),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildHeader() {
     return Padding(

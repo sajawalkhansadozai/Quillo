@@ -18,7 +18,7 @@ You need to configure the **stores** and **RevenueCat**, then add API keys to th
 | Monthly | `quillo.premium.monthly` | Auto-renewable subscription, 1 month |
 | Yearly | `quillo.premium.yearly` | Auto-renewable subscription, 1 year |
 
-**Entitlement ID (RevenueCat):** `premium`
+**Entitlement ID (RevenueCat):** `Quillo Pro` (must match identifier in dashboard exactly)
 
 ---
 
@@ -54,7 +54,7 @@ You need to configure the **stores** and **RevenueCat**, then add API keys to th
 2. Add **iOS** and **Android** apps (bundle ID / package name must match Flutter app).
 3. Connect **App Store Connect** (Shared Secret / App Store Connect API key).
 4. Connect **Google Play** (service account JSON).
-5. Create **Entitlement** named exactly: `premium`.
+5. Create **Entitlement** — identifier must match `IapConfig.premiumEntitlement` in code (currently `Quillo Pro`).
 6. Create **Offering** `default` with packages:
    - Monthly → `quillo.premium.monthly`
    - Annual → `quillo.premium.yearly`
@@ -94,7 +94,7 @@ Keys are read in `SubscriptionService.configure()` on app launch (`main.dart`).
 ## 7. What happens after purchase
 
 1. RevenueCat validates receipt.
-2. `premium` entitlement becomes active.
+2. `Quillo Pro` entitlement becomes active.
 3. App updates Supabase `users.subscription_status` → `premium`.
 4. RPC `set_premium_limit` raises daily scan cap.
 5. `DailyLimitService` / `AdBanner` respect premium status.
@@ -108,7 +108,7 @@ Keys are read in `SubscriptionService.configure()` on app launch (`main.dart`).
 | "Products not available" | Check product IDs match exactly; offerings configured in RevenueCat; wait up to a few hours after creating products |
 | **CONFIGURATION_ERROR / offerings empty** | **Bundle ID** in Xcode (`com.example.quillo`) must match App Store Connect + RevenueCat exactly. Finish subscription metadata. Link App Store Connect API in RevenueCat. Test on a real device with Sandbox account, or use `ios/Quillo.storekit` via Xcode Run scheme |
 | "Add RevenueCat API keys" | Pass `--dart-define` keys or replace placeholders |
-| Purchase works but not premium | Entitlement must be named `premium` |
+| Purchase works but not premium | Entitlement identifier in RevenueCat must match `IapConfig.premiumEntitlement` (`Quillo Pro`) |
 | Restore finds nothing | Same Apple ID / Google account used for purchase |
 | iOS simulator | Use StoreKit Configuration file or sandbox Apple ID |
 

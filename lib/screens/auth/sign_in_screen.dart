@@ -4,7 +4,7 @@ import '../../widgets/auth_illustration.dart';
 import '../../widgets/auth_text_field.dart';
 import '../../widgets/sso_button.dart';
 import '../../services/auth_service.dart';
-import '../Home/main_shell.dart';
+import '../../services/onboarding_router.dart';
 import 'create_account_screen.dart';
 import 'reset_password_screen.dart';
 
@@ -59,7 +59,8 @@ class _SignInScreenState extends State<SignInScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
-      _goHome();
+      if (!mounted) return;
+      await OnboardingRouter.navigateAfterAuth(context);
     } else {
       _showError(result.error ?? 'Sign in failed.');
     }
@@ -71,7 +72,8 @@ class _SignInScreenState extends State<SignInScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
-      _goHome();
+      if (!mounted) return;
+      await OnboardingRouter.navigateAfterAuth(context);
     } else if (result.error != null && !result.error!.contains('cancelled')) {
       _showError(result.error!);
     }
@@ -83,17 +85,11 @@ class _SignInScreenState extends State<SignInScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
-      _goHome();
+      if (!mounted) return;
+      await OnboardingRouter.navigateAfterAuth(context);
     } else if (result.error != null && !result.error!.contains('cancelled')) {
       _showError(result.error!);
     }
-  }
-
-  void _goHome() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-      (_) => false,
-    );
   }
 
   void _showError(String message) {
@@ -133,7 +129,10 @@ class _SignInScreenState extends State<SignInScreen>
                         ),
                       ],
                     ),
-                    child: SingleChildScrollView(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,6 +314,8 @@ class _SignInScreenState extends State<SignInScreen>
                             ),
                           ),
                         ],
+                      ),
+                        ),
                       ),
                     ),
                   ),

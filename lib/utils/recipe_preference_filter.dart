@@ -67,8 +67,9 @@ class RecipePreferenceFilter {
     'pescatarian': [
       'chicken', 'beef', 'pork', 'lamb', 'bacon', 'ham', 'sausage', 'steak',
     ],
-    'halal': ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard'],
-    'kosher': ['pork', 'bacon', 'ham', 'shellfish', 'prawn', 'shrimp', 'crab'],
+      'halal': ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard', 'prosciutto', 'pepperoni', 'gelatin'],
+      'muslim': ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard', 'prosciutto', 'pepperoni', 'gelatin'],
+      'kosher': ['pork', 'bacon', 'ham', 'shellfish', 'prawn', 'shrimp', 'crab'],
     'gluten-free': ['wheat', 'flour', 'bread', 'pasta', 'noodle', 'barley', 'rye'],
     'wheat-free': ['wheat', 'flour', 'bread', 'pasta', 'semolina'],
     'dairy-free': ['milk', 'cheese', 'butter', 'cream', 'yogurt', 'whey'],
@@ -119,6 +120,9 @@ class RecipePreferenceFilter {
         return 2; // easy + medium
       case 'advanced':
       case 'confident':
+      case 'confident cook':
+      case 'expert':
+      case 'pro chef':
         return 3;
       default:
         return 3;
@@ -138,9 +142,12 @@ class RecipePreferenceFilter {
 
   /// Returns false when the recipe clearly violates saved preferences.
   static bool matches(GeneratedRecipe recipe, UserRecipePreferences prefs) {
-    if (prefs.maxCookTimeMinutes > 0 &&
-        recipe.cookTimeMinutes > prefs.maxCookTimeMinutes) {
-      return false;
+    // Hard cook-time ceiling — unknown/zero time fails when a ceiling is set.
+    if (prefs.maxCookTimeMinutes > 0) {
+      if (recipe.cookTimeMinutes <= 0 ||
+          recipe.cookTimeMinutes > prefs.maxCookTimeMinutes) {
+        return false;
+      }
     }
 
     final maxRank = _maxDifficultyRank(prefs.cookingSkill);
@@ -153,6 +160,11 @@ class RecipePreferenceFilter {
       if (banned != null && banned.isNotEmpty && _containsAny(text, banned)) {
         return false;
       }
+    }
+
+    for (final raw in prefs.excludedIngredients) {
+      final needle = raw.toLowerCase().trim();
+      if (needle.length >= 2 && text.contains(needle)) return false;
     }
     return true;
   }

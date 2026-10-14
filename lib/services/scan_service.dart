@@ -29,8 +29,23 @@ class ScanException implements Exception {
 class ScanResult {
   final String scanId;
   final List<IngredientItem> ingredients;
+  /// True when server consumed a free-tier credit (≥3 food ingredients).
+  final bool creditConsumed;
+  /// True when OCR returned fewer than 3 ingredients (or zero).
+  final bool isPartial;
+  final int? bestPass;
+  final Map<String, dynamic>? meta;
+  final String? message;
 
-  const ScanResult({required this.scanId, required this.ingredients});
+  const ScanResult({
+    required this.scanId,
+    required this.ingredients,
+    this.creditConsumed = false,
+    this.isPartial = false,
+    this.bestPass,
+    this.meta,
+    this.message,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,7 +153,7 @@ class ScanService {
       throw ScanException(msg);
     }
 
-    // 7. Parse ingredient list
+    // 7. Parse ingredient list + credit / partial flags
     final data = response.data as Map<String, dynamic>;
     final rawList = data['ingredients'] as List<dynamic>? ?? [];
     final ingredients = rawList
@@ -146,7 +161,24 @@ class ScanService {
         .where((i) => i.name.trim().isNotEmpty)
         .toList();
 
-    return ScanResult(scanId: scanId, ingredients: ingredients);
+    final creditConsumed = data['credit_consumed'] as bool? ??
+        ingredients.length >= 3;
+    final isPartial = data['partial'] as bool? ?? ingredients.length < 3;
+    final bestPass = data['best_pass'] as int?;
+    final meta = data['meta'] is Map
+        ? Map<String, dynamic>.from(data['meta'] as Map)
+        : null;
+    final message = data['message'] as String?;
+
+    return ScanResult(
+      scanId: scanId,
+      ingredients: ingredients,
+      creditConsumed: creditConsumed,
+      isPartial: isPartial,
+      bestPass: bestPass,
+      meta: meta,
+      message: message,
+    );
   }
 
   // ── Compression ─────────────────────────────────────────────────────────────

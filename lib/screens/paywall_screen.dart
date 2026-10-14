@@ -5,6 +5,7 @@ import '../config/iap_config.dart';
 import '../constants/legal_urls.dart';
 import '../services/subscription_service.dart';
 import '../utils/external_link.dart';
+import '../widgets/celebration_overlays.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PaywallScreen — wired to RevenueCat
@@ -94,16 +95,29 @@ class _PaywallScreenState extends State<PaywallScreen>
       if (!mounted) return;
 
       if (result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Welcome to QUILLO Pro!'),
-            backgroundColor: Color(0xFF4CAF50),
+        // Balanced §05.9 — full-screen welcome, then return true to caller.
+        await Navigator.of(context).push(
+          PageRouteBuilder(
+            opaque: true,
+            pageBuilder: (_, __, ___) => PremiumSuccessOverlay(
+              onDone: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            transitionDuration: Duration.zero,
           ),
         );
+        if (!mounted) return;
         Navigator.of(context).pop(true);
-      } else if (!result.cancelled && result.error != null) {
+      } else if (!result.cancelled) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.error!)),
+          SnackBar(
+            content: Text(
+              result.error ??
+                  'Subscription not activated yet. Tap Restore Purchases below.',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -146,28 +160,46 @@ class _PaywallScreenState extends State<PaywallScreen>
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            children: [
-              _buildTopBar(),
-              _buildHero(),
-              _buildHeadline(),
-              const SizedBox(height: 24),
-              _buildFeaturesGrid(),
-              const SizedBox(height: 28),
-              _buildPlanSection(),
-              _buildStoreSetupBanner(),
-              const SizedBox(height: 20),
-              _buildSocialProof(),
-              const SizedBox(height: 24),
-              _buildCTA(),
-              const SizedBox(height: 14),
-              _buildRestore(),
-              const SizedBox(height: 12),
-              _buildLegalLinks(),
-              const SizedBox(height: 32),
-            ],
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        _buildTopBar(),
+                        _buildHero(),
+                        _buildHeadline(),
+                        const SizedBox(height: 24),
+                        _buildFeaturesGrid(),
+                        const SizedBox(height: 28),
+                        _buildPlanSection(),
+                        _buildStoreSetupBanner(),
+                        const SizedBox(height: 20),
+                        _buildSocialProof(),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildCTA(),
+                      const SizedBox(height: 14),
+                      _buildRestore(),
+                      const SizedBox(height: 12),
+                      _buildLegalLinks(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -326,6 +358,7 @@ class _PaywallScreenState extends State<PaywallScreen>
       _Feature('🌱', 'Waste Dashboard', 'Track money saved & share your impact'),
       _Feature('🥫', 'Smart Pantry', 'Track what you have and what to buy'),
       _Feature('📋', 'Smart Lists', 'Auto-generate your grocery lists'),
+      _Feature('🥗', 'Full Nutrition', 'Complete macros & micronutrients per serving'),
       _Feature('⭐', 'Priority Support', '24/7 dedicated customer support'),
     ];
 

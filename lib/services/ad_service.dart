@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -150,8 +151,13 @@ class AdService {
     );
   }
 
-  /// Show an interstitial for free users at natural breakpoints (e.g. after scan).
-  static Future<void> showInterstitialIfFree() async {
+  /// Show an interstitial for free users.
+  ///
+  /// When [waitUntilDismissed] is true, the future completes after the user
+  /// closes/skips the ad (or immediately if none is ready / user is premium).
+  static Future<void> showInterstitialIfFree({
+    bool waitUntilDismissed = false,
+  }) async {
     if (kIsWeb) return;
     if (await SubscriptionService.isPremium()) return;
     final ad = instance._cachedInterstitial;
@@ -159,9 +165,43 @@ class AdService {
       instance._preloadInterstitial();
       return;
     }
-    await ad.show();
+
+    if (!waitUntilDismissed) {
+      await ad.show();
+      instance._cachedInterstitial = null;
+      instance._preloadInterstitial();
+      return;
+    }
+
+    final dismissed = Completer<void>();
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (shown) {
+        shown.dispose();
+        instance._cachedInterstitial = null;
+        instance._preloadInterstitial();
+        if (!dismissed.isCompleted) dismissed.complete();
+      },
+      onAdFailedToShowFullScreenContent: (shown, error) {
+        debugPrint('AdMob: interstitial show failed: $error');
+        shown.dispose();
+        instance._cachedInterstitial = null;
+        instance._preloadInterstitial();
+        if (!dismissed.isCompleted) dismissed.complete();
+      },
+    );
+
     instance._cachedInterstitial = null;
-    instance._preloadInterstitial();
+    try {
+      await ad.show();
+      await dismissed.future.timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {},
+      );
+    } catch (e) {
+      debugPrint('AdMob: interstitial show error: $e');
+      ad.dispose();
+      instance._preloadInterstitial();
+    }
   }
 
   static bool get _isIOS => !kIsWeb && Platform.isIOS;

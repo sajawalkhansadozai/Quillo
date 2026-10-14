@@ -79,6 +79,8 @@ class _AuthTextFieldState extends State<AuthTextField> {
           obscureText: widget.obscureText,
           keyboardType: widget.keyboardType,
           textCapitalization: widget.textCapitalization,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => FocusScope.of(context).unfocus(),
           style: const TextStyle(
             fontSize: 14,
             color: AppColors.textDark,

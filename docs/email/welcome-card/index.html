@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quillo — Welcome</title>
+<style>
+  @font-face{
+    font-family:'QuilloHand';
+    src:url(assets/quillo-hand.woff2) format('woff2');
+    font-weight:400 700;font-style:normal;font-display:swap;
+  }
+  :root{
+    --ink:#241456;
+    --purple-top:#2f1d72;
+    --purple-bot:#241456;
+    --btn:#5a2fd6;
+    --box:#ece9f5;
+    --ic-purple-bg:#ede4ff; --ic-purple:#6a35d6;
+    --ic-green-bg:#d9f0cf;  --ic-green:#4e9c4f;
+    --ic-orange-bg:#ffe1cc; --ic-orange:#ef8f3c;
+    --muted:#8a86a0;
+    --footer-bg:#eceaf3;
+    --hand:#2d1a6b;
+    --page:#f1f1f6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    background:var(--page);display:flex;justify-content:center;padding:30px 12px;
+  }
+  .card{width:360px;background:#fff;border-radius:6px;overflow:hidden;
+    box-shadow:0 8px 26px rgba(0,0,0,.10);}
+
+  /* HEADER */
+  .header{position:relative;background:linear-gradient(160deg,var(--purple-top),var(--purple-bot));
+    color:#fff;padding:22px 22px 26px 22px;overflow:hidden;}
+  .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;position:relative;z-index:3;}
+  .logo{font-size:20px;font-weight:800;letter-spacing:.3px;}
+  .tagline{font-family:'QuilloHand','Segoe Script',cursive;font-size:16px;font-weight:600;
+    color:#d9d3f2;text-align:right;line-height:1.15;max-width:110px;}
+  .headline{font-size:24px;font-weight:800;line-height:1.2;max-width:200px;position:relative;z-index:3;letter-spacing:-.3px;}
+  .subtext{font-size:12px;color:#d3cdec;margin-top:12px;max-width:205px;line-height:1.5;position:relative;z-index:3;}
+
+  .bowl{position:absolute;top:70px;right:-46px;width:170px;height:170px;border-radius:50%;
+    z-index:1;box-shadow:0 8px 20px rgba(0,0,0,.35);object-fit:cover;}
+  .doodle{position:absolute;top:96px;right:128px;z-index:2;}
+
+  /* BODY */
+  .body{padding:22px 22px 6px 22px;}
+  .lead{font-size:13.5px;color:#3a3652;line-height:1.55;}
+  .btn{display:flex;align-items:center;justify-content:center;gap:9px;
+    background:var(--btn);color:#fff;text-decoration:none;font-size:14px;font-weight:700;
+    padding:15px;border-radius:30px;margin-top:18px;box-shadow:0 6px 16px rgba(90,47,214,.35);}
+  .btn svg{width:16px;height:16px;}
+  .disclaimer{text-align:center;font-size:10.5px;color:var(--muted);margin-top:14px;line-height:1.5;padding:0 6px;}
+  .rule{height:1px;background:#eceaf1;margin:18px 0 0 0;}
+
+  /* FEATURES */
+  .feat-wrap{padding:18px 18px 20px 18px;}
+  .feat-box{background:var(--box);border-radius:16px;padding:18px 16px 16px 16px;}
+  .feat-title{font-size:14px;font-weight:800;color:var(--ink);margin-bottom:14px;}
+  .feat{display:flex;align-items:flex-start;gap:13px;margin-bottom:16px;}
+  .feat .ic{width:38px;height:38px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .feat .ic svg{width:20px;height:20px;}
+  .ic.p{background:var(--ic-purple-bg);} .ic.g{background:var(--ic-green-bg);} .ic.o{background:var(--ic-orange-bg);}
+  .feat h4{font-size:13px;font-weight:800;color:var(--ink);}
+  .feat p{font-size:11.5px;color:#6f6b85;margin-top:3px;line-height:1.45;max-width:200px;}
+
+  /* HAND + BAG */
+  .closer{display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+  .hand{font-family:'QuilloHand','Segoe Script',cursive;color:#2d1a6b;font-size:27px;line-height:1.15;font-weight:600;transform:rotate(-4deg);}
+  .hand .heart{color:#7cc45f;font-size:24px;}
+  .bag{flex-shrink:0;margin-right:4px;width:96px;height:auto;}
+
+  /* FOOTER */
+  .footer{background:var(--footer-bg);text-align:center;padding:14px 18px;line-height:1.7;}
+  .footer .links{font-size:10px;color:#3f3a5a;font-weight:600;}
+  .footer .links span{color:#9a95b0;font-weight:400;margin:0 5px;}
+  .footer .addr{font-size:8.5px;color:#9a95b0;margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- HEADER -->
+  <div class="header">
+    <img class="bowl" src="assets/foodbowl.png" alt="food bowl">
+    <svg class="doodle" width="34" height="46" viewBox="0 0 34 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="#6fbf5e" stroke-width="2.6" stroke-linecap="round">
+        <path d="M6 10 l9 -6"/><path d="M2 24 l11 -1"/><path d="M8 40 l10 4"/>
+      </g>
+    </svg>
+
+    <div class="header-top">
+      <div class="logo">Quillo</div>
+      <div class="tagline">Receipts to<br>recipes for a<br>brighter tomorrow</div>
+    </div>
+    <div class="headline">Welcome to Quillo, Sarah&nbsp;👋</div>
+    <div class="subtext">You're in. Let's turn your grocery receipts into great meals.</div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+    <div class="lead">Please confirm your email address to get started and unlock your first scans.</div>
+    <a href="#" class="btn">Confirm my email
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 12 h15 M13 6 l6 6 -6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <div class="disclaimer">This link expires in 24 hours. If you didn't create a Quillo account, you can safely ignore this email.</div>
+    <div class="rule"></div>
+  </div>
+
+  <!-- FEATURES -->
+  <div class="feat-wrap">
+    <div class="feat-box">
+      <div class="feat-title">What you can do with Quillo</div>
+
+      <div class="feat">
+        <div class="ic p">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="7" width="18" height="13" rx="3" stroke="#6a35d6" stroke-width="1.8"/>
+            <path d="M8 7 l1.5 -2.5 h5 L16 7" stroke="#6a35d6" stroke-width="1.8" stroke-linejoin="round"/>
+            <circle cx="12" cy="13.5" r="3.2" stroke="#6a35d6" stroke-width="1.8"/>
+          </svg>
+        </div>
+        <div>
+          <h4>Scan any receipt</h4>
+          <p>Turn your grocery shop into recipe ideas in seconds.</p>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="ic g">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7 3 v18 M5 3 v5 a2 2 0 0 0 4 0 V3" stroke="#4e9c4f" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M16 3 c-2 1 -3 3 -3 6 c0 2 1 3 3 3 V21" stroke="#4e9c4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <h4>Get personalised recipes</h4>
+          <p>Tailored to your diet, household size, and cooking time.</p>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="ic o">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4"  y="12" width="4" height="8" rx="1.4" stroke="#ef8f3c" stroke-width="1.8"/>
+            <rect x="10" y="8"  width="4" height="12" rx="1.4" stroke="#ef8f3c" stroke-width="1.8"/>
+            <rect x="16" y="5"  width="4" height="15" rx="1.4" stroke="#ef8f3c" stroke-width="1.8"/>
+          </svg>
+        </div>
+        <div>
+          <h4>Track your impact</h4>
+          <p>See how much money and food waste you've saved over time.</p>
+        </div>
+      </div>
+
+      <!-- HAND + BAG -->
+      <div class="closer">
+        <div class="hand">Good food<br>less waste<br>brighter days <span class="heart">♥</span></div>
+        <img class="bag" src="assets/bag.png" alt="grocery bag">
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="links">quillo.co.uk <span>|</span> @Quillo.ai <span>|</span> Unsubscribe</div>
+    <div class="addr">Wenlon AI Ltd trading as Quillo · 66 Paul Street, London EC2A 4NA</div>
+  </div>
+
+</div>
+</body>
+</html>

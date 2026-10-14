@@ -11,8 +11,8 @@
 class IapConfig {
   IapConfig._();
 
-  /// Must match the entitlement ID in RevenueCat dashboard.
-  static const String premiumEntitlement = 'premium';
+  /// Must match the entitlement identifier in RevenueCat dashboard exactly.
+  static const String premiumEntitlement = 'Quillo Pro';
 
   /// Must match App Store Connect / Google Play product IDs exactly.
   static const String monthlyProductId = 'quillo.premium.monthly';

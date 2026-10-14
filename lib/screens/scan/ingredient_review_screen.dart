@@ -20,14 +20,19 @@ import 'recipe_results_screen.dart';
 class IngredientReviewScreen extends StatefulWidget {
   final String scanId;
   final List<IngredientItem> ingredients;
-  /// True when quota was already consumed during receipt OCR.
+  /// True when quota was already consumed during receipt OCR (≥3 items).
   final bool receiptAlreadyCounted;
+  /// Fewer than 3 OCR ingredients — show partial UX (§06).
+  final bool isPartial;
+  final String? partialMessage;
 
   const IngredientReviewScreen({
     super.key,
     required this.scanId,
     required this.ingredients,
     this.receiptAlreadyCounted = false,
+    this.isPartial = false,
+    this.partialMessage,
   });
 
   @override
@@ -39,11 +44,52 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
   bool _isGenerating = false;
   final _addController = TextEditingController();
   final _scrollController = ScrollController();
+  late List<String> _suggestions;
+
+  static const _companions = <String, List<String>>{
+    'chicken': ['garlic', 'lemon', 'onion', 'olive oil'],
+    'beef': ['onion', 'garlic', 'tomato', 'potato'],
+    'salmon': ['lemon', 'dill', 'asparagus', 'butter'],
+    'pasta': ['garlic', 'olive oil', 'parmesan', 'tomato'],
+    'rice': ['onion', 'garlic', 'egg', 'soy sauce'],
+    'egg': ['butter', 'milk', 'cheese', 'bread'],
+    'tomato': ['onion', 'garlic', 'basil', 'olive oil'],
+    'milk': ['eggs', 'butter', 'flour', 'cheese'],
+    'potato': ['onion', 'butter', 'garlic', 'cheese'],
+    'bread': ['butter', 'cheese', 'egg', 'tomato'],
+  };
 
   @override
   void initState() {
     super.initState();
     _ingredients = List.from(widget.ingredients);
+    _suggestions = _buildSuggestions();
+  }
+
+  List<String> _buildSuggestions() {
+    final have = _ingredients.map((e) => e.name.toLowerCase()).toSet();
+    final out = <String>{};
+    for (final item in _ingredients) {
+      final key = item.name.toLowerCase();
+      for (final entry in _companions.entries) {
+        if (key.contains(entry.key)) {
+          for (final s in entry.value) {
+            if (!have.any((h) => h.contains(s)) &&
+                !out.any((o) => o.toLowerCase() == s)) {
+              out.add(s[0].toUpperCase() + s.substring(1));
+            }
+          }
+        }
+      }
+    }
+    return out.take(6).toList();
+  }
+
+  void _addSuggestion(String name) {
+    setState(() {
+      _ingredients.add(IngredientItem(name: name));
+      _suggestions = _buildSuggestions();
+    });
   }
 
   @override
@@ -68,6 +114,9 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
     }
     setState(() => _isGenerating = true);
 
+    // Show interstitial while recipes generate so results are ready when dismissed.
+    final adFuture = AdService.showInterstitialIfFree(waitUntilDismissed: true);
+
     try {
       final recipes = await RecipeService.generateRecipes(
         scanId: widget.scanId,
@@ -84,9 +133,19 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       }
       await StreakService.recordScan();
       await FoodWasteService.recordIngredientsRescued(_ingredients);
-      await AdService.showInterstitialIfFree();
+      await adFuture;
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_ingredients.length} ingredients found · ${recipes.length} recipes ready',
+          ),
+          backgroundColor: const Color(0xFF2E7D32),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => RecipeResultsScreen(
@@ -96,12 +155,15 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
         ),
       );
     } on RateLimitException catch (e) {
+      await adFuture;
       setState(() => _isGenerating = false);
       _showSnack(e.message);
     } on ScanException catch (e) {
+      await adFuture;
       setState(() => _isGenerating = false);
       _showSnack(e.message);
     } catch (e) {
+      await adFuture;
       setState(() => _isGenerating = false);
       _showSnack('Recipe generation is taking longer than usual — tap to retry.');
     }
@@ -308,7 +370,11 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
                         color: AppColors.textDark,
                         fontFamily: 'Nunito')),
                 Text(
-                  '${_ingredients.length} ingredient${_ingredients.length == 1 ? '' : 's'} found',
+                  widget.isPartial
+                      ? (_ingredients.isEmpty
+                          ? 'No items detected — add what you bought'
+                          : 'We found some — add any we missed')
+                      : '${_ingredients.length} ingredient${_ingredients.length == 1 ? '' : 's'} found',
                   style: const TextStyle(
                       fontSize: 13, color: AppColors.textMedium),
                 ),
@@ -337,6 +403,42 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
   // ── Instruction banner ──────────────────────────────────────────────────────
 
   Widget _buildInstructionBanner() {
+    if (widget.isPartial) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8E1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFFB300).withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.partialMessage ??
+                  'We found some of your ingredients. Add any we missed below.',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF5D4037),
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (!widget.receiptAlreadyCounted) ...[
+              const SizedBox(height: 6),
+              Text(
+                'This scan did not use one of your credits.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: const Color(0xFF5D4037).withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -362,17 +464,62 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
     );
   }
 
+  Widget _buildSuggestionsRow() {
+    if (_suggestions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Did you also buy?',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _suggestions.map((s) {
+              return ActionChip(
+                label: Text(s),
+                onPressed: () => _addSuggestion(s),
+                backgroundColor: AppColors.primaryLight,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  fontSize: 12,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Ingredient list ─────────────────────────────────────────────────────────
 
   Widget _buildList() {
     if (_ingredients.isEmpty) {
-      return _buildEmptyState();
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          if (widget.isPartial) _buildInstructionBanner(),
+          _buildEmptyState(),
+          if (widget.isPartial) _buildSuggestionsRow(),
+        ],
+      );
     }
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.only(bottom: 8),
       children: [
         _buildInstructionBanner(),
+        if (widget.isPartial) _buildSuggestionsRow(),
         ...List.generate(_ingredients.length, (i) {
           final item = _ingredients[i];
           return Dismissible(

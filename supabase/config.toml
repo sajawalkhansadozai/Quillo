@@ -1,5 +1,15 @@
 # Supabase project config (CLI + Edge Functions)
-# https://supabase.com/docs/guides/functions/function-configuration
+# https://docs.supabase.com/guides/functions/function-configuration
+
+[auth]
+site_url = "quillo://home"
+additional_redirect_urls = [
+  "quillo://home",
+  "quillo://**",
+  "https://quillo.app/auth/confirmed",
+  "https://quillo.app/**",
+  "https://quilloai.co.uk/**",
+]
 
 [functions.search-catalog]
 verify_jwt = true
@@ -28,3 +38,12 @@ verify_jwt = true
 [functions.upgrade-recipe-image]
 verify_jwt = true
 # wall_clock_timeout: set in Supabase Dashboard → Edge Functions → upgrade-recipe-image
+
+[functions.send-welcome-email]
+verify_jwt = false
+
+[functions.process-scheduled-emails]
+verify_jwt = false
+
+[functions.process-scheduled-pushes]
+verify_jwt = false

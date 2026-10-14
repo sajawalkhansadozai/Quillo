@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
+  <title>Welcome to Quillo</title>
+  <style>
+    html, body { margin:0 !important; padding:0 !important; background:#f3f4f6; width:100% !important; }
+    table, td { border-collapse:collapse !important; }
+    img { border:0; outline:none; text-decoration:none; display:block; max-width:100%; height:auto; }
+    a { text-decoration:none; }
+  </style>
+</head>
+<body style="margin:0; padding:0; background:#f3f4f6;">
+  <!--
+    This is the exact visual mockup version.
+    Main link variable: {{confirm_url}}
+    Unsubscribe variable: {{unsubscribe_url}}
+  -->
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+    Confirm your email and get started with Quillo.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;">
+    <tr>
+      <td align="center" style="padding:20px 8px;">
+        <table role="presentation" width="469" cellpadding="0" cellspacing="0" border="0" style="width:469px; max-width:469px;">
+          <tr>
+            <td>
+              <a href="{{confirm_url}}" target="_blank" style="display:block;">
+                <img src="https://klvzgfheneyqrwfxtfyg.supabase.co/storage/v1/object/public/email-assets/01_quillo_welcome_confirmation.png" width="469" height="947" alt="Welcome to Quillo" style="width:100%; max-width:469px; height:auto; display:block;">
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:14px 16px 2px 16px; font-family:Arial,Helvetica,sans-serif; font-size:13px; line-height:20px; color:#6b7280;">
+              Primary action: <a href="{{confirm_url}}" style="color:#4b20a8; font-weight:700;">open email CTA</a>
+              &nbsp;&nbsp;|&nbsp;&nbsp;
+              <a href="{{unsubscribe_url}}" style="color:#6b7280;">Unsubscribe</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

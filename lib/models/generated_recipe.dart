@@ -298,13 +298,71 @@ class RecipeNutritionData {
   final int protein;
   final int carbs;
   final int fat;
+  final int? fiber;
+  final int? sodium;
+  final int? sugar;
+  final int? saturatedFat;
+  final int? cholesterol;
+  final int? potassium;
+  final int? iron;
+  final int? vitaminC;
+  final int? calcium;
 
   const RecipeNutritionData({
     required this.calories,
     required this.protein,
     required this.carbs,
     required this.fat,
+    this.fiber,
+    this.sodium,
+    this.sugar,
+    this.saturatedFat,
+    this.cholesterol,
+    this.potassium,
+    this.iron,
+    this.vitaminC,
+    this.calcium,
   });
+
+  bool get hasExtendedDetails =>
+      (fiber ?? 0) > 0 ||
+      (sodium ?? 0) > 0 ||
+      (sugar ?? 0) > 0 ||
+      (saturatedFat ?? 0) > 0 ||
+      (cholesterol ?? 0) > 0 ||
+      (potassium ?? 0) > 0 ||
+      (iron ?? 0) > 0 ||
+      (vitaminC ?? 0) > 0 ||
+      (calcium ?? 0) > 0;
+
+  /// Scale all nutrient amounts (e.g. when serving count changes).
+  RecipeNutritionData scaled(double factor) {
+    if (factor == 1) return this;
+    int scale(num v) => (v * factor).round();
+    int? scaleOpt(int? v) => v == null ? null : scale(v);
+
+    return RecipeNutritionData(
+      calories: scale(calories),
+      protein: scale(protein),
+      carbs: scale(carbs),
+      fat: scale(fat),
+      fiber: scaleOpt(fiber),
+      sodium: scaleOpt(sodium),
+      sugar: scaleOpt(sugar),
+      saturatedFat: scaleOpt(saturatedFat),
+      cholesterol: scaleOpt(cholesterol),
+      potassium: scaleOpt(potassium),
+      iron: scaleOpt(iron),
+      vitaminC: scaleOpt(vitaminC),
+      calcium: scaleOpt(calcium),
+    );
+  }
+
+  /// Per-serving values when [batch] nutrition is for [batchServings] total.
+  RecipeNutritionData perServing(int batchServings) {
+    if (batchServings <= 1) return this;
+    return scaled(1 / batchServings);
+  }
 
   factory RecipeNutritionData.fromJson(Map<String, dynamic> json) =>
       RecipeNutritionData(
@@ -312,12 +370,38 @@ class RecipeNutritionData {
         protein: (json['protein'] as num?)?.toInt() ?? 0,
         carbs: (json['carbs'] as num?)?.toInt() ?? 0,
         fat: (json['fat'] as num?)?.toInt() ?? 0,
+        fiber: _optionalInt(json, 'fiber'),
+        sodium: _optionalInt(json, 'sodium'),
+        sugar: _optionalInt(json, 'sugar'),
+        saturatedFat: _optionalInt(json, 'saturated_fat') ??
+            _optionalInt(json, 'saturatedFat'),
+        cholesterol: _optionalInt(json, 'cholesterol'),
+        potassium: _optionalInt(json, 'potassium'),
+        iron: _optionalInt(json, 'iron'),
+        vitaminC: _optionalInt(json, 'vitamin_c') ?? _optionalInt(json, 'vitaminC'),
+        calcium: _optionalInt(json, 'calcium'),
       );
+
+  static int? _optionalInt(Map<String, dynamic> json, String key) {
+    final v = json[key];
+    if (v == null) return null;
+    final n = (v as num).toInt();
+    return n > 0 ? n : null;
+  }
 
   Map<String, dynamic> toJson() => {
         'calories': calories,
         'protein': protein,
         'carbs': carbs,
         'fat': fat,
+        if (fiber != null) 'fiber': fiber,
+        if (sodium != null) 'sodium': sodium,
+        if (sugar != null) 'sugar': sugar,
+        if (saturatedFat != null) 'saturated_fat': saturatedFat,
+        if (cholesterol != null) 'cholesterol': cholesterol,
+        if (potassium != null) 'potassium': potassium,
+        if (iron != null) 'iron': iron,
+        if (vitaminC != null) 'vitamin_c': vitaminC,
+        if (calcium != null) 'calcium': calcium,
       };
 }

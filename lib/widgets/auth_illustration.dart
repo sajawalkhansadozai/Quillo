@@ -10,21 +10,39 @@ class AuthIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = MediaQuery.sizeOf(context).height;
+    final headerH = h < 700 ? (h * 0.22).clamp(120.0, 160.0) : _defaultHeight;
+
     if (type == IllustrationType.signIn) {
-      return _buildSignInHeader();
+      return SizedBox(height: headerH, child: _buildSignInHeader(headerH));
     }
     if (type == IllustrationType.createAccount) {
-      return _buildCreateAccountHeader();
+      return SizedBox(
+          height: headerH, child: _buildCreateAccountHeader(headerH));
     }
     if (type == IllustrationType.resetPassword) {
-      return _buildResetPasswordHeader();
+      return SizedBox(
+          height: headerH, child: _buildResetPasswordHeader(headerH));
     }
-    return _buildFallback();
+    return SizedBox(height: headerH, child: _buildFallback());
   }
 
-  Widget _buildSignInHeader() {
+  double get _defaultHeight {
+    switch (type) {
+      case IllustrationType.signIn:
+        return 200;
+      case IllustrationType.createAccount:
+        return 210;
+      case IllustrationType.resetPassword:
+        return 180;
+      case IllustrationType.allSet:
+        return 200;
+    }
+  }
+
+  Widget _buildSignInHeader([double height = 200]) {
     return SizedBox(
-      height: 200,
+      height: height,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,
@@ -93,9 +111,9 @@ class AuthIllustration extends StatelessWidget {
     );
   }
 
-  Widget _buildResetPasswordHeader() {
+  Widget _buildResetPasswordHeader([double height = 180]) {
     return SizedBox(
-      height: 180,
+      height: height,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,
@@ -146,9 +164,9 @@ class AuthIllustration extends StatelessWidget {
     );
   }
 
-  Widget _buildCreateAccountHeader() {
+  Widget _buildCreateAccountHeader([double height = 200]) {
     return SizedBox(
-      height: 200,
+      height: height,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,

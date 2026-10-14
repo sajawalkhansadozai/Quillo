@@ -87,165 +87,197 @@ class _SplashScreenState extends State<SplashScreen>
           SafeArea(
             child: FadeTransition(
               opacity: _fadeAnimation,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 2),
-                    AnimatedBuilder(
-                      animation: _floatAnimation,
-                      builder: (context, child) {
-                        return Transform.translate(
-                          offset: Offset(0, _floatAnimation.value),
-                          child: child,
-                        );
-                      },
-                      child: SizedBox(
-                        height: 280,
-                        width: double.infinity,
-                        child: Image.asset(
-                          'assets/onboarding/chef_illustration.png',
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) =>
-                              const _ChefIllustrationFallback(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    // White pill — yellow dot + QUILLO (Figma)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 14,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final short = constraints.maxHeight < 720;
+                  final artH = short
+                      ? (constraints.maxHeight * 0.28).clamp(140.0, 220.0)
+                      : 280.0;
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Column(
                         children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: _splashYellow,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'QUILLO',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
-                              letterSpacing: 1.4,
-                              fontFamily: 'Nunito',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Happy',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 44,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.textDark,
-                        height: 1.05,
-                        fontFamily: 'Nunito',
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        const Text(
-                          'Cooking',
-                          style: TextStyle(
-                            fontSize: 44,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.primary,
-                            height: 1.05,
-                            fontFamily: 'Nunito',
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Image.asset(
-                          'assets/onboarding/chef_icon.png',
-                          height: 48,
-                          width: 48,
-                          fit: BoxFit.contain,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Turn your receipts into\ndelicious meals with AI',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: _splashGrey,
-                        height: 1.55,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: 'Nunito',
-                      ),
-                    ),
-                    const Spacer(flex: 3),
-                    _GetStartedButton(
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const OnboardingScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SignInScreen()),
-                      ),
-                      child: RichText(
-                        textAlign: TextAlign.center,
-                        text: const TextSpan(
-                          text: 'Already have an account? ',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _splashGrey,
-                            fontFamily: 'Nunito',
-                            fontWeight: FontWeight.w500,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: 'Sign in',
-                              style: TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w700,
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: Column(
+                                children: [
+                                  SizedBox(height: short ? 12 : 28),
+                                  AnimatedBuilder(
+                                    animation: _floatAnimation,
+                                    builder: (context, child) {
+                                      return Transform.translate(
+                                        offset:
+                                            Offset(0, _floatAnimation.value),
+                                        child: child,
+                                      );
+                                    },
+                                    child: SizedBox(
+                                      height: artH,
+                                      width: double.infinity,
+                                      child: Image.asset(
+                                        'assets/onboarding/chef_illustration.png',
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            const _ChefIllustrationFallback(),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(24),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.06),
+                                          blurRadius: 14,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: const BoxDecoration(
+                                            color: _splashYellow,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'QUILLO',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.primary,
+                                            letterSpacing: 1.4,
+                                            fontFamily: 'Nunito',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Happy',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: short ? 36 : 44,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.textDark,
+                                      height: 1.05,
+                                      fontFamily: 'Nunito',
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        'Cooking',
+                                        style: TextStyle(
+                                          fontSize: short ? 36 : 44,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppColors.primary,
+                                          height: 1.05,
+                                          fontFamily: 'Nunito',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Image.asset(
+                                        'assets/onboarding/chef_icon.png',
+                                        height: short ? 40 : 48,
+                                        width: short ? 40 : 48,
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'Turn your receipts into\ndelicious meals with AI',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: _splashGrey,
+                                      height: 1.55,
+                                      fontWeight: FontWeight.w500,
+                                      fontFamily: 'Nunito',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _GetStartedButton(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const OnboardingScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 14),
+                                GestureDetector(
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const SignInScreen(),
+                                    ),
+                                  ),
+                                  child: RichText(
+                                    textAlign: TextAlign.center,
+                                    text: const TextSpan(
+                                      text: 'Already have an account? ',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: _splashGrey,
+                                        fontFamily: 'Nunito',
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: 'Sign in',
+                                          style: TextStyle(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(
+                                      3, (i) => _Dot(active: i == 0)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 28),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(3, (i) => _Dot(active: i == 0)),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ),

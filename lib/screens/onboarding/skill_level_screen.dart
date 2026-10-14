@@ -74,7 +74,10 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
-          child: Column(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -211,6 +214,8 @@ class _SkillLevelScreenState extends State<SkillLevelScreen>
                 ),
               ),
             ],
+              ),
+            ),
           ),
         ),
       ),

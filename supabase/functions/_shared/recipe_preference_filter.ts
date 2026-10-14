@@ -60,7 +60,8 @@ const DIETARY_EXCLUSIONS: Record<string, string[]> = {
   pescatarian: [
     'chicken', 'beef', 'pork', 'lamb', 'bacon', 'ham', 'sausage', 'steak',
   ],
-  halal: ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard'],
+  halal: ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard', 'prosciutto', 'pepperoni', 'gelatin'],
+  muslim: ['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol', 'lard', 'prosciutto', 'pepperoni', 'gelatin'],
   kosher: ['pork', 'bacon', 'ham', 'shellfish', 'prawn', 'shrimp', 'crab'],
   'gluten-free': ['wheat', 'flour', 'bread', 'pasta', 'noodle', 'barley', 'rye'],
   'wheat-free': ['wheat', 'flour', 'bread', 'pasta', 'semolina'],
@@ -109,6 +110,9 @@ function maxDifficultyRank(skill: string): number {
       return 2;
     case 'advanced':
     case 'confident':
+    case 'confident cook':
+    case 'expert':
+    case 'pro chef':
       return 3;
     default:
       return 3;
@@ -138,11 +142,13 @@ export function recipeMatchesPreferences(
   recipe: QuilloRecipePayload,
   prefs: UserRecipePreferences,
 ): boolean {
-  if (
-    prefs.max_cook_time_minutes > 0 &&
-    (recipe.cook_time_minutes ?? 0) > prefs.max_cook_time_minutes
-  ) {
-    return false;
+  // Hard cook-time ceiling. Unknown/zero cook time fails when a ceiling is set
+  // so we never serve "maybe 60 min" recipes to a 20-minute user.
+  if (prefs.max_cook_time_minutes > 0) {
+    const mins = recipe.cook_time_minutes;
+    if (mins == null || mins <= 0 || mins > prefs.max_cook_time_minutes) {
+      return false;
+    }
   }
 
   if (difficultyRank(recipe.difficulty) > maxDifficultyRank(prefs.cooking_skill)) {
@@ -150,10 +156,19 @@ export function recipeMatchesPreferences(
   }
 
   const text = recipeText(recipe);
+
   for (const label of prefs.dietary) {
-    const banned = DIETARY_EXCLUSIONS[label.toLowerCase()];
+    const key = label.toLowerCase().trim();
+    const banned = DIETARY_EXCLUSIONS[key];
     if (banned?.length && containsAny(text, banned)) return false;
   }
+
+  // Explicit ingredient exclusions (allergens / avoided items) — hard filter.
+  for (const raw of prefs.excluded_ingredients ?? []) {
+    const needle = raw.toLowerCase().trim();
+    if (needle.length >= 2 && text.includes(needle)) return false;
+  }
+
   return true;
 }
 
@@ -191,7 +206,8 @@ export function applyRecipePreferences(
     prefs.dietary.length > 0 ||
     prefs.cuisines.length > 0 ||
     prefs.max_cook_time_minutes > 0 ||
-    prefs.cooking_skill.length > 0;
+    prefs.cooking_skill.length > 0 ||
+    (prefs.excluded_ingredients?.length ?? 0) > 0;
 
   if (!hasAny) {
     const copy = [...recipes];

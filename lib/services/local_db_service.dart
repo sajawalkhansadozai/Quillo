@@ -141,9 +141,21 @@ class LocalDbService {
     await db.delete('saved_recipes');
   }
 
+  /// Wipe all on-device user caches after account deletion.
+  static Future<void> clearAllUserData() async {
+    final db = await _database;
+    await db.delete('saved_recipes');
+    await db.delete('shopping_lists');
+    await db.delete('search_cache');
+  }
+
   // ── Offline search cache (normalized term → recipe list) ───────────────────
 
-  static String normalizeSearchTerm(String term) => term.trim().toLowerCase();
+  static String normalizeSearchTerm(String term) => term
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9 ]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ');
 
   static Future<void> cacheSearchResults(
     String term,

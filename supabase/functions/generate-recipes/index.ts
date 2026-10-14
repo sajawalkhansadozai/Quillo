@@ -16,7 +16,14 @@ import {
   fetchGeminiRecipeImageUrlResult,
   upsertRecipeImageCache,
 } from '../_shared/gemini_image.ts';
-import { consumeMonthlyScan } from '../_shared/scan_quota.ts';
+import {
+  checkMonthlyScanAllowed,
+  consumeMonthlyScan,
+} from '../_shared/scan_quota.ts';
+import { applyRecipePreferences } from '../_shared/recipe_preference_filter.ts';
+import { resolveUserPreferences } from '../_shared/user_preferences.ts';
+import { filterFoodIngredients } from '../_shared/non_food_filter.ts';
+import type { QuilloRecipePayload } from '../_shared/recipe_types.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,15 +38,27 @@ interface Ingredient {
 
 interface RecipeRequest {
   ingredients: Ingredient[];
-  dietary_labels: string[];
-  preferred_cuisines: string[];
-  household_size: number;
+  dietary_labels?: string[];
+  preferred_cuisines?: string[];
+  household_size?: number;
   scan_id: string;
   user_id: string;
   is_manual_entry?: boolean;
+  preferences?: Record<string, unknown>;
+  max_cook_time_minutes?: number;
+  cooking_skill?: string;
 }
 
-function buildRecipePrompt(req: RecipeRequest): string {
+function buildRecipePrompt(
+  req: RecipeRequest & {
+    dietary_labels: string[];
+    preferred_cuisines: string[];
+    household_size: number;
+    max_cook_time_minutes: number;
+    cooking_skill: string;
+    excluded_ingredients: string[];
+  },
+): string {
   const ingredientList = req.ingredients
     .map((i) => {
       const qty = i.quantity != null ? ` — ${i.quantity}${i.unit ? ' ' + i.unit : ''}` : '';
@@ -55,6 +74,24 @@ function buildRecipePrompt(req: RecipeRequest): string {
     ? req.preferred_cuisines.join(', ')
     : 'Any';
 
+  const excluded = req.excluded_ingredients.length > 0
+    ? req.excluded_ingredients.join(', ')
+    : 'None';
+
+  const skill = req.cooking_skill || 'Intermediate';
+  const maxMins = req.max_cook_time_minutes > 0 ? req.max_cook_time_minutes : 45;
+
+  const skillRule = (() => {
+    const s = skill.toLowerCase();
+    if (s.includes('beginner')) {
+      return 'User skill is Beginner — ONLY suggest easy recipes (difficulty must be "easy").';
+    }
+    if (s.includes('home cook') || s.includes('intermediate')) {
+      return 'User skill is Home Cook / Intermediate — only easy or medium recipes (never "hard").';
+    }
+    return 'User skill is Advanced / Confident — easy, medium, or hard recipes are allowed.';
+  })();
+
   return `You are a professional chef assistant for the Quillo recipe app.
 
 Generate EXACTLY 3 distinct recipe suggestions using the ingredients below.
@@ -63,19 +100,25 @@ AVAILABLE INGREDIENTS:
 ${ingredientList}
 
 USER PREFERENCES:
-- Dietary restrictions: ${dietary}
-- Preferred cuisines: ${cuisines}
+- Dietary restrictions (HARD — never violate): ${dietary}
+- Excluded ingredients (HARD — never use): ${excluded}
+- Preferred cuisines (rank these higher when possible): ${cuisines}
 - Household size (servings): ${req.household_size}
+- Maximum cook time (HARD ceiling): ${maxMins} minutes
+- Cooking skill: ${skill}
 
 STRICT RULES:
 1. Generate EXACTLY 3 recipes — no more, no less
-2. STRICTLY respect dietary restrictions — NEVER suggest a recipe that violates them
-3. Adjust all servings to match household size (${req.household_size})
-4. Each recipe must use AT LEAST 3 of the available ingredients
-5. Vary difficulty: aim for at least one easy, one medium recipe
-6. For missing_ingredients: only include truly essential items not in the available list
-7. Nutrition values are per serving estimates
-8. Vary ingredient coverage across the 3 recipes (list every ingredient in ingredients_used OR missing_ingredients):
+2. You must NEVER suggest a recipe that contains ingredients violating the dietary requirements: ${dietary}. This is a hard instruction, not a preference.
+3. Never use excluded ingredients: ${excluded}
+4. Every recipe cook_time_minutes MUST be ≤ ${maxMins}. Do not suggest longer recipes.
+5. ${skillRule}
+6. Adjust all servings to match household size (${req.household_size})
+7. Prefer preferred cuisines (${cuisines}) when several options exist from these ingredients
+8. Each recipe must use AT LEAST 3 of the available ingredients
+9. For missing_ingredients: only include truly essential items not in the available list
+10. Nutrition values are per serving estimates
+11. Vary ingredient coverage across the 3 recipes (list every ingredient in ingredients_used OR missing_ingredients):
    - Recipe 1: 100% match — missing_ingredients must be []
    - Recipe 2: ~80–90% match — at most 1–2 essential missing items
    - Recipe 3: ~70–80% match — 2–4 essential missing items
@@ -100,7 +143,13 @@ Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
       "calories": 450,
       "protein": 32,
       "carbs": 38,
-      "fat": 14
+      "fat": 14,
+      "fiber": 6,
+      "sodium": 680,
+      "sugar": 8,
+      "saturated_fat": 4,
+      "cholesterol": 85,
+      "potassium": 420
     }
   }
 ]`;
@@ -208,23 +257,48 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json() as RecipeRequest;
-    const { ingredients, dietary_labels, preferred_cuisines, household_size, scan_id, user_id, is_manual_entry } = body;
+    const { scan_id, user_id, is_manual_entry } = body;
+    const ingredients = filterFoodIngredients(body.ingredients ?? []);
 
     if (!ingredients?.length || !scan_id || !user_id) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: ingredients, scan_id, user_id' }),
+        JSON.stringify({
+          error: !body.ingredients?.length
+            ? 'Missing required fields: ingredients, scan_id, user_id'
+            : 'No food ingredients left after filtering non-food items. Please edit the list and try again.',
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Manual ingredient entry consumes monthly quota; receipt scans already did at OCR.
+    // Always load prefs from DB (body may supplement) — checklist 1.3
+    const prefs = await resolveUserPreferences(supabase, user_id, {
+      preferences: {
+        ...(typeof body.preferences === 'object' && body.preferences
+          ? body.preferences
+          : {}),
+        dietary: body.dietary_labels,
+        cuisines: body.preferred_cuisines,
+        household_size: body.household_size,
+        max_cook_time_minutes: body.max_cook_time_minutes,
+        cooking_skill: body.cooking_skill,
+      },
+      dietary_labels: body.dietary_labels,
+      preferred_cuisines: body.preferred_cuisines,
+      household_size: body.household_size,
+    });
+
+    // Manual entry: soft-check now; consume only after recipes succeed.
     if (is_manual_entry) {
-      const quota = await consumeMonthlyScan(supabase, user_id);
-      if (!quota.allowed) {
+      const quotaCheck = await checkMonthlyScanAllowed(supabase, user_id);
+      if (!quotaCheck.allowed) {
         return new Response(
-          JSON.stringify({ error: quota.message ?? 'Monthly scan limit reached. Upgrade to Premium for unlimited scans.' }),
+          JSON.stringify({
+            error: quotaCheck.message ??
+              'Monthly scan limit reached. Upgrade to Premium for unlimited scans.',
+          }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
@@ -233,9 +307,12 @@ serve(async (req: Request) => {
     // ── Build prompt and call Claude ──────────────────────────────────────────
     const prompt = buildRecipePrompt({
       ingredients,
-      dietary_labels: dietary_labels ?? [],
-      preferred_cuisines: preferred_cuisines ?? [],
-      household_size: household_size ?? 2,
+      dietary_labels: prefs.dietary,
+      preferred_cuisines: prefs.cuisines,
+      household_size: prefs.household_size,
+      max_cook_time_minutes: prefs.max_cook_time_minutes,
+      cooking_skill: prefs.cooking_skill,
+      excluded_ingredients: prefs.excluded_ingredients,
       scan_id,
       user_id,
     });
@@ -286,6 +363,64 @@ serve(async (req: Request) => {
         JSON.stringify({ error: 'No recipes could be generated. Please try again.' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // Hard post-filter: reject dietary / cook-time / skill violations (checklist 1.5 / 1.7 / 2.5)
+    const asPayloads: QuilloRecipePayload[] = recipes.map((r) => ({
+      title: String(r.title ?? ''),
+      difficulty: String(r.difficulty ?? 'medium'),
+      cook_time_minutes: Number(r.cook_time_minutes ?? 0),
+      servings: Number(r.servings ?? prefs.household_size),
+      steps: Array.isArray(r.steps) ? r.steps as QuilloRecipePayload['steps'] : [],
+      ingredients_used: Array.isArray(r.ingredients_used)
+        ? r.ingredients_used as QuilloRecipePayload['ingredients_used']
+        : [],
+      missing_ingredients: Array.isArray(r.missing_ingredients)
+        ? r.missing_ingredients as QuilloRecipePayload['missing_ingredients']
+        : [],
+      nutrition: (r.nutrition as QuilloRecipePayload['nutrition']) ?? {
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      },
+    }));
+
+    const compliant = applyRecipePreferences(asPayloads, prefs);
+    if (compliant.length === 0) {
+      console.warn('generate-recipes: all AI recipes violated hard preferences', prefs);
+      return new Response(
+        JSON.stringify({
+          error:
+            'Generated recipes did not match your dietary or cook-time preferences. Please try again.',
+          preferences_applied: prefs,
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Keep original objects that passed the filter (by title match).
+    const compliantTitles = new Set(compliant.map((r) => r.title.toLowerCase()));
+    recipes = recipes.filter((r) =>
+      compliantTitles.has(String(r.title ?? '').toLowerCase())
+    );
+    // Force servings to household size
+    for (const r of recipes) {
+      r.servings = prefs.household_size;
+    }
+
+    // Manual entry only: burn a free scan after successful generation.
+    if (is_manual_entry) {
+      const consumed = await consumeMonthlyScan(supabase, user_id);
+      if (!consumed.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: consumed.message ??
+              'Monthly scan limit reached. Upgrade to Premium for unlimited scans.',
+          }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     // Highest ingredient match first (100% → 90% → 80% → …)

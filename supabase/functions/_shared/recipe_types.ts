@@ -17,6 +17,18 @@ export interface NormalizedNutrition {
   protein: number;
   carbs: number;
   fat: number;
+  /** Grams — Edamam FIBTG / Spoonacular Fiber */
+  fiber?: number;
+  /** Milligrams — Edamam NA / Spoonacular Sodium */
+  sodium?: number;
+  /** Grams — Edamam SUGAR / Spoonacular Sugar */
+  sugar?: number;
+  /** Grams — Edamam FASAT / Spoonacular Saturated Fat */
+  saturated_fat?: number;
+  /** Milligrams — Edamam CHOLE */
+  cholesterol?: number;
+  /** Milligrams — Edamam K / Spoonacular Potassium */
+  potassium?: number;
 }
 
 export interface NormalizedSearchRecipe {

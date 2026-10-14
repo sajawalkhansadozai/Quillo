@@ -9,7 +9,6 @@ import '../../config/recipe_search_config.dart';
 import '../../services/local_db_service.dart';
 import '../../services/recipe_service.dart';
 import '../scan/recipe_detail_page.dart';
-import '../explore/collection_detail_screen.dart';
 import '../shopping/shopping_lists_screen.dart';
 import 'all_recipes_screen.dart';
 import '../../models/user_recipe_preferences.dart';
@@ -37,9 +36,12 @@ class ExploreScreenState extends State<ExploreScreen>
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
+  Timer? _suggestDebounce;
 
   static const _searchDebounceMs = 800;
+  static const _suggestDebounceMs = 220;
   static const _minSearchLength = 2;
+  static const _minSuggestLength = 2;
 
   String _selectedCategory = 'All';
   static const _baseCategories = ['All', 'Easy', 'Medium', 'Hard', 'Quick'];
@@ -48,6 +50,7 @@ class ExploreScreenState extends State<ExploreScreen>
   List<GeneratedRecipe> _forYouRecipes = [];
   List<GeneratedRecipe> _searchResults = [];
   List<GeneratedRecipe> _filteredRecipes = [];
+  List<String> _searchSuggestions = [];
   bool _loading = true;
   bool _searchLoading = false;
   bool _searchLoadingMore = false;
@@ -74,54 +77,6 @@ class ExploreScreenState extends State<ExploreScreen>
     return [..._baseCategories, ...extras];
   }
 
-  // ── Curated collections with keyword filters ───────────────────────────────
-  static const _collections = [
-    _CollectionData(
-      title: 'Italian Classics',
-      emoji: '🍝',
-      color: Color(0xFFE53935),
-      keywords: ['pasta', 'pizza', 'risotto', 'carbonara', 'lasagna',
-                 'bruschetta', 'pesto', 'gnocchi', 'italian', 'parmesan'],
-    ),
-    _CollectionData(
-      title: 'Street Food',
-      emoji: '🌮',
-      color: Color(0xFFFF9800),
-      keywords: ['taco', 'burger', 'wrap', 'kebab', 'sandwich',
-                 'hotdog', 'shawarma', 'falafel', 'street', 'noodle'],
-    ),
-    _CollectionData(
-      title: 'Plant Based',
-      emoji: '🌱',
-      color: Color(0xFF4CAF50),
-      keywords: ['salad', 'vegetable', 'tofu', 'lentil', 'vegan',
-                 'mushroom', 'spinach', 'chickpea', 'avocado', 'bean'],
-      vegetarianOnly: true,
-    ),
-    _CollectionData(
-      title: 'Quick Bites',
-      emoji: '⚡',
-      color: Color(0xFF5C6BC0),
-      keywords: [],
-      quickOnly: true,
-    ),
-    _CollectionData(
-      title: 'Asian Flavours',
-      emoji: '🍜',
-      color: Color(0xFFE91E63),
-      keywords: ['ramen', 'sushi', 'stir fry', 'curry', 'fried rice',
-                 'pad thai', 'dim sum', 'teriyaki', 'miso', 'asian',
-                 'thai', 'chinese', 'japanese', 'korean', 'tikka'],
-    ),
-    _CollectionData(
-      title: 'Comfort Food',
-      emoji: '🥘',
-      color: Color(0xFF795548),
-      keywords: ['soup', 'stew', 'casserole', 'roast', 'mashed',
-                 'bake', 'gratin', 'chowder', 'pot', 'comfort'],
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -137,10 +92,12 @@ class ExploreScreenState extends State<ExploreScreen>
   void _onSearchChanged() {
     final q = _searchController.text.trim();
     _searchDebounce?.cancel();
+    _suggestDebounce?.cancel();
 
     if (q.isEmpty) {
       setState(() {
         _searchResults = [];
+        _searchSuggestions = [];
         _searchLoading = false;
         _searchLoadingMore = false;
         _searchHasMore = false;
@@ -149,6 +106,15 @@ class ExploreScreenState extends State<ExploreScreen>
       });
       _applyFilters();
       return;
+    }
+
+    if (q.length >= _minSuggestLength) {
+      _suggestDebounce = Timer(
+        const Duration(milliseconds: _suggestDebounceMs),
+        () => _loadSearchSuggestions(q),
+      );
+    } else if (_searchSuggestions.isNotEmpty) {
+      setState(() => _searchSuggestions = []);
     }
 
     if (q.length < _minSearchLength) {
@@ -170,12 +136,30 @@ class ExploreScreenState extends State<ExploreScreen>
     });
   }
 
+  Future<void> _loadSearchSuggestions(String prefix) async {
+    final suggestions = await RecipeService.suggestSearchTerms(prefix);
+    if (!mounted) return;
+    if (_searchController.text.trim() != prefix) return;
+    setState(() => _searchSuggestions = suggestions);
+  }
+
+  void _applySuggestion(String suggestion) {
+    _suggestDebounce?.cancel();
+    _searchDebounce?.cancel();
+    _searchController.text = suggestion;
+    _searchController.selection = TextSelection.collapsed(offset: suggestion.length);
+    setState(() => _searchSuggestions = []);
+    _submitSearch(suggestion);
+  }
+
   void _submitSearch([String? value]) {
     _searchDebounce?.cancel();
+    _suggestDebounce?.cancel();
     final q = (value ?? _searchController.text).trim();
     if (q.isEmpty) {
       setState(() {
         _searchResults = [];
+        _searchSuggestions = [];
         _searchLoading = false;
         _searchLoadingMore = false;
         _searchHasMore = false;
@@ -186,6 +170,7 @@ class ExploreScreenState extends State<ExploreScreen>
       return;
     }
     if (q.length < _minSearchLength) return;
+    setState(() => _searchSuggestions = []);
     _runSearch(q);
   }
 
@@ -219,15 +204,16 @@ class ExploreScreenState extends State<ExploreScreen>
 
       if (!online && !append) {
         final cached = await LocalDbService.loadSearchCache(query);
+        final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
         if (!mounted || generation != _imageUpgradeGeneration) return;
         _searchSkeletonTimer?.cancel();
         setState(() {
-          _searchResults = cached;
+          _searchResults = filtered;
           _searchLoading = false;
           _searchShowSkeleton = false;
           _searchTimedOut = false;
           _searchHasMore = false;
-          _searchHint = cached.isEmpty
+          _searchHint = filtered.isEmpty
               ? 'You\'re offline and no cached results for "$query".'
               : 'Offline — showing cached results for "$query"';
         });
@@ -303,13 +289,14 @@ class ExploreScreenState extends State<ExploreScreen>
       if (!mounted || generation != _imageUpgradeGeneration) return;
       _searchSkeletonTimer?.cancel();
       final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
+      final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
       setState(() {
         _searchLoading = false;
         _searchLoadingMore = false;
         _searchShowSkeleton = false;
         _searchTimedOut = true;
-        if (!append && cached.isNotEmpty) {
-          _searchResults = cached;
+        if (!append && filtered.isNotEmpty) {
+          _searchResults = filtered;
           _searchHint = 'Search timed out — showing cached results. Tap retry for fresh data.';
         } else {
           _searchHint = 'Search timed out. Check your connection and try again.';
@@ -321,12 +308,13 @@ class ExploreScreenState extends State<ExploreScreen>
       if (mounted) {
         _searchSkeletonTimer?.cancel();
         final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
+        final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
         setState(() {
           _searchLoading = false;
           _searchLoadingMore = false;
           _searchShowSkeleton = false;
-          if (!append && cached.isNotEmpty) {
-            _searchResults = cached;
+          if (!append && filtered.isNotEmpty) {
+            _searchResults = filtered;
             _searchHint = 'Search failed — showing cached results.';
           } else {
             _searchHint = append
@@ -418,6 +406,7 @@ class ExploreScreenState extends State<ExploreScreen>
   void dispose() {
     _imageUpgradeGeneration++;
     _searchDebounce?.cancel();
+    _suggestDebounce?.cancel();
     _searchSkeletonTimer?.cancel();
     _fadeCtrl.dispose();
     _searchController.dispose();
@@ -668,21 +657,6 @@ class ExploreScreenState extends State<ExploreScreen>
       .where(_matchesCategory)
       .toList();
 
-  int _countForCollection(_CollectionData col) {
-    final pool = _allRecipes;
-    if (col.quickOnly) {
-      return pool.where((r) => r.cookTimeMinutes <= 20).length;
-    }
-    if (col.keywords.isEmpty) return 0;
-    return pool.where((r) {
-      if (col.vegetarianOnly && !RecipePreferenceFilter.isVegetarian(r)) {
-        return false;
-      }
-      final t = r.title.toLowerCase();
-      return col.keywords.any((k) => t.contains(k.toLowerCase()));
-    }).length;
-  }
-
   GeneratedRecipe? get _featured =>
       RecipePreferenceFilter.pickFeatured(_allRecipes, _userPrefs);
 
@@ -723,6 +697,17 @@ class ExploreScreenState extends State<ExploreScreen>
                     ),
                   ),
                 ),
+
+                if (_searchSuggestions.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: _SearchSuggestions(
+                        suggestions: _searchSuggestions,
+                        onSelect: _applySuggestion,
+                      ),
+                    ),
+                  ),
 
                 // ── Category chips ───────────────────────────────────────
                 SliverToBoxAdapter(
@@ -888,43 +873,6 @@ class ExploreScreenState extends State<ExploreScreen>
                               onTap: () => _openRecipe(_visibleFeatured!),
                             )
                           : const _FeaturedPlaceholder(),
-                    ),
-                  ),
-
-                  // ── Collections ────────────────────────────────────────
-                  SliverToBoxAdapter(
-                    child: _SectionHeader(
-                      title: 'Collections',
-                      action: 'See all',
-                      onAction: () => showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.white,
-                        isScrollControlled: true,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                        ),
-                        builder: (_) => _AllCollectionsSheet(
-                          collections: _collections,
-                          allRecipes: _allRecipes,
-                          countFor: _countForCollection,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 110,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: _collections.length,
-                        itemBuilder: (ctx, i) => _CollectionCard(
-                          data: _collections[i],
-                          count: _countForCollection(_collections[i]),
-                        ),
-                      ),
                     ),
                   ),
 
@@ -1161,46 +1109,17 @@ class ExploreScreenState extends State<ExploreScreen>
   }
 
   Widget _buildEmptySearch() {
-    final term = _searchController.text.trim();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-      child: Column(
-        children: [
-          Text(
-            term.isEmpty
-                ? 'No recipes found'
-                : 'No recipes found for "$term"',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-              fontFamily: 'Nunito',
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Try a different ingredient or dish name.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textMedium,
-            ),
-          ),
-          if (_searchHint != null &&
-              _searchHint!.isNotEmpty &&
-              !_searchHint!.startsWith('No catalog')) ...[
-            const SizedBox(height: 8),
-            Text(
-              _searchHint!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textMedium,
-              ),
-            ),
-          ],
-        ],
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(20, 24, 20, 20),
+      child: Text(
+        'No recipes found',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textDark,
+          fontFamily: 'Nunito',
+        ),
       ),
     );
   }
@@ -1398,6 +1317,71 @@ class _SearchBar extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _SearchSuggestions extends StatelessWidget {
+  final List<String> suggestions;
+  final ValueChanged<String> onSelect;
+
+  const _SearchSuggestions({
+    required this.suggestions,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < suggestions.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 1, color: AppColors.chipBorder),
+            InkWell(
+              onTap: () => onSelect(suggestions[i]),
+              borderRadius: BorderRadius.vertical(
+                top: i == 0 ? const Radius.circular(14) : Radius.zero,
+                bottom: i == suggestions.length - 1
+                    ? const Radius.circular(14)
+                    : Radius.zero,
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.north_west_rounded,
+                        size: 16, color: AppColors.textLight),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        suggestions[i],
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textDark,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -1650,111 +1634,6 @@ class _EmptyTip extends StatelessWidget {
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     color: color)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Collection data & card ─────────────────────────────────────────────────
-
-class _CollectionData {
-  final String title;
-  final String emoji;
-  final Color color;
-  final List<String> keywords;
-  final bool quickOnly;
-  final bool vegetarianOnly;
-  const _CollectionData({
-    required this.title,
-    required this.emoji,
-    required this.color,
-    this.keywords = const [],
-    this.quickOnly = false,
-    this.vegetarianOnly = false,
-  });
-}
-
-class _CollectionCard extends StatelessWidget {
-  final _CollectionData data;
-  final int count;
-  const _CollectionCard({required this.data, required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    final label = count == 0
-        ? 'No recipes yet'
-        : '$count recipe${count == 1 ? '' : 's'}';
-
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => CollectionDetailScreen(
-            title: data.title,
-            emoji: data.emoji,
-            color: data.color,
-            keywords: data.keywords,
-            quickOnly: data.quickOnly,
-            vegetarianOnly: data.vegetarianOnly,
-          ),
-        ),
-      ),
-      child: Container(
-        width: 140,
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          color: data.color,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: 8,
-              bottom: 8,
-              child: Opacity(
-                opacity: 0.3,
-                child: Text(data.emoji,
-                    style: const TextStyle(fontSize: 40)),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('COLLECTION',
-                      style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8)),
-                  const SizedBox(height: 4),
-                  Text(data.title,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          fontFamily: 'Nunito')),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.white.withValues(alpha: 0.95),
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -2162,126 +2041,6 @@ String _emoji(String title) {
   if (t.contains('pancake') || t.contains('waffle')) return '🥞';
   if (t.contains('shrimp') || t.contains('prawn')) return '🍤';
   return '🍽️';
-}
-
-// ── All Collections bottom sheet ──────────────────────────────────────────────
-
-class _AllCollectionsSheet extends StatelessWidget {
-  final List<_CollectionData> collections;
-  final List<GeneratedRecipe> allRecipes;
-  final int Function(_CollectionData) countFor;
-  const _AllCollectionsSheet({
-    required this.collections,
-    required this.allRecipes,
-    required this.countFor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      builder: (_, scrollCtrl) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFE0E0E0),
-                        borderRadius: BorderRadius.circular(2)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text('All Collections',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.textDark,
-                        fontFamily: 'Nunito')),
-                const SizedBox(height: 14),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              controller: scrollCtrl,
-              padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding + 24),
-              children: [
-                ...collections.map((col) {
-            final count = countFor(col);
-            return GestureDetector(
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => CollectionDetailScreen(
-                    title: col.title,
-                    emoji: col.emoji,
-                    color: col.color,
-                    keywords: col.keywords,
-                    quickOnly: col.quickOnly,
-                    vegetarianOnly: col.vegetarianOnly,
-                  ),
-                ));
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: col.color.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: col.color.withValues(alpha: 0.2)),
-                ),
-                child: Row(
-                  children: [
-                    Text(col.emoji, style: const TextStyle(fontSize: 24)),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Text(col.title,
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark)),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: col.color.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        count == 0
-                            ? 'No recipes'
-                            : '$count recipe${count == 1 ? '' : 's'}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: col.color),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(Icons.chevron_right_rounded,
-                        size: 16, color: col.color),
-                  ],
-                ),
-              ),
-            );
-          }),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _LoadMoreSearchButton extends StatelessWidget {

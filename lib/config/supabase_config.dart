@@ -8,6 +8,9 @@ class SupabaseConfig {
   static const String supabaseUrl = 'https://klvzgfheneyqrwfxtfyg.supabase.co';
   static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsdnpnZmhlbmV5cXJ3Znh0ZnlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDQ2NjYsImV4cCI6MjA5MTkyMDY2Nn0.O3EeMUV0E-Eu5MLYj5wNmCWIALfr3kHk_MZLhz1nlPA';
 
+  /// After email confirm, open the app (quillo.app confirm page is optional fallback).
+  static const String emailConfirmRedirectUrl = 'quillo://home';
+
   // ── Google Sign-In ────────────────────────────────────────────────────────
   // Web OAuth 2.0 Client ID — used as serverClientId for token verification
   static const String googleWebClientId =

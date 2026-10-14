@@ -192,136 +192,153 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   ),
                   Expanded(
                     flex: 52,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                      child: Column(
-                        children: [
-                          _OnboardingTitle(data: page),
-                          const SizedBox(height: 12),
-                          Text(
-                            page.subtitle,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              color: _onboardingGrey,
-                              height: 1.55,
-                              fontWeight: FontWeight.w500,
-                              fontFamily: 'Nunito',
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          if (page.features.isNotEmpty)
-                            page.triangleFeatures
-                                ? _FeatureTriangle(features: page.features)
-                                : Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    alignment: WrapAlignment.center,
-                                    children: page.features
-                                        .map((f) => _FeatureChip(f))
-                                        .toList(),
-                                  ),
-                          if (page.stats.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Row(
-                                children: page.stats
-                                    .map(
-                                      (s) =>
-                                          Expanded(child: _StatCard(stat: s)),
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          const Spacer(),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 56,
-                            child: ElevatedButton(
-                              onPressed: _nextPage,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shadowColor: AppColors.primary.withValues(
-                                  alpha: 0.35,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(28),
-                                ),
-                              ),
-                              child: isLast
-                                  ? Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Image.asset(
-                                          _boltIconAsset,
-                                          width: 20,
-                                          height: 20,
-                                          color: Colors.white,
-                                          colorBlendMode: BlendMode.srcIn,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 28),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: [
+                                      _OnboardingTitle(data: page),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        page.subtitle,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          color: _onboardingGrey,
+                                          height: 1.55,
+                                          fontWeight: FontWeight.w500,
+                                          fontFamily: 'Nunito',
                                         ),
-                                        const SizedBox(width: 8),
-                                        const Text(
-                                          'Start Now',
+                                      ),
+                                      const SizedBox(height: 18),
+                                      if (page.features.isNotEmpty)
+                                        page.triangleFeatures
+                                            ? _FeatureTriangle(
+                                                features: page.features)
+                                            : Wrap(
+                                                spacing: 10,
+                                                runSpacing: 10,
+                                                alignment: WrapAlignment.center,
+                                                children: page.features
+                                                    .map((f) => _FeatureChip(f))
+                                                    .toList(),
+                                              ),
+                                      if (page.stats.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4),
+                                          child: Row(
+                                            children: page.stats
+                                                .map(
+                                                  (s) => Expanded(
+                                                      child:
+                                                          _StatCard(stat: s)),
+                                                )
+                                                .toList(),
+                                          ),
+                                        ),
+                                      const SizedBox(height: 12),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 56,
+                                child: ElevatedButton(
+                                  onPressed: _nextPage,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shadowColor: AppColors.primary.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(28),
+                                    ),
+                                  ),
+                                  child: isLast
+                                      ? Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Image.asset(
+                                              _boltIconAsset,
+                                              width: 20,
+                                              height: 20,
+                                              color: Colors.white,
+                                              colorBlendMode: BlendMode.srcIn,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'Start Now',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800,
+                                                fontFamily: 'Nunito',
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : const Text(
+                                          'Next  →',
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w800,
                                             fontFamily: 'Nunito',
                                           ),
                                         ),
-                                      ],
-                                    )
-                                  : const Text(
-                                      'Next  →',
+                                ),
+                              ),
+                              if (isLast) ...[
+                                const SizedBox(height: 12),
+                                GestureDetector(
+                                  onTap: () =>
+                                      Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(
+                                      builder: (_) => const SignInScreen(),
+                                    ),
+                                  ),
+                                  child: RichText(
+                                    text: const TextSpan(
+                                      text: 'Already have an account?  ',
                                       style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 13,
+                                        color: _onboardingGrey,
                                         fontFamily: 'Nunito',
                                       ),
+                                      children: [
+                                        TextSpan(
+                                          text: 'Sign in',
+                                          style: TextStyle(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                            ),
-                          ),
-                          if (isLast) ...[
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () => Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                  builder: (_) => const SignInScreen(),
-                                ),
-                              ),
-                              child: RichText(
-                                text: const TextSpan(
-                                  text: 'Already have an account?  ',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: _onboardingGrey,
-                                    fontFamily: 'Nunito',
                                   ),
-                                  children: [
-                                    TextSpan(
-                                      text: 'Sign in',
-                                      style: TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  _pages.length,
+                                  (i) => _StepDot(active: i == _currentPage),
                                 ),
                               ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              _pages.length,
-                              (i) => _StepDot(active: i == _currentPage),
-                            ),
+                              const SizedBox(height: 16),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                        ],
+                        ),
                       ),
                     ),
                   ),

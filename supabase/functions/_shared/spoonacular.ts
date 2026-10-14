@@ -30,7 +30,7 @@ function extractSpoonacularNutrition(
   nutrition: Record<string, unknown> | undefined,
 ): NormalizedNutrition {
   const nutrients = (nutrition?.nutrients as Array<Record<string, unknown>>) ?? [];
-  const values = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const values: NormalizedNutrition = { calories: 0, protein: 0, carbs: 0, fat: 0 };
   for (const n of nutrients) {
     const name = String(n.name ?? '').toLowerCase();
     const amount = Math.round(Number(n.amount ?? 0));
@@ -38,6 +38,12 @@ function extractSpoonacularNutrition(
     else if (name === 'protein') values.protein = amount;
     else if (name === 'carbohydrates') values.carbs = amount;
     else if (name === 'fat') values.fat = amount;
+    else if (name === 'fiber') values.fiber = amount;
+    else if (name === 'sodium') values.sodium = amount;
+    else if (name === 'sugar') values.sugar = amount;
+    else if (name === 'saturated fat') values.saturated_fat = amount;
+    else if (name === 'cholesterol') values.cholesterol = amount;
+    else if (name === 'potassium') values.potassium = amount;
   }
   return values;
 }
@@ -178,6 +184,8 @@ export async function searchSpoonacular(
   const url = new URL('https://api.spoonacular.com/recipes/complexSearch');
   url.searchParams.set('apiKey', apiKey);
   url.searchParams.set('query', query);
+  // Checklist 2.3 — search full recipe content, not title-only matches.
+  url.searchParams.set('titleMatch', 'false');
   url.searchParams.set('number', String(Math.min(Math.max(limit, 1), 30)));
   url.searchParams.set('offset', String(Math.max(0, offset)));
   url.searchParams.set('addRecipeInformation', 'true');

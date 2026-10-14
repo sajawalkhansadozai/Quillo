@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:quillo/theme/app_theme.dart';
+import '../../services/deep_link_service.dart';
+import '../../services/food_waste_service.dart';
+import '../../services/in_app_notification_service.dart';
+import '../../services/notification_prefs_service.dart';
 import '../../services/subscription_service.dart';
 import '../../widgets/ad_banner.dart';
+import '../../widgets/celebration_overlays.dart';
 import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
@@ -16,6 +21,44 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DeepLinkService.consumePendingIfAny();
+      SubscriptionService.linkUserAfterAuth();
+      NotificationPrefsService.syncToSupabase();
+      _maybeShowStreakCelebration();
+    });
+  }
+
+  Future<void> _maybeShowStreakCelebration() async {
+    try {
+      final stats = await FoodWasteService.loadStats();
+      final pending = await InAppNotificationService.pendingStreakCelebration(
+        stats.weekStreak,
+      );
+      if (pending == null || !mounted) return;
+      await InAppNotificationService.markStreakCelebrated(pending);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        PageRouteBuilder(
+          opaque: false,
+          barrierDismissible: true,
+          pageBuilder: (_, __, ___) => StreakCelebrationOverlay(
+            weeks: pending,
+            onDone: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+          transitionDuration: Duration.zero,
+        ),
+      );
+    } catch (_) {}
+  }
+
   int _currentIndex = 0;
   final _homeKey = GlobalKey<HomeScreenState>();
   final _exploreKey = GlobalKey<ExploreScreenState>();

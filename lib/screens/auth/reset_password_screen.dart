@@ -115,7 +115,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                         ),
                       ],
                     ),
-                    child: SingleChildScrollView(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,6 +228,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                             ),
                           ),
                         ],
+                      ),
+                        ),
                       ),
                     ),
                   ),

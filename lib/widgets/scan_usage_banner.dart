@@ -75,7 +75,9 @@ class _ScanUsageBannerState extends State<ScanUsageBanner> {
             child: Text(
               remaining == 0
                   ? 'No free scans left this month'
-                  : '$remaining of $limit free scans left this month',
+                  : remaining == 1
+                      ? '1 free scan remaining this month. Upgrade for unlimited.'
+                      : '$remaining of $limit free scans left this month',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,

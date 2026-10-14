@@ -20,6 +20,7 @@ import '../../config/iap_config.dart';
 import '../../constants/legal_urls.dart';
 import '../../services/quick_actions_service.dart';
 import '../../utils/external_link.dart';
+import '../settings/notification_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -64,6 +65,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loadUserData();
     _loadLocalSettings();
+    _refreshPremium();
+    SubscriptionService.premiumNotifier.addListener(_onPremiumChanged);
+  }
+
+  @override
+  void dispose() {
+    SubscriptionService.premiumNotifier.removeListener(_onPremiumChanged);
+    super.dispose();
+  }
+
+  void _onPremiumChanged() {
+    if (!mounted) return;
+    setState(() => _isPremium = SubscriptionService.isPremiumCached);
+  }
+
+  Future<void> _refreshPremium() async {
+    final prem = await SubscriptionService.isPremium();
+    if (mounted) setState(() => _isPremium = prem);
   }
 
   Future<void> _loadLocalSettings() async {
@@ -96,7 +115,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final dietary = List<String>.from(prefsRow?['dietary_labels'] ?? []);
       final cuisines = List<String>.from(userRow?['preferred_cuisine'] ?? []);
-      final status = (userRow?['subscription_status'] as String?) ?? 'free';
 
       // Detect SSO providers
       final identities = _client.auth.currentUser?.identities ?? [];
@@ -116,7 +134,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _userEmail = (userRow?['email'] as String?) ?? email;
         _userName = resolvedName.isNotEmpty ? resolvedName : _firstName(_userEmail);
         _avatarUrl = userRow?['avatar_url'] as String?;
-        _isPremium = status == 'premium';
         _householdSize = (userRow?['household_size'] as int?) ?? 2;
         _cookingSkill = (prefsRow?['cooking_skill'] as String?) ?? 'Intermediate';
         _maxCookTime = (prefsRow?['max_cook_time'] as int?) ?? 45;
@@ -977,7 +994,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('Delete Account',
             style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFE53935))),
         content: const Text(
-            'This will permanently delete your account and all your data. This action cannot be undone.'),
+            'This will permanently delete your account, scans, saved recipes, and receipt photos. This action cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -993,18 +1010,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
+    if (confirmed != true || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppColors.primary),
+                SizedBox(height: 16),
+                Text('Deleting your account…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final result = await AuthService.deleteAccount();
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // loading dialog
+
+    if (!result.success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-              'Account deletion request sent. You will receive a confirmation email within 24 hours.'),
+          content: Text(result.error ?? 'Could not delete account.'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFFE53935),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 4),
         ),
       );
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Your account has been permanently deleted.'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.primary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _openPaywall() async {
@@ -1020,9 +1076,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fullscreenDialog: true,
       ),
     );
-    // Refresh subscription status after returning from paywall
-    final prem = await SubscriptionService.isPremium();
-    if (mounted) setState(() => _isPremium = prem);
+    await _refreshPremium();
   }
 
   Future<void> _seedRecipesForDev() async {
@@ -1431,6 +1485,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _ProFeature('No ads — clean, uninterrupted app'),
             _ProFeature('Food waste dashboard & streaks'),
             _ProFeature('Smart Pantry & smart grocery lists'),
+            _ProFeature('Full nutritional info on every recipe'),
             const SizedBox(height: 14),
             Row(
               children: [
@@ -1576,16 +1631,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(
               children: [
-                _SettingToggleRow(
+                _SettingArrowRow(
                   icon: Icons.notifications_none_rounded,
                   iconColor: const Color(0xFF6C63FF),
-                  title: 'Push Notifications',
-                  subtitle: 'Recipe alerts & reminders',
-                  value: _pushNotifications,
-                  onChanged: (v) async {
-                    setState(() => _pushNotifications = v);
+                  title: 'Notifications',
+                  subtitle: _pushNotifications
+                      ? 'Expiry, streak & milestone alerts'
+                      : 'All push notifications off',
+                  trailing: _pushNotifications ? 'On' : 'Off',
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationSettingsScreen(),
+                      ),
+                    );
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('push_notifications', v);
+                    if (mounted) {
+                      setState(() {
+                        _pushNotifications =
+                            prefs.getBool('push_notifications') ?? true;
+                      });
+                    }
                   },
                 ),
                 _SettingDivider(),

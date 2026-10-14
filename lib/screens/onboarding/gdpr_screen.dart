@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/appsflyer_service.dart';
 import '../../theme/app_theme.dart';
 import 'splash_screen.dart';
 
@@ -44,6 +47,7 @@ class _GdprScreenState extends State<GdprScreen>
     await prefs.setBool('gdpr_analytics', _analyticsConsent);
     await prefs.setBool('gdpr_personalised', _personalisedConsent);
     await prefs.setString('gdpr_accepted_at', DateTime.now().toIso8601String());
+    unawaited(AppsFlyerService.onConsentChanged());
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const SplashScreen()),
@@ -55,6 +59,7 @@ class _GdprScreenState extends State<GdprScreen>
     await prefs.setBool('gdpr_shown', true);
     await prefs.setBool('gdpr_analytics', false);
     await prefs.setBool('gdpr_personalised', false);
+    unawaited(AppsFlyerService.onConsentChanged());
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const SplashScreen()),
@@ -63,6 +68,8 @@ class _GdprScreenState extends State<GdprScreen>
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -70,150 +77,164 @@ class _GdprScreenState extends State<GdprScreen>
           opacity: _fade,
           child: SlideTransition(
             position: _slide,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Center(
-                      child: Text('🔒', style: TextStyle(fontSize: 28)),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Your Privacy\nMatters',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.textDark,
-                      fontFamily: 'Nunito',
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Before you start cooking with Quillo, we need your permission to collect certain data. You can change these at any time in Settings.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textMedium,
-                      height: 1.55,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-
-                  // Consent toggles
-                  _ConsentTile(
-                    icon: '📊',
-                    title: 'Analytics & Improvement',
-                    description:
-                        'Help us improve Quillo by sharing anonymous usage data. No personal information is included.',
-                    value: _analyticsConsent,
-                    onChanged: (v) => setState(() => _analyticsConsent = v),
-                  ),
-                  const SizedBox(height: 14),
-                  _ConsentTile(
-                    icon: '🎯',
-                    title: 'Personalised Experience',
-                    description:
-                        'Allow Quillo to use your preferences and cooking history to personalise recipe suggestions.',
-                    value: _personalisedConsent,
-                    onChanged: (v) =>
-                        setState(() => _personalisedConsent = v),
-                  ),
-
-                  const Spacer(),
-
-                  // Required data notice
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                          color:
-                              AppColors.primary.withValues(alpha: 0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Text('ℹ️', style: TextStyle(fontSize: 18)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Quillo always processes your receipt scans to provide recipes. This is essential and cannot be disabled.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.primary,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Accept button
-                  _isLoading
-                      ? Container(
-                          width: double.infinity,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2.5),
-                          ),
-                        )
-                      : GestureDetector(
-                          onTap: _accept,
-                          child: Container(
-                            width: double.infinity,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Accept & Continue',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  fontFamily: 'Nunito',
-                                ),
+            child: Center(
+              child: ConstrainedBox(
+                // Keep readable width on iPad; full width on phones.
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(28, 32, 28, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLight,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Center(
+                                child:
+                                    Text('🔒', style: TextStyle(fontSize: 28)),
                               ),
                             ),
-                          ),
-                        ),
-                  const SizedBox(height: 12),
-
-                  // Decline link
-                  GestureDetector(
-                    onTap: _decline,
-                    child: Center(
-                      child: Text(
-                        'Decline optional data collection',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textLight,
-                          decoration: TextDecoration.underline,
-                          decorationColor: AppColors.textLight,
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Your Privacy\nMatters',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.textDark,
+                                fontFamily: 'Nunito',
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Before you start cooking with Quillo, we need your permission to collect certain data. You can change these at any time in Settings.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textMedium,
+                                height: 1.55,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            _ConsentTile(
+                              icon: '📊',
+                              title: 'Analytics & Improvement',
+                              description:
+                                  'Help us improve Quillo by sharing anonymous usage data. No personal information is included.',
+                              value: _analyticsConsent,
+                              onChanged: (v) =>
+                                  setState(() => _analyticsConsent = v),
+                            ),
+                            const SizedBox(height: 14),
+                            _ConsentTile(
+                              icon: '🎯',
+                              title: 'Personalised Experience',
+                              description:
+                                  'Allow Quillo to use your preferences and cooking history to personalise recipe suggestions.',
+                              value: _personalisedConsent,
+                              onChanged: (v) =>
+                                  setState(() => _personalisedConsent = v),
+                            ),
+                            const SizedBox(height: 20),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLight,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.2)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('ℹ️',
+                                      style: TextStyle(fontSize: 18)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Quillo always processes your receipt scans to provide recipes. This is essential and cannot be disabled.',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ],
+
+                    // Always-visible actions (fixes iPad clipping).
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                          28, 8, 28, bottomInset > 0 ? 8 : 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _isLoading
+                              ? Container(
+                                  width: double.infinity,
+                                  height: 54,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.7),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white, strokeWidth: 2.5),
+                                  ),
+                                )
+                              : SizedBox(
+                                  width: double.infinity,
+                                  height: 54,
+                                  child: FilledButton(
+                                    onPressed: _accept,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Accept & Continue',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        fontFamily: 'Nunito',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: _isLoading ? null : _decline,
+                            child: Text(
+                              'Decline optional data collection',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textLight,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.textLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

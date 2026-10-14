@@ -1,16 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'navigation/app_navigator.dart';
-import 'screens/Home/main_shell.dart';
 import 'screens/onboarding/gdpr_screen.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'services/ad_service.dart';
+import 'services/analytics_service.dart';
+import 'services/appsflyer_service.dart';
+import 'services/crash_reporting_service.dart';
+import 'services/push_notification_service.dart';
 import 'services/quick_actions_service.dart';
+import 'services/deep_link_service.dart';
+import 'services/onboarding_router.dart';
 import 'services/subscription_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/offline_banner.dart';
+import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,26 +31,57 @@ Future<void> main() async {
     ),
   );
 
-  await Supabase.initialize(
-    url: SupabaseConfig.supabaseUrl,
-    anonKey: SupabaseConfig.supabaseAnonKey,
-  );
+  // 2.8 — third-party SDKs must never block or crash launch.
+  await CrashReportingService.initialise();
+  await AnalyticsService.initialise();
+  await PushNotificationService.initialise();
 
-  // Initialise AdMob SDK first (no ad requests yet).
-  await AdService.initialise();
+  try {
+    await Supabase.initialize(
+      url: SupabaseConfig.supabaseUrl,
+      anonKey: SupabaseConfig.supabaseAnonKey,
+    );
+  } catch (e, st) {
+    await CrashReportingService.capture(e, stackTrace: st, context: 'supabase_init');
+  }
 
-  // Configure RevenueCat and set global isPremium before UI (checklist 4.1).
+  try {
+    await AdService.initialise();
+  } catch (e, st) {
+    await CrashReportingService.capture(e, stackTrace: st, context: 'admob_init');
+  }
+
   try {
     await SubscriptionService.configure();
     await SubscriptionService.syncOnLaunch();
   } catch (e, st) {
-    debugPrint('RevenueCat configure failed: $e\n$st');
+    await CrashReportingService.capture(e, stackTrace: st, context: 'revenuecat_init');
   }
 
-  // Only request ads for free users (checklist 4.6).
-  await AdService.startAdsIfFree();
+  try {
+    await DeepLinkService.initialise();
+  } catch (e, st) {
+    await CrashReportingService.capture(e, stackTrace: st, context: 'deeplink_init');
+  }
+
+  try {
+    await AdService.startAdsIfFree();
+  } catch (e, st) {
+    await CrashReportingService.capture(e, stackTrace: st, context: 'ads_start');
+  }
+
+  try {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid != null) {
+      await AnalyticsService.identify(uid);
+      await PushNotificationService.login(uid);
+    }
+  } catch (_) {}
 
   runApp(const QuilloApp());
+
+  // Attribution never blocks or throws into startup (2.8).
+  unawaited(AppsFlyerService.initialise());
 }
 
 class QuilloApp extends StatefulWidget {
@@ -58,7 +98,20 @@ class _QuilloAppState extends State<QuilloApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       QuickActionsService.initialize();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+    requestTrackingPermission();
+  });
   }
+  Future<void> requestTrackingPermission() async {
+  // Wait until the UI is ready (critical for iPadOS)
+  await Future.delayed(const Duration(milliseconds: 1000));
+
+  final status = await AppTrackingTransparency.trackingAuthorizationStatus;
+
+  if (status == TrackingStatus.notDetermined) {
+    await AppTrackingTransparency.requestTrackingAuthorization();
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -67,18 +120,17 @@ class _QuilloAppState extends State<QuilloApp> {
       title: 'Quillo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      builder: (context, child) {
+        return GestureDetector(
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          behavior: HitTestBehavior.translucent,
+          child: OfflineBanner(child: child ?? const SizedBox.shrink()),
+        );
+      },
       home: const _AuthGate(),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AuthGate
-// Decides first screen based on:
-//  1. Active Supabase session  → MainShell (skip all onboarding)
-//  2. GDPR not yet accepted    → GdprScreen (first-ever launch)
-//  3. Otherwise                → SplashScreen (normal onboarding)
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _AuthGate extends StatefulWidget {
   const _AuthGate();
@@ -89,28 +141,51 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   Widget? _destination;
+  StreamSubscription<AuthState>? _authSub;
 
   @override
   void initState() {
     super.initState();
     _resolve();
+    // Email confirm / OAuth deep links establish a session after cold start.
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      if (!mounted || data.session == null) return;
+      final dest = _destination;
+      // Only take over pre-auth roots. Auth screens handle their own navigation.
+      if (dest == null || dest is SplashScreen || dest is GdprScreen) {
+        final next = await OnboardingRouter.destinationAfterAuth();
+        if (!mounted) return;
+        setState(() => _destination = next);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _resolve() async {
-    // Already signed in → go straight to home
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session != null) {
-      setState(() => _destination = const MainShell());
-      return;
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session != null) {
+        final next = await OnboardingRouter.destinationAfterAuth();
+        if (!mounted) return;
+        setState(() => _destination = next);
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final gdprShown = prefs.getBool('gdpr_shown') ?? false;
+
+      setState(() {
+        _destination = gdprShown ? const SplashScreen() : const GdprScreen();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _destination = const SplashScreen());
     }
-
-    // Check if GDPR was already shown
-    final prefs = await SharedPreferences.getInstance();
-    final gdprShown = prefs.getBool('gdpr_shown') ?? false;
-
-    setState(() {
-      _destination = gdprShown ? const SplashScreen() : const GdprScreen();
-    });
   }
 
   @override
