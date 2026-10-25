@@ -5,6 +5,8 @@ export type RecipeApiSource = 'edamam' | 'bigoven' | 'spoonacular';
 export interface NormalizedIngredient {
   name: string;
   amount: string;
+  /** Optional prep tip, e.g. "Peeled and minced". */
+  note?: string;
 }
 
 export interface NormalizedInstruction {
@@ -29,6 +31,12 @@ export interface NormalizedNutrition {
   cholesterol?: number;
   /** Milligrams — Edamam K / Spoonacular Potassium */
   potassium?: number;
+  /** Milligrams — Edamam FE / Spoonacular Iron */
+  iron?: number;
+  /** Milligrams — Edamam VITC / Spoonacular Vitamin C */
+  vitamin_c?: number;
+  /** Milligrams — Edamam CA / Spoonacular Calcium */
+  calcium?: number;
 }
 
 export interface NormalizedSearchRecipe {

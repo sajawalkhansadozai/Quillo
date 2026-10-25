@@ -124,16 +124,25 @@ class FoodWasteService {
     return best;
   }
 
+  /// Next money milestone target (for progress ring).
+  static double nextMoneyTarget(double moneySaved) {
+    const targets = [100.0, 500.0, 1000.0, 2500.0, 5000.0];
+    for (final t in targets) {
+      if (moneySaved < t) return t;
+    }
+    return targets.last;
+  }
+
   static List<WasteMilestone> _milestones(
     double moneySaved,
     int totalScans,
   ) {
     return [
       WasteMilestone(label: 'First scan', unlocked: totalScans >= 1),
-      WasteMilestone(label: '£50 saved', unlocked: moneySaved >= 50),
-      WasteMilestone(label: '£100 saved', unlocked: moneySaved >= 100),
-      WasteMilestone(label: '£250 saved', unlocked: moneySaved >= 250),
-      WasteMilestone(label: '£500 saved', unlocked: moneySaved >= 500),
+      WasteMilestone(label: '10 scans', unlocked: totalScans >= 10),
+      WasteMilestone(label: '£100 reached', unlocked: moneySaved >= 100),
+      WasteMilestone(label: '£500 reached', unlocked: moneySaved >= 500),
+      WasteMilestone(label: '£1,000 reached', unlocked: moneySaved >= 1000),
     ];
   }
 
@@ -186,6 +195,7 @@ class FoodWasteService {
       }
 
       final now = DateTime.now().toUtc();
+      // Last 8 calendar weeks including the current week.
       final chartStart = _weekStartUtc(
         now.subtract(const Duration(days: 7 * 7)),
       );

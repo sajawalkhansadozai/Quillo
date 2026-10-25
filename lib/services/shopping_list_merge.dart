@@ -44,11 +44,17 @@ class ShoppingListMerge {
           .where((a) => a.isNotEmpty)
           .toList();
       final allChecked = refs.every((r) => r.list.items[r.index].checked);
+      final notes = refs
+          .map((r) => r.list.items[r.index].note.trim())
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList();
 
       merged.add(MergedShoppingItem(
         key: entry.key,
         name: _titleCase(first.name),
         amount: _mergeAmounts(amounts),
+        note: notes.isEmpty ? '' : notes.first,
         categoryId: _guessCategory(first.name),
         checked: allChecked,
         sources: refs

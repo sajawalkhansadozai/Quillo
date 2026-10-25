@@ -14,6 +14,7 @@ class MergedShoppingItem {
   final String key;
   final String name;
   final String amount;
+  final String note;
   final String categoryId;
   final bool checked;
   final List<ShoppingItemSource> sources;
@@ -22,6 +23,7 @@ class MergedShoppingItem {
     required this.key,
     required this.name,
     required this.amount,
+    this.note = '',
     required this.categoryId,
     required this.checked,
     required this.sources,
@@ -31,6 +33,7 @@ class MergedShoppingItem {
         key: key,
         name: name,
         amount: amount,
+        note: note,
         categoryId: categoryId,
         checked: checked ?? this.checked,
         sources: sources,

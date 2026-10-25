@@ -1,18 +1,17 @@
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/generated_recipe.dart';
 import '../theme/app_theme.dart';
+import '../utils/recipe_image_source.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Full nutrition breakdown — Premium (matches design mockup).
-// Servings stepper rescales all figures live.
+// Full nutrition breakdown — Premium (redesigned to match nutrition mockup).
 // ─────────────────────────────────────────────────────────────────────────────
 
 class RecipeFullNutritionSheet extends StatefulWidget {
   final GeneratedRecipe recipe;
-
-  /// Current serving count from recipe detail (defaults to recipe.servings).
   final int initialServings;
 
   const RecipeFullNutritionSheet({
@@ -27,349 +26,12 @@ class RecipeFullNutritionSheet extends StatefulWidget {
 }
 
 class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
-  static const _headerBg = Color(0xFF12122A);
-
-  late int _baseServings;
-  late int _servings;
-
-  @override
-  void initState() {
-    super.initState();
-    _baseServings = widget.recipe.servings > 0 ? widget.recipe.servings : 1;
-    _servings = widget.initialServings > 0
-        ? widget.initialServings
-        : _baseServings;
-  }
-
-  /// Nutrition in JSON is per serving — scale to selected serving count.
-  RecipeNutritionData get _nutrition =>
-      widget.recipe.nutrition.scaled(_servings / _baseServings);
-
-  bool get _showScaledLabel => _servings != _baseServings;
-
-  void _decrementServings() {
-    if (_servings <= 1) return;
-    setState(() => _servings--);
-  }
-
-  void _incrementServings() {
-    if (_servings >= 12) return;
-    setState(() => _servings++);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final n = _nutrition;
-    final rows = _buildRows(n);
-    final bottom = MediaQuery.of(context).padding.bottom;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F5FA),
-      body: Column(
-        children: [
-          _buildHeader(context),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16, 16, 16, bottom + 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildServingsCard(),
-                  const SizedBox(height: 14),
-                  _buildSummaryCard(n),
-                  const SizedBox(height: 20),
-                  Text(
-                    _showScaledLabel
-                        ? 'FULL BREAKDOWN — FOR $_servings SERVINGS'
-                        : 'FULL BREAKDOWN — PER SERVING',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: AppColors.textLight,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildBreakdownCard(rows),
-                  if (!widget.recipe.nutrition.hasExtendedDetails) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Micronutrient details appear for Explore catalog recipes. '
-                      'Scan recipes show macro breakdown.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textLight.withValues(alpha: 0.9),
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(8, top + 4, 16, 18),
-      decoration: const BoxDecoration(
-        color: _headerBg,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(0)),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white, size: 18),
-          ),
-          Expanded(
-            child: Text(
-              widget.recipe.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                fontFamily: 'Nunito',
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.6)),
-            ),
-            child: const Text(
-              'Premium',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildServingsCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Text(
-            'Servings',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-            ),
-          ),
-          const Spacer(),
-          _ServingBtn(icon: Icons.remove, onTap: _decrementServings),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Text(
-              '$_servings',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textDark,
-                fontFamily: 'Nunito',
-              ),
-            ),
-          ),
-          _ServingBtn(icon: Icons.add, onTap: _incrementServings),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryCard(RecipeNutritionData n) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          _CalorieRing(calories: n.calories),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: _MacroTile(
-                    label: 'Protein',
-                    value: '${n.protein}g',
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _MacroTile(
-                    label: 'Carbs',
-                    value: '${n.carbs}g',
-                    color: const Color(0xFF26A69A),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _MacroTile(
-                    label: 'Fat',
-                    value: '${n.fat}g',
-                    color: const Color(0xFFFF9800),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBreakdownCard(List<_NutrientRow> rows) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
-            _NutrientBreakdownTile(row: rows[i]),
-          ],
-        ],
-      ),
-    );
-  }
-
-  List<_NutrientRow> _buildRows(RecipeNutritionData n) {
-    final rows = <_NutrientRow>[
-      _NutrientRow('Calories', n.calories.toDouble(), 'kcal', _dvCalories,
-          barColor: const Color(0xFF6C63FF)),
-      _NutrientRow('Protein', n.protein.toDouble(), 'g', _dvProtein,
-          barColor: const Color(0xFF7E57C2)),
-      _NutrientRow('Carbohydrates', n.carbs.toDouble(), 'g', _dvCarbs,
-          barColor: const Color(0xFF26A69A)),
-    ];
-
-    if ((n.sugar ?? 0) > 0) {
-      final idx = rows.length - 1;
-      final parentColor = rows[idx].barColor;
-      rows[idx] = rows[idx].copyWith(
-        subRows: [
-          _NutrientRow(
-            'of which sugars',
-            n.sugar!.toDouble(),
-            'g',
-            _dvSugar,
-            isSub: true,
-            barColor: parentColor,
-          ),
-        ],
-      );
-    }
-
-    rows.add(_NutrientRow('Fat', n.fat.toDouble(), 'g', _dvFat,
-        barColor: const Color(0xFFFF9800)));
-    if ((n.saturatedFat ?? 0) > 0) {
-      final idx = rows.length - 1;
-      final parentColor = rows[idx].barColor;
-      rows[idx] = rows[idx].copyWith(
-        subRows: [
-          _NutrientRow(
-            'of which saturated',
-            n.saturatedFat!.toDouble(),
-            'g',
-            _dvSaturatedFat,
-            isSub: true,
-            barColor: parentColor,
-          ),
-        ],
-      );
-    }
-
-    if ((n.fiber ?? 0) > 0) {
-      rows.add(_NutrientRow('Fibre', n.fiber!.toDouble(), 'g', _dvFiber,
-          barColor: const Color(0xFF66BB6A)));
-    }
-
-    final saltG = _saltGrams(n.sodium);
-    if (saltG > 0) {
-      rows.add(_NutrientRow('Salt', saltG, 'g', _dvSalt,
-          barColor: const Color(0xFF78909C)));
-    }
-
-    if ((n.iron ?? 0) > 0) {
-      rows.add(_NutrientRow('Iron', n.iron!.toDouble(), 'mg', _dvIron,
-          barColor: const Color(0xFF8D6E63)));
-    }
-    if ((n.vitaminC ?? 0) > 0) {
-      rows.add(_NutrientRow('Vitamin C', n.vitaminC!.toDouble(), 'mg', _dvVitaminC,
-          barColor: const Color(0xFFFFCA28)));
-    }
-    if ((n.calcium ?? 0) > 0) {
-      rows.add(_NutrientRow('Calcium', n.calcium!.toDouble(), 'mg', _dvCalcium,
-          barColor: const Color(0xFF42A5F5)));
-    }
-    if ((n.potassium ?? 0) > 0) {
-      rows.add(_NutrientRow('Potassium', n.potassium!.toDouble(), 'mg', _dvPotassium,
-          barColor: const Color(0xFFEC407A)));
-    }
-    if ((n.cholesterol ?? 0) > 0) {
-      rows.add(_NutrientRow(
-          'Cholesterol', n.cholesterol!.toDouble(), 'mg', _dvCholesterol,
-          barColor: const Color(0xFFE57373)));
-    }
-
-    return rows;
-  }
-
-  static double _saltGrams(int? sodiumMg) {
-    if (sodiumMg == null || sodiumMg <= 0) return 0;
-    return (sodiumMg / 1000 * 2.5 * 10).round() / 10;
-  }
+  static const _bg = Color(0xFFF3F3F5);
+  static const _protein = Color(0xFF5B6CFF);
+  static const _carbs = Color(0xFFD4A017);
+  static const _fat = Color(0xFFA05A3C);
+  static const _gaugeTrack = Color(0xFFE6E8F0);
+  static const _highGold = Color(0xFFC9A227);
 
   static const _dvCalories = 2000.0;
   static const _dvProtein = 50.0;
@@ -384,53 +46,663 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
   static const _dvCalcium = 800.0;
   static const _dvPotassium = 4700.0;
   static const _dvCholesterol = 300.0;
+
+  late int _baseServings;
+  late int _servings;
+  bool _perServing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseServings = widget.recipe.servings > 0 ? widget.recipe.servings : 1;
+    _servings = widget.initialServings > 0
+        ? widget.initialServings
+        : _baseServings;
+  }
+
+  /// Stored nutrition is per serving.
+  RecipeNutritionData get _displayNutrition {
+    final per = widget.recipe.nutrition;
+    if (_perServing) return per;
+    return per.scaled(_servings.toDouble());
+  }
+
+  void _decrementServings() {
+    if (_servings <= 1) return;
+    setState(() => _servings--);
+  }
+
+  void _incrementServings() {
+    if (_servings >= 12) return;
+    setState(() => _servings++);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = _displayNutrition;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              children: [
+                _buildNavBar(context),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, bottom + 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTitleRow(),
+                        const SizedBox(height: 16),
+                        _buildModeToggle(),
+                        const SizedBox(height: 12),
+                        _buildServingsCard(),
+                        const SizedBox(height: 14),
+                        _buildMacrosCard(n),
+                        const SizedBox(height: 14),
+                        _buildCalorieSourceCard(n),
+                        const SizedBox(height: 14),
+                        _buildOtherNutrientsCard(n),
+                        const SizedBox(height: 16),
+                        _buildDisclaimer(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: AppColors.textDark, size: 18),
+          ),
+          const Expanded(
+            child: Text(
+              'Nutrition',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+                fontFamily: 'Nunito',
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'PREMIUM',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitleRow() {
+    final url = resizedRecipeImageUrl(widget.recipe.imageUrl, width: 160);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            widget.recipe.title,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+              height: 1.2,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        ClipOval(
+          child: SizedBox(
+            width: 64,
+            height: 64,
+            child: url != null && url.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 160,
+                    errorWidget: (_, __, ___) => _thumbFallback(),
+                  )
+                : _thumbFallback(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _thumbFallback() {
+    return ColoredBox(
+      color: AppColors.primaryLight,
+      child: const Center(
+        child: Text('🍽️', style: TextStyle(fontSize: 26)),
+      ),
+    );
+  }
+
+  Widget _buildModeToggle() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8E2D8),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ModeChip(
+              label: 'Per serving',
+              selected: _perServing,
+              onTap: () => setState(() => _perServing = true),
+            ),
+          ),
+          Expanded(
+            child: _ModeChip(
+              label: 'Whole recipe',
+              selected: !_perServing,
+              onTap: () => setState(() => _perServing = false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServingsCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: _cardDecoration,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F0F6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(Icons.restaurant_rounded,
+                    size: 20, color: AppColors.textMedium),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _perServing
+                      ? 'Servings 1 of $_servings servings'
+                      : 'Servings · $_servings total',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              _ServingBtn(icon: Icons.remove, onTap: _decrementServings),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  '$_servings',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textDark,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+              ),
+              _ServingBtn(icon: Icons.add, onTap: _incrementServings),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Per-serving values stay the same; whole-recipe totals change with servings.',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textMedium,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacrosCard(RecipeNutritionData n) {
+    final calPct = (n.calories / _dvCalories * 100).clamp(0, 999);
+    final proteinPct = n.protein / _dvProtein;
+    final carbsPct = n.carbs / _dvCarbs;
+    final fatPct = n.fat / _dvFat;
+    final insight = _insightText(n);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      decoration: _cardDecoration,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 150,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                CustomPaint(
+                  size: const Size(220, 140),
+                  painter: _SemiGaugePainter(
+                    progress: (n.calories / _dvCalories).clamp(0.0, 1.0),
+                    color: _protein,
+                    trackColor: _gaugeTrack,
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  child: Column(
+                    children: [
+                      Text(
+                        '${n.calories} kcal',
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textDark,
+                          fontFamily: 'Nunito',
+                        ),
+                      ),
+                      Text(
+                        '${calPct.round()}% of a 2,000 kcal day',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _MacroRing(
+                  label: 'Protein',
+                  grams: n.protein,
+                  progress: proteinPct.clamp(0.0, 1.0),
+                  dvPct: (proteinPct * 100).round(),
+                  color: _protein,
+                  emoji: '🍗',
+                ),
+              ),
+              Expanded(
+                child: _MacroRing(
+                  label: 'Carbs',
+                  grams: n.carbs,
+                  progress: carbsPct.clamp(0.0, 1.0),
+                  dvPct: (carbsPct * 100).round(),
+                  color: _carbs,
+                  emoji: '🥐',
+                ),
+              ),
+              Expanded(
+                child: _MacroRing(
+                  label: 'Fat',
+                  grams: n.fat,
+                  progress: fatPct.clamp(0.0, 1.0),
+                  dvPct: (fatPct * 100).round(),
+                  color: _fat,
+                  emoji: '🥑',
+                ),
+              ),
+            ],
+          ),
+          if (insight != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: _protein,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Text('🍗', style: TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      insight,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String? _insightText(RecipeNutritionData n) {
+    final proteinPct = (n.protein / _dvProtein * 100).round();
+    final fiberPct =
+        n.fiber != null ? (n.fiber! / _dvFiber * 100).round() : 0;
+    final scope = _perServing ? 'One serving' : 'This recipe';
+
+    if (proteinPct >= 20) {
+      return 'High in protein. $scope gives $proteinPct% of the daily value.';
+    }
+    if (fiberPct >= 20) {
+      return 'High in fibre. $scope gives $fiberPct% of the daily value.';
+    }
+    if (n.calories > 0) {
+      final calPct = (n.calories / _dvCalories * 100).round();
+      return '$scope provides $calPct% of a 2,000 kcal day.';
+    }
+    return null;
+  }
+
+  Widget _buildCalorieSourceCard(RecipeNutritionData n) {
+    final pKcal = n.protein * 4;
+    final cKcal = n.carbs * 4;
+    final fKcal = n.fat * 9;
+    final total = (pKcal + cKcal + fKcal).clamp(1, 99999);
+    final pShare = pKcal / total;
+    final cShare = cKcal / total;
+    final fShare = fKcal / total;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: _cardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Where the calories come from',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 14,
+              child: Row(
+                children: [
+                  if (pShare > 0)
+                    Expanded(
+                      flex: (pShare * 1000).round().clamp(1, 1000),
+                      child: const ColoredBox(color: _protein),
+                    ),
+                  if (cShare > 0)
+                    Expanded(
+                      flex: (cShare * 1000).round().clamp(1, 1000),
+                      child: const ColoredBox(color: _carbs),
+                    ),
+                  if (fShare > 0)
+                    Expanded(
+                      flex: (fShare * 1000).round().clamp(1, 1000),
+                      child: const ColoredBox(color: _fat),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _CalorieSourceRow(
+            color: _protein,
+            label: 'Protein',
+            grams: n.protein,
+            kcal: pKcal,
+            pct: (pShare * 100).round(),
+          ),
+          const Divider(height: 20),
+          _CalorieSourceRow(
+            color: _carbs,
+            label: 'Carbs',
+            grams: n.carbs,
+            kcal: cKcal,
+            pct: (cShare * 100).round(),
+          ),
+          const Divider(height: 20),
+          _CalorieSourceRow(
+            color: _fat,
+            label: 'Fat',
+            grams: n.fat,
+            kcal: fKcal,
+            pct: (fShare * 100).round(),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Protein and carbs contribute 4 kcal per gram; fat contributes 9 kcal per gram.',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textLight.withValues(alpha: 0.95),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOtherNutrientsCard(RecipeNutritionData n) {
+    final sugarsFats = <_OtherNutrient>[
+      if ((n.sugar ?? 0) > 0)
+        _OtherNutrient('Sugars', '${n.sugar} g', n.sugar! / _dvSugar),
+      if ((n.saturatedFat ?? 0) > 0)
+        _OtherNutrient(
+            'Saturated fat', '${n.saturatedFat} g', n.saturatedFat! / _dvSaturatedFat),
+      if ((n.fiber ?? 0) > 0)
+        _OtherNutrient('Fibre', '${n.fiber} g', n.fiber! / _dvFiber),
+      if (_saltGrams(n.sodium) > 0)
+        _OtherNutrient(
+            'Salt',
+            '${_saltGrams(n.sodium).toStringAsFixed(1)} g',
+            _saltGrams(n.sodium) / _dvSalt),
+    ];
+
+    final minerals = <_OtherNutrient>[
+      if ((n.cholesterol ?? 0) > 0)
+        _OtherNutrient(
+            'Cholesterol', '${n.cholesterol} mg', n.cholesterol! / _dvCholesterol),
+      if ((n.iron ?? 0) > 0)
+        _OtherNutrient('Iron', '${n.iron} mg', n.iron! / _dvIron),
+      if ((n.calcium ?? 0) > 0)
+        _OtherNutrient('Calcium', '${n.calcium} mg', n.calcium! / _dvCalcium),
+      if ((n.potassium ?? 0) > 0)
+        _OtherNutrient(
+            'Potassium', '${n.potassium} mg', n.potassium! / _dvPotassium),
+      if ((n.vitaminC ?? 0) > 0)
+        _OtherNutrient(
+            'Vitamin C', '${n.vitaminC} mg', n.vitaminC! / _dvVitaminC),
+    ];
+
+    if (sugarsFats.isEmpty && minerals.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration,
+        child: Text(
+          widget.recipe.nutrition.hasExtendedDetails
+              ? 'No additional micronutrient values for this recipe.'
+              : 'Micronutrient details appear for Explore catalog recipes. '
+                  'Scan recipes show macro breakdown.',
+          style: TextStyle(
+            fontSize: 13,
+            color: AppColors.textMedium.withValues(alpha: 0.95),
+            height: 1.4,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      decoration: _cardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Other nutrients',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          if (sugarsFats.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'Sugars, fats and fibre',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMedium,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final item in sugarsFats) _OtherNutrientRow(item: item),
+          ],
+          if (minerals.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Minerals and cholesterol',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMedium,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final item in minerals) _OtherNutrientRow(item: item),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisclaimer() {
+    return Text(
+      '* Daily Value (DV) based on a 2,000 kcal diet. Percent Daily Values '
+      'are approximate and follow common FDA reference amounts. Individual '
+      'needs may vary.',
+      style: TextStyle(
+        fontSize: 11,
+        color: AppColors.textLight.withValues(alpha: 0.95),
+        height: 1.4,
+      ),
+    );
+  }
+
+  static double _saltGrams(int? sodiumMg) {
+    if (sodiumMg == null || sodiumMg <= 0) return 0;
+    return (sodiumMg / 1000 * 2.5 * 10).round() / 10;
+  }
+
+  static BoxDecoration get _cardDecoration => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      );
 }
 
-// ── Row model ───────────────────────────────────────────────────────────────
+// ── Small widgets ─────────────────────────────────────────────────────────────
 
-class _NutrientRow {
+class _ModeChip extends StatelessWidget {
   final String label;
-  final double amount;
-  final String unit;
-  final double dailyValue;
-  final bool isSub;
-  final List<_NutrientRow> subRows;
-  final Color barColor;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _NutrientRow(
-    this.label,
-    this.amount,
-    this.unit,
-    this.dailyValue, {
-    this.isSub = false,
-    this.subRows = const [],
-    this.barColor = AppColors.primary,
+  const _ModeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
   });
 
-  _NutrientRow copyWith({List<_NutrientRow>? subRows}) => _NutrientRow(
-        label,
-        amount,
-        unit,
-        dailyValue,
-        isSub: isSub,
-        subRows: subRows ?? this.subRows,
-        barColor: barColor,
-      );
-
-  double get dailyPercent =>
-      dailyValue > 0 ? (amount / dailyValue * 100).clamp(0, 999) : 0;
-
-  String get displayAmount {
-    if (unit == 'kcal') return '${amount.round()} kcal';
-    if (unit == 'g') {
-      final v = amount % 1 == 0 ? amount.round().toString() : amount.toStringAsFixed(1);
-      return '$v g';
-    }
-    return '${amount.round()} $unit';
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: selected ? AppColors.textDark : AppColors.textMedium,
+          ),
+        ),
+      ),
+    );
   }
 }
-
-// ── Widgets ─────────────────────────────────────────────────────────────────
 
 class _ServingBtn extends StatelessWidget {
   final IconData icon;
@@ -443,11 +715,11 @@ class _ServingBtn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 36,
-        height: 36,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F0F8),
-          borderRadius: BorderRadius.circular(10),
+          color: const Color(0xFFF0F0F6),
+          borderRadius: BorderRadius.circular(17),
         ),
         child: Icon(icon, size: 18, color: AppColors.textDark),
       ),
@@ -455,66 +727,254 @@ class _ServingBtn extends StatelessWidget {
   }
 }
 
-class _CalorieRing extends StatelessWidget {
-  final int calories;
+class _MacroRing extends StatelessWidget {
+  final String label;
+  final int grams;
+  final double progress;
+  final int dvPct;
+  final Color color;
+  final String emoji;
 
-  const _CalorieRing({required this.calories});
+  const _MacroRing({
+    required this.label,
+    required this.grams,
+    required this.progress,
+    required this.dvPct,
+    required this.color,
+    required this.emoji,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final pct = (calories / _RecipeFullNutritionSheetState._dvCalories)
-        .clamp(0.0, 1.0);
-
-    return SizedBox(
-      width: 88,
-      height: 88,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: const Size(88, 88),
-            painter: _RingPainter(progress: pct),
-          ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
+    return Column(
+      children: [
+        SizedBox(
+          width: 84,
+          height: 84,
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              Text(
-                '$calories',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textDark,
-                  fontFamily: 'Nunito',
+              CustomPaint(
+                size: const Size(84, 84),
+                painter: _FullRingPainter(
+                  progress: progress,
+                  color: color,
+                  trackColor: color.withValues(alpha: 0.15),
                 ),
               ),
-              const Text(
-                'kcal',
-                style: TextStyle(fontSize: 11, color: AppColors.textMedium),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 14)),
+                  Text(
+                    '$grams g',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                      fontFamily: 'Nunito',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textDark,
+          ),
+        ),
+        Text(
+          '$dvPct% DV*',
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.textMedium,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CalorieSourceRow extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int grams;
+  final int kcal;
+  final int pct;
+
+  const _CalorieSourceRow({
+    required this.color,
+    required this.label,
+    required this.grams,
+    required this.kcal,
+    required this.pct,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+        ),
+        Text(
+          '${grams}g',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textMedium,
+          ),
+        ),
+        const SizedBox(width: 16),
+        SizedBox(
+          width: 64,
+          child: Text(
+            '$kcal kcal',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textMedium,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 40,
+          child: Text(
+            '$pct%',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OtherNutrient {
+  final String label;
+  final String amount;
+  final double dvRatio;
+
+  const _OtherNutrient(this.label, this.amount, this.dvRatio);
+
+  int get dvPct => (dvRatio * 100).round();
+  bool get isHigh => dvPct >= 20;
+}
+
+class _OtherNutrientRow extends StatelessWidget {
+  final _OtherNutrient item;
+
+  const _OtherNutrientRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              Text(
+                item.amount,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 48,
+                child: Text(
+                  '${item.dvPct}%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (item.isHigh) ...[
+            const SizedBox(height: 4),
+            Text(
+              'High · ${item.dvPct}% of the daily value in one serving.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _RecipeFullNutritionSheetState._highGold,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _RingPainter extends CustomPainter {
-  final double progress;
+// ── Painters ──────────────────────────────────────────────────────────────────
 
-  _RingPainter({required this.progress});
+class _SemiGaugePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  _SemiGaugePainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 6;
-    const start = -math.pi / 2;
-    const sweep = math.pi * 2;
+    final stroke = 16.0;
+    final center = Offset(size.width / 2, size.height - 8);
+    final radius = size.width / 2 - stroke;
+    const start = math.pi;
+    const sweep = math.pi;
 
     final track = Paint()
-      ..color = const Color(0xFFEEECFF)
+      ..color = trackColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 7
+      ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
@@ -525,161 +985,69 @@ class _RingPainter extends CustomPainter {
     );
 
     final fill = Paint()
-      ..shader = const SweepGradient(
-        colors: [Color(0xFF6C63FF), Color(0xFF9C8CFF), Color(0xFF6C63FF)],
-      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 7
+      ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
       start,
-      sweep * progress,
+      sweep * progress.clamp(0.0, 1.0),
       false,
       fill,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _RingPainter old) => old.progress != progress;
+  bool shouldRepaint(covariant _SemiGaugePainter old) =>
+      old.progress != progress || old.color != color;
 }
 
-class _MacroTile extends StatelessWidget {
-  final String label;
-  final String value;
+class _FullRingPainter extends CustomPainter {
+  final double progress;
   final Color color;
+  final Color trackColor;
 
-  const _MacroTile({
-    required this.label,
-    required this.value,
+  _FullRingPainter({
+    required this.progress,
     required this.color,
+    required this.trackColor,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border(
-          bottom: BorderSide(color: color, width: 2.5),
-        ),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textMedium,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: color,
-              fontFamily: 'Nunito',
-            ),
-          ),
-        ],
-      ),
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 6;
+    const start = -math.pi / 2;
+
+    final track = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      0,
+      math.pi * 2,
+      false,
+      track,
+    );
+
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      start,
+      math.pi * 2 * progress.clamp(0.0, 1.0),
+      false,
+      fill,
     );
   }
-}
-
-class _NutrientBreakdownTile extends StatelessWidget {
-  final _NutrientRow row;
-
-  const _NutrientBreakdownTile({required this.row});
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, row.isSub ? 6 : 14, 16, row.isSub ? 6 : 8),
-          child: _BreakdownRow(row: row),
-        ),
-        for (final sub in row.subRows)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: _BreakdownRow(row: sub),
-          ),
-      ],
-    );
-  }
-}
-
-class _BreakdownRow extends StatelessWidget {
-  final _NutrientRow row;
-
-  const _BreakdownRow({required this.row});
-
-  @override
-  Widget build(BuildContext context) {
-    final pct = row.dailyPercent / 100;
-    final barColor =
-        row.isSub ? row.barColor.withValues(alpha: 0.45) : row.barColor;
-    final pctColor = row.isSub ? AppColors.textLight : row.barColor;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: Text(
-                row.label,
-                style: TextStyle(
-                  fontSize: row.isSub ? 12 : 14,
-                  fontWeight: row.isSub ? FontWeight.w600 : FontWeight.w800,
-                  color: row.isSub ? AppColors.textMedium : AppColors.textDark,
-                  fontStyle: row.isSub ? FontStyle.italic : FontStyle.normal,
-                ),
-              ),
-            ),
-            Text(
-              row.displayAmount,
-              style: TextStyle(
-                fontSize: row.isSub ? 12 : 14,
-                fontWeight: FontWeight.w700,
-                color: row.isSub ? AppColors.textMedium : AppColors.textDark,
-              ),
-            ),
-            const SizedBox(width: 10),
-            SizedBox(
-              width: 36,
-              child: Text(
-                '${row.dailyPercent.round()}%',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: pctColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (!row.isSub) ...[
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: pct.clamp(0.05, 1.0),
-              minHeight: 5,
-              backgroundColor: barColor.withValues(alpha: 0.15),
-              color: barColor,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+  bool shouldRepaint(covariant _FullRingPainter old) =>
+      old.progress != progress || old.color != color;
 }

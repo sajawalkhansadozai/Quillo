@@ -1,12 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/food_waste_service.dart';
 import '../../services/in_app_notification_service.dart';
 import '../../services/subscription_service.dart';
+import '../../theme/app_theme.dart';
+import '../Home/scan_screen.dart';
 import '../paywall_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FoodWasteDashboardScreen — clean impact layout
+// FoodWasteDashboardScreen — redesigned to match impact mockup
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FoodWasteDashboardScreen extends StatefulWidget {
@@ -19,18 +23,19 @@ class FoodWasteDashboardScreen extends StatefulWidget {
 
 class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     with SingleTickerProviderStateMixin {
-  static const _ink = Color(0xFF1B4332);
-  static const _mid = Color(0xFF2D6A4F);
-  static const _mint = Color(0xFFD8F3DC);
-  static const _mintSoft = Color(0xFFF1F8F3);
-  static const _barSoft = Color(0xFF95D5B2);
-  static const _muted = Color(0xFF6B7280);
-  static const _line = Color(0xFFE8EEE9);
-  static const _bg = Color(0xFFFAFCFB);
+  static const _bg = Color(0xFFF3F4F8);
+  static const _ink = Color(0xFF1A1A2E);
+  static const _muted = Color(0xFF6B6B8A);
+  static const _blue = Color(0xFF3D5AFE);
+  static const _green = Color(0xFF2E7D32);
+  static const _goldLine = Color(0xFFC9A66B);
+  static const _brown = Color(0xFF8D6E63);
+  static const _cardBorder = Color(0xFFE6E8F0);
 
   WasteStats _stats = const WasteStats();
   bool _isPremium = false;
   bool _loading = true;
+  bool _weeks8 = true;
   int? _pulseThreshold;
   late final AnimationController _pulseCtrl;
 
@@ -52,10 +57,9 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
 
   int? _highestUnlockedThreshold(WasteStats stats) {
     const map = {
-      '£50 saved': 50,
-      '£100 saved': 100,
-      '£250 saved': 250,
-      '£500 saved': 500,
+      '£100 reached': 100,
+      '£500 reached': 500,
+      '£1,000 reached': 1000,
     };
     int? highest;
     for (final m in stats.milestones) {
@@ -118,107 +122,125 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     await _load();
   }
 
+  void _startScan() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ScanScreen()),
+    );
+  }
+
+  List<WeeklySaving> get _visibleWeeks {
+    final all = _stats.weeklySavings;
+    if (all.isEmpty) return all;
+    final n = _weeks8 ? 8 : 4;
+    if (all.length <= n) return all;
+    return all.sublist(all.length - n);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _ink))
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(child: _buildHeader()),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 36),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate(
-                      _isPremium
-                          ? [
-                              _buildImpactCard(),
-                              const SizedBox(height: 14),
-                              _buildStatRow(),
-                              const SizedBox(height: 22),
-                              _buildWeeklyChart(),
-                              const SizedBox(height: 14),
-                              _buildUkComparison(),
-                              const SizedBox(height: 22),
-                              _buildMilestones(),
-                              const SizedBox(height: 22),
-                              _buildFooterCta(),
-                            ]
-                          : [_buildPremiumGate()],
-                    ),
+          ? const Center(child: CircularProgressIndicator(color: _blue))
+          : SafeArea(
+              bottom: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(child: _buildHeader()),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate(
+                            _isPremium
+                                ? [
+                                    _buildHero(),
+                                    const SizedBox(height: 14),
+                                    _buildNextMilestone(),
+                                    const SizedBox(height: 14),
+                                    _buildWeeklySavings(),
+                                    const SizedBox(height: 14),
+                                    _buildUkAverage(),
+                                    const SizedBox(height: 14),
+                                    _buildBottomStats(),
+                                    const SizedBox(height: 20),
+                                    const Center(
+                                      child: Text(
+                                        'Small changes. A bigger tomorrow.',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: _muted,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Center(
+                                      child: TextButton(
+                                        onPressed: _shareStats,
+                                        child: const Text('Share my impact'),
+                                      ),
+                                    ),
+                                  ]
+                                : [_buildPremiumGate()],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
     );
   }
 
   Widget _buildHeader() {
-    final top = MediaQuery.of(context).padding.top;
     return Padding(
-      padding: EdgeInsets.fromLTRB(8, top + 6, 20, 12),
+      padding: const EdgeInsets.fromLTRB(4, 4, 12, 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           IconButton(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
                 color: _ink, size: 18),
           ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const Expanded(
+            child: Text(
+              'Food waste saved',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _ink,
+                fontFamily: 'Nunito',
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _blue.withValues(alpha: 0.55)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: 10),
-                const Text(
-                  'Food waste saved',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: _ink,
-                    fontFamily: 'Nunito',
-                    height: 1.15,
-                  ),
-                ),
-                const SizedBox(height: 4),
+                Icon(Icons.auto_awesome, size: 14, color: _blue),
+                SizedBox(width: 4),
                 Text(
-                  'Small changes. A bigger tomorrow.',
+                  'PREMIUM',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: _muted.withValues(alpha: 0.95),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                    color: _blue,
                   ),
                 ),
               ],
             ),
           ),
-          if (_isPremium)
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _mint,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.workspace_premium_rounded,
-                      size: 14, color: Color(0xFFC9A227)),
-                  SizedBox(width: 4),
-                  Text(
-                    'Premium',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
@@ -240,7 +262,7 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
               color: Colors.white.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.eco_rounded, color: _mint, size: 28),
+            child: const Icon(Icons.eco_rounded, color: Colors.white, size: 28),
           ),
           const SizedBox(height: 18),
           const Text(
@@ -288,74 +310,372 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     );
   }
 
-  Widget _buildImpactCard() {
-    final money = _stats.moneySavedGbp.toStringAsFixed(0);
-    final kg = _stats.kgAvoided.toStringAsFixed(0);
+  Widget _buildHero() {
+    final money = _stats.moneySavedGbp;
+    final kg = _stats.kgAvoided;
     final pct = _stats.ukComparisonPercent.round();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        color: _mintSoft,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _mint.withValues(alpha: 0.55)),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'SINCE YOU JOINED',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
+            color: _muted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '£${money.toStringAsFixed(money >= 100 ? 0 : 0)}',
+          style: const TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.w900,
+            color: _ink,
+            fontFamily: 'Nunito',
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text.rich(
+          TextSpan(
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: _blue,
+              height: 1.35,
+            ),
+            children: [
+              const TextSpan(text: 'saved, and '),
+              TextSpan(
+                text: '${kg.toStringAsFixed(0)} kg',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const TextSpan(text: ' of food waste avoided.'),
+            ],
+          ),
+        ),
+        if (pct > 0) ...[
+          const SizedBox(height: 8),
+          Text(
+            '$pct% better than the UK average this month.',
+            style: const TextStyle(
+              fontSize: 13,
+              color: _muted,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildNextMilestone() {
+    final money = _stats.moneySavedGbp;
+    final target = FoodWasteService.nextMoneyTarget(money);
+    final progress = (money / target).clamp(0.0, 1.0);
+    final toGo = (target - money).clamp(0.0, target);
+    final milestones = _stats.milestones;
+
+    return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Your impact so far',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: _mid,
-              letterSpacing: 0.2,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Next milestone',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Money saved since joining.',
+                      style: TextStyle(fontSize: 13, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(Icons.eco_rounded, color: _green, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              SizedBox(
+                width: 100,
+                height: 100,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      size: const Size(100, 100),
+                      painter: _RingPainter(
+                        progress: progress,
+                        color: _blue,
+                        trackColor: const Color(0xFFE6E8F0),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${(progress * 100).round()}%',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: _ink,
+                            fontFamily: 'Nunito',
+                          ),
+                        ),
+                        Text(
+                          'OF £${target >= 1000 ? target.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},') : target.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: _muted,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '£${toGo.toStringAsFixed(0)} to go',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: _ink,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    for (final m in milestones.take(4))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              m.unlocked
+                                  ? Icons.check_circle
+                                  : Icons.radio_button_unchecked,
+                              size: 16,
+                              color: m.unlocked ? _green : const Color(0xFFC5C7D4),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                m.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: m.unlocked ? _ink : _muted,
+                                  decoration: _pulseThreshold != null &&
+                                          m.label.contains('£$_pulseThreshold')
+                                      ? TextDecoration.underline
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklySavings() {
+    final weeks = _visibleWeeks;
+    final periodTotal =
+        weeks.fold<double>(0, (s, w) => s + w.amountGbp);
+    final thisWeek = weeks.isEmpty ? 0.0 : weeks.last.amountGbp;
+    final loggedWeeks = weeks.where((w) => w.amountGbp > 0).length;
+    final best = weeks.isEmpty
+        ? null
+        : weeks.reduce((a, b) => a.amountGbp >= b.amountGbp ? a : b);
+    final hasAny = periodTotal > 0;
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Weekly savings',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Each week, and your running total.',
+                      style: TextStyle(fontSize: 13, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              _WeekToggle(
+                weeks8: _weeks8,
+                onChanged: (v) => setState(() => _weeks8 = v),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _ImpactMetric(
-                  value: '£$money',
-                  label: 'money saved\nsince joining',
-                  icon: Icons.savings_outlined,
+                child: Text.rich(
+                  TextSpan(
+                    style: const TextStyle(fontSize: 14, color: _ink, height: 1.3),
+                    children: [
+                      TextSpan(
+                        text: '£${periodTotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'Nunito',
+                        ),
+                      ),
+                      TextSpan(
+                        text:
+                            ' saved in the last ${_weeks8 ? 8 : 4} weeks',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _muted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              Container(width: 1, height: 56, color: _line),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _ImpactMetric(
-                  value: '$kg kg',
-                  label: 'food waste\navoided',
-                  icon: Icons.recycling_rounded,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '£${thisWeek.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: _ink,
+                      fontFamily: 'Nunito',
+                    ),
+                  ),
+                  const Text(
+                    'this week',
+                    style: TextStyle(fontSize: 12, color: _muted),
+                  ),
+                ],
               ),
             ],
           ),
-          if (pct > 0) ...[
+          if (best != null && best.amountGbp > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Best week ${_fmtDate(best.weekStart)}, £${best.amountGbp.toStringAsFixed(2)}'
+              ' · $loggedWeeks of ${weeks.length} weeks logged',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _blue,
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 160,
+            child: weeks.isEmpty
+                ? const Center(
+                    child: Text('No weekly data yet',
+                        style: TextStyle(color: _muted)))
+                : _WeeklyChart(weeks: weeks),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _LegendDot(color: _blue, label: 'Saved that week'),
+              const SizedBox(width: 14),
+              _LegendDot(color: _goldLine, label: 'Running total'),
+            ],
+          ),
+          if (!hasAny) ...[
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
               decoration: BoxDecoration(
-                color: _ink,
+                color: const Color(0xFFF7F8FC),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.trending_up_rounded,
-                      color: _mint, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
+                  const Expanded(
                     child: Text(
-                      '$pct% better than the UK average this month',
-                      style: const TextStyle(
-                        fontSize: 12,
+                      'Nothing logged yet',
+                      style: TextStyle(
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        height: 1.25,
+                        color: _ink,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _startScan,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _blue,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Start a scan',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -368,561 +688,522 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     );
   }
 
-  Widget _buildStatRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _MiniStatCard(
-            icon: Icons.local_fire_department_rounded,
-            iconColor: const Color(0xFFE85D04),
-            value: '${_stats.weekStreak}',
-            title: 'week streak',
-            subtitle: 'Keep it going!',
-            subtitleColor: _mid,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MiniStatCard(
-            icon: Icons.emoji_events_outlined,
-            iconColor: const Color(0xFFC9A227),
-            value: '${_stats.bestWeekStreak}',
-            title: 'best streak',
-            subtitle: 'Your record',
-            subtitleColor: const Color(0xFFB08968),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MiniStatCard(
-            icon: Icons.receipt_long_rounded,
-            iconColor: const Color(0xFF7B68EE),
-            value: '${_stats.totalScans}',
-            title: 'total scans',
-            subtitle: 'Since joining',
-            subtitleColor: const Color(0xFF7B68EE),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildUkAverage() {
+    final weekly = FoodWasteService.ukAverageWeeklyWasteGbp;
+    final weeksCovered = weekly <= 0
+        ? 0
+        : (_stats.moneySavedGbp / weekly).round().clamp(0, 999);
+    final filled = weeksCovered.clamp(0, 52);
 
-  Widget _buildWeeklyChart() {
-    final weeks = _stats.weeklySavings;
-    final maxVal = weeks.isEmpty
-        ? 15.0
-        : weeks.map((w) => w.amountGbp).reduce((a, b) => a > b ? a : b);
-    final chartMax = (maxVal <= 0 ? 15.0 : maxVal * 1.2).clamp(5.0, 999.0);
-    final latest = weeks.isEmpty ? 0.0 : weeks.last.amountGbp;
-    final showProgressNote =
-        weeks.length >= 2 && latest > 0 && latest >= maxVal * 0.85;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _line),
-      ),
+    return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Weekly savings — last 8 weeks',
+            'Against the UK average',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: _ink,
               fontFamily: 'Nunito',
             ),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 140,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+          const SizedBox(height: 4),
+          Text(
+            'An average household wastes £${weekly.toStringAsFixed(2)} of food a week',
+            style: const TextStyle(fontSize: 13, color: _muted, height: 1.35),
+          ),
+          const SizedBox(height: 14),
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                fontSize: 15,
+                color: _ink,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
               children: [
-                for (var i = 0; i < weeks.length; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        left: i == 0 ? 0 : 3,
-                        right: i == weeks.length - 1 ? 0 : 3,
-                      ),
-                      child: _ChartBar(
-                        amount: weeks[i].amountGbp,
-                        maxAmount: chartMax,
-                        isLatest: i == weeks.length - 1,
-                        showLabel: i == weeks.length - 1 && latest > 0,
-                        barSoft: _barSoft,
-                        ink: _ink,
+                const TextSpan(text: '≈ '),
+                TextSpan(
+                  text: '$weeksCovered',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+                TextSpan(
+                  text:
+                      ' weeks of a typical household\'s food waste, covered by your £${_stats.moneySavedGbp.toStringAsFixed(0)}',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const cols = 13;
+              const rows = 4;
+              const gap = 4.0;
+              final cell =
+                  (constraints.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: List.generate(cols * rows, (i) {
+                  final isFilled = i < filled;
+                  return Container(
+                    width: cell,
+                    height: cell,
+                    decoration: BoxDecoration(
+                      color: isFilled ? _blue : Colors.transparent,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                        color: isFilled
+                            ? _blue
+                            : const Color(0xFFC8CBD8),
+                        width: 1.2,
                       ),
                     ),
-                  ),
-              ],
-            ),
+                  );
+                }),
+              );
+            },
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              for (var i = 0; i < weeks.length; i++)
-                Expanded(
-                  child: Text(
-                    _shortDate(weeks[i].weekStart),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 9, color: _muted),
-                  ),
-                ),
-            ],
+          const SizedBox(height: 10),
+          Text(
+            'One square = one week (£${weekly.toStringAsFixed(2)}). 52 squares = one year.',
+            style: const TextStyle(fontSize: 12, color: _muted),
           ),
-          if (showProgressNote) ...[
-            const SizedBox(height: 12),
-            const Row(
-              children: [
-                Icon(Icons.auto_awesome, size: 14, color: Color(0xFFE85D04)),
-                SizedBox(width: 6),
-                Text(
-                  'Great progress this week',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFE85D04),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
   }
 
-  String _shortDate(DateTime d) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${d.day} ${months[d.month - 1]}';
-  }
+  Widget _buildBottomStats() {
+    final streakNote = _stats.weekStreak > 0
+        ? 'Keep scanning to grow it'
+        : (_stats.bestWeekStreak > 0
+            ? 'Best ${_stats.bestWeekStreak} · scan this week to restart'
+            : 'Scan this week to start');
 
-  Widget _buildUkComparison() {
-    final monthly = _stats.monthlyWasteAvoidedGbp.toStringAsFixed(0);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _mintSoft,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _mint.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: _ink,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.home_outlined, color: Colors.white, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
+    return Row(
+      children: [
+        Expanded(
+          child: _Card(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'vs UK average household',
+                  'Weekly streak',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _muted,
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: _mid,
-                      height: 1.45,
-                    ),
-                    children: [
-                      TextSpan(
-                        text:
-                            'The average UK household wastes £${FoodWasteService.ukAverageWeeklyWasteGbp.toStringAsFixed(2)} per week. You avoided ',
-                      ),
-                      TextSpan(
-                        text: '£$monthly',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: _ink,
-                        ),
-                      ),
-                      const TextSpan(text: ' of waste this month.'),
-                    ],
+                Text(
+                  '${_stats.weekStreak} wks',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: _ink,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  streakNote,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _stats.weekStreak > 0 ? _green : _brown,
+                    height: 1.3,
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMilestones() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Milestones',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: _ink,
-            fontFamily: 'Nunito',
-          ),
         ),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(12, 18, 12, 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _line),
-          ),
-          child: Row(
-            children: [
-              for (var i = 0; i < _stats.milestones.length; i++) ...[
-                if (i > 0)
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      margin: const EdgeInsets.only(bottom: 28),
-                      color: _stats.milestones[i - 1].unlocked
-                          ? _ink
-                          : _line,
-                    ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _Card(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Scans',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _muted,
                   ),
-                _MilestoneNode(
-                  label: _stats.milestones[i].label,
-                  unlocked: _stats.milestones[i].unlocked,
-                  pulse: _pulseThreshold != null &&
-                      _stats.milestones[i].label
-                          .contains('£$_pulseThreshold'),
-                  pulseAnimation: _pulseCtrl,
-                  ink: _ink,
-                  mint: _mint,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${_stats.totalScans}',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: _ink,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'since joining',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _muted,
+                  ),
                 ),
               ],
-            ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildFooterCta() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-      decoration: BoxDecoration(
-        color: _mintSoft,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _mint.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'Small choices make a big difference.',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: _ink,
-                height: 1.3,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          GestureDetector(
-            onTap: _shareStats,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: _ink,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Share',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(width: 4),
-                  Icon(Icons.arrow_forward_rounded,
-                      size: 14, color: Colors.white),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  static String _fmtDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]}';
   }
 }
 
-// ── Sub-widgets ─────────────────────────────────────────────────────────────
+// ── Shared pieces ─────────────────────────────────────────────────────────────
 
-class _ImpactMetric extends StatelessWidget {
-  final String value;
-  final String label;
-  final IconData icon;
+class _Card extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
 
-  const _ImpactMetric({
-    required this.value,
-    required this.label,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF2D6A4F)),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF1B4332),
-            fontFamily: 'Nunito',
-            height: 1,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF6B7280),
-            height: 1.25,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MiniStatCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String title;
-  final String subtitle;
-  final Color subtitleColor;
-
-  const _MiniStatCard({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-    required this.title,
-    required this.subtitle,
-    required this.subtitleColor,
+  const _Card({
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
+      width: double.infinity,
+      padding: padding,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE8EEE9)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 20, color: iconColor),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF1B4332),
-              fontFamily: 'Nunito',
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 9,
-              color: subtitleColor,
-              fontWeight: FontWeight.w700,
-            ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _FoodWasteDashboardScreenState._cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
         ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _WeekToggle extends StatelessWidget {
+  final bool weeks8;
+  final ValueChanged<bool> onChanged;
+
+  const _WeekToggle({required this.weeks8, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF0F6),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _chip('4W', !weeks8, () => onChanged(false)),
+          _chip('8W', weeks8, () => onChanged(true)),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? _FoodWasteDashboardScreenState._blue
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: selected ? Colors.white : _FoodWasteDashboardScreenState._muted,
+          ),
+        ),
       ),
     );
   }
 }
 
-class _ChartBar extends StatelessWidget {
-  final double amount;
-  final double maxAmount;
-  final bool isLatest;
-  final bool showLabel;
-  final Color barSoft;
-  final Color ink;
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
 
-  const _ChartBar({
-    required this.amount,
-    required this.maxAmount,
-    required this.isLatest,
-    required this.showLabel,
-    required this.barSoft,
-    required this.ink,
-  });
+  const _LegendDot({required this.color, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    final fraction =
-        maxAmount <= 0 ? 0.0 : (amount / maxAmount).clamp(0.0, 1.0);
-    final height = 10.0 + fraction * 100;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        if (showLabel)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              '£${amount.toStringAsFixed(amount >= 10 ? 0 : 1)}',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-          ),
         Container(
-          height: height,
-          decoration: BoxDecoration(
-            color: isLatest ? ink : barSoft,
-            borderRadius: BorderRadius.circular(6),
-          ),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: _FoodWasteDashboardScreenState._muted),
         ),
       ],
     );
   }
 }
 
-class _MilestoneNode extends StatelessWidget {
-  final String label;
-  final bool unlocked;
-  final bool pulse;
-  final Animation<double>? pulseAnimation;
-  final Color ink;
-  final Color mint;
+class _WeeklyChart extends StatelessWidget {
+  final List<WeeklySaving> weeks;
 
-  const _MilestoneNode({
-    required this.label,
-    required this.unlocked,
-    required this.pulse,
-    required this.pulseAnimation,
-    required this.ink,
-    required this.mint,
-  });
+  const _WeeklyChart({required this.weeks});
 
   @override
   Widget build(BuildContext context) {
-    Widget node = Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: unlocked ? ink : const Color(0xFFF3F4F6),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: unlocked ? ink : const Color(0xFFD1D5DB),
-          width: 1.5,
-        ),
-        boxShadow: pulse
-            ? [
-                BoxShadow(
-                  color: ink.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
-      ),
-      child: Icon(
-        unlocked ? Icons.check_rounded : Icons.lock_outline_rounded,
-        color: unlocked ? Colors.white : const Color(0xFF9CA3AF),
-        size: 16,
-      ),
-    );
+    final maxBar = weeks
+        .map((w) => w.amountGbp)
+        .fold<double>(0, (a, b) => a > b ? a : b);
+    final chartMax = (maxBar <= 0 ? 20.0 : maxBar * 1.25).clamp(5.0, 9999.0);
 
-    if (pulse && pulseAnimation != null) {
-      node = ScaleTransition(
-        scale: Tween<double>(begin: 1.0, end: 1.08).animate(pulseAnimation!),
-        child: node,
-      );
+    var running = 0.0;
+    final cumulatives = <double>[];
+    for (final w in weeks) {
+      running += w.amountGbp;
+      cumulatives.add(running);
     }
+    final maxLine = cumulatives.isEmpty
+        ? 1.0
+        : cumulatives.reduce((a, b) => a > b ? a : b).clamp(1.0, 99999.0);
 
-    return SizedBox(
-      width: 58,
-      child: Column(
-        children: [
-          node,
-          const SizedBox(height: 8),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: unlocked ? ink : const Color(0xFF9CA3AF),
-              height: 1.2,
-            ),
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final h = constraints.maxHeight - 18;
+              final n = weeks.length;
+              final slot = w / n;
+
+              return Stack(
+                children: [
+                  // Bars
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 18,
+                    height: h,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var i = 0; i < n; i++)
+                          Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 3),
+                              child: FractionallySizedBox(
+                                heightFactor: maxBar <= 0
+                                    ? 0.04
+                                    : (weeks[i].amountGbp / chartMax)
+                                        .clamp(0.04, 1.0),
+                                alignment: Alignment.bottomCenter,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: _FoodWasteDashboardScreenState._blue,
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Running total line
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 18,
+                    height: h,
+                    child: CustomPaint(
+                      painter: _RunningLinePainter(
+                        values: cumulatives,
+                        maxValue: maxLine,
+                        color: _FoodWasteDashboardScreenState._goldLine,
+                      ),
+                    ),
+                  ),
+                  // X labels
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < n; i++)
+                          Expanded(
+                            child: Text(
+                              _label(weeks[i].weekStart, i == 0 || i == n - 1 || i % 2 == 0),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.clip,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                color: _FoodWasteDashboardScreenState._muted,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // ignore unused slot warning
+                  if (slot < 0) const SizedBox.shrink(),
+                ],
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
+  String _label(DateTime d, bool show) {
+    if (!show) return '';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]}';
+  }
+}
+
+class _RunningLinePainter extends CustomPainter {
+  final List<double> values;
+  final double maxValue;
+  final Color color;
+
+  _RunningLinePainter({
+    required this.values,
+    required this.maxValue,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+    final n = values.length;
+    for (var i = 0; i < n; i++) {
+      final x = (i + 0.5) / n * size.width;
+      final y = size.height -
+          (values[i] / maxValue).clamp(0.0, 1.0) * size.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, paint);
+
+    final dot = Paint()..color = color;
+    for (var i = 0; i < n; i++) {
+      if (values[i] <= 0 && i != n - 1) continue;
+      final x = (i + 0.5) / n * size.width;
+      final y = size.height -
+          (values[i] / maxValue).clamp(0.0, 1.0) * size.height;
+      canvas.drawCircle(Offset(x, y), 3.5, dot);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RunningLinePainter old) =>
+      old.values != values || old.maxValue != maxValue;
+}
+
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  _RingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 7;
+    const start = -math.pi / 2;
+
+    final track = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      0,
+      math.pi * 2,
+      false,
+      track,
+    );
+
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      start,
+      math.pi * 2 * progress.clamp(0.0, 1.0),
+      false,
+      fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingPainter old) =>
+      old.progress != progress || old.color != color;
 }

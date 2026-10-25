@@ -5,17 +5,22 @@
 class ShoppingListItem {
   final String name;
   final String amount;
+  /// Prep tip shown under the name (e.g. "Peeled and minced").
+  final String note;
   final bool checked;
 
   const ShoppingListItem({
     required this.name,
     required this.amount,
+    this.note = '',
     this.checked = false,
   });
 
-  ShoppingListItem copyWith({bool? checked}) => ShoppingListItem(
+  ShoppingListItem copyWith({bool? checked, String? note, String? amount}) =>
+      ShoppingListItem(
         name: name,
-        amount: amount,
+        amount: amount ?? this.amount,
+        note: note ?? this.note,
         checked: checked ?? this.checked,
       );
 
@@ -23,12 +28,14 @@ class ShoppingListItem {
       ShoppingListItem(
         name: json['name'] as String? ?? '',
         amount: json['amount'] as String? ?? '',
+        note: json['note'] as String? ?? '',
         checked: json['checked'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'amount': amount,
+        if (note.isNotEmpty) 'note': note,
         'checked': checked,
       };
 }

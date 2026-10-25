@@ -205,6 +205,16 @@ class _ShoppingListDetailScreenState extends State<ShoppingListDetailScreen> {
                                       : null,
                                 ),
                               ),
+                              if (item.note.isNotEmpty)
+                                Text(
+                                  item.note,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: item.checked
+                                        ? AppColors.textLight
+                                        : AppColors.textMedium,
+                                  ),
+                                ),
                               if (item.amount.isNotEmpty)
                                 Text(
                                   item.amount,

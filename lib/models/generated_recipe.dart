@@ -155,6 +155,7 @@ class GeneratedRecipe {
             (i) => RecipeIngredientUsed(
               name: i.name,
               amount: IngredientAmountScale.scale(i.amount, factor),
+              note: i.note,
             ),
           )
           .toList(),
@@ -163,6 +164,7 @@ class GeneratedRecipe {
             (i) => MissingIngredient(
               name: i.name,
               amount: IngredientAmountScale.scale(i.amount, factor),
+              note: i.note,
             ),
           )
           .toList(),
@@ -262,16 +264,26 @@ class RecipeStep {
 class RecipeIngredientUsed {
   final String name;
   final String amount;
+  final String note;
 
-  const RecipeIngredientUsed({required this.name, required this.amount});
+  const RecipeIngredientUsed({
+    required this.name,
+    required this.amount,
+    this.note = '',
+  });
 
   factory RecipeIngredientUsed.fromJson(Map<String, dynamic> json) =>
       RecipeIngredientUsed(
         name: json['name'] as String? ?? '',
         amount: json['amount'] as String? ?? '',
+        note: json['note'] as String? ?? '',
       );
 
-  Map<String, dynamic> toJson() => {'name': name, 'amount': amount};
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'amount': amount,
+        if (note.isNotEmpty) 'note': note,
+      };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,16 +291,26 @@ class RecipeIngredientUsed {
 class MissingIngredient {
   final String name;
   final String amount;
+  final String note;
 
-  const MissingIngredient({required this.name, required this.amount});
+  const MissingIngredient({
+    required this.name,
+    required this.amount,
+    this.note = '',
+  });
 
   factory MissingIngredient.fromJson(Map<String, dynamic> json) =>
       MissingIngredient(
         name: json['name'] as String? ?? '',
         amount: json['amount'] as String? ?? '',
+        note: json['note'] as String? ?? '',
       );
 
-  Map<String, dynamic> toJson() => {'name': name, 'amount': amount};
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'amount': amount,
+        if (note.isNotEmpty) 'note': note,
+      };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -91,27 +91,64 @@ class QuilloApp extends StatefulWidget {
   State<QuilloApp> createState() => _QuilloAppState();
 }
 
-class _QuilloAppState extends State<QuilloApp> {
+class _QuilloAppState extends State<QuilloApp> with WidgetsBindingObserver {
+  bool _trackingRequestInFlight = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       QuickActionsService.initialize();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-    requestTrackingPermission();
-  });
+      requestTrackingPermission();
+    });
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Another system alert (e.g. the push permission prompt) makes the app
+  /// inactive; answering it resumes the app, which is when ATT can show.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) requestTrackingPermission();
+  }
+
+  /// iOS silently drops the ATT request while another system alert is on
+  /// screen, leaving the status notDetermined. So only ask while the app is
+  /// active, and retry until the user has actually answered.
   Future<void> requestTrackingPermission() async {
-  // Wait until the UI is ready (critical for iPadOS)
-  await Future.delayed(const Duration(milliseconds: 1000));
+    if (_trackingRequestInFlight) return;
+    _trackingRequestInFlight = true;
+    try {
+      for (var attempt = 0; attempt < 20; attempt++) {
+        // Wait until the UI is ready (critical for iPadOS).
+        await Future.delayed(const Duration(milliseconds: 1000));
+        if (!mounted) return;
 
-  final status = await AppTrackingTransparency.trackingAuthorizationStatus;
+        final status = await AppTrackingTransparency.trackingAuthorizationStatus;
+        if (status != TrackingStatus.notDetermined) return;
 
-  if (status == TrackingStatus.notDetermined) {
-    await AppTrackingTransparency.requestTrackingAuthorization();
+        // Inactive means a system alert is showing; resume will call us again.
+        if (WidgetsBinding.instance.lifecycleState !=
+            AppLifecycleState.resumed) {
+          return;
+        }
+        final result =
+            await AppTrackingTransparency.requestTrackingAuthorization();
+        if (result != TrackingStatus.notDetermined) return;
+      }
+    } catch (e) {
+      debugPrint('ATT request failed (app continues): $e');
+    } finally {
+      _trackingRequestInFlight = false;
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {

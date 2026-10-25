@@ -31,6 +31,9 @@ function extractEdamamNutrition(recipe: Record<string, unknown>): NormalizedNutr
   const saturated_fat = nutrientAmount(nutrients, 'FASAT');
   const cholesterol = nutrientAmount(nutrients, 'CHOLE');
   const potassium = nutrientAmount(nutrients, 'K');
+  const iron = nutrientAmount(nutrients, 'FE');
+  const vitamin_c = nutrientAmount(nutrients, 'VITC');
+  const calcium = nutrientAmount(nutrients, 'CA');
   return {
     ...base,
     ...(fiber > 0 ? { fiber } : {}),
@@ -39,6 +42,9 @@ function extractEdamamNutrition(recipe: Record<string, unknown>): NormalizedNutr
     ...(saturated_fat > 0 ? { saturated_fat } : {}),
     ...(cholesterol > 0 ? { cholesterol } : {}),
     ...(potassium > 0 ? { potassium } : {}),
+    ...(iron > 0 ? { iron } : {}),
+    ...(vitamin_c > 0 ? { vitamin_c } : {}),
+    ...(calcium > 0 ? { calcium } : {}),
   };
 }
 

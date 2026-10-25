@@ -117,8 +117,9 @@ STRICT RULES:
 7. Prefer preferred cuisines (${cuisines}) when several options exist from these ingredients
 8. Each recipe must use AT LEAST 3 of the available ingredients
 9. For missing_ingredients: only include truly essential items not in the available list
-10. Nutrition values are per serving estimates
-11. Vary ingredient coverage across the 3 recipes (list every ingredient in ingredients_used OR missing_ingredients):
+10. Nutrition values are per serving estimates. Always include macros PLUS fiber, sodium (mg), sugar, saturated_fat, cholesterol (mg), potassium (mg), iron (mg), vitamin_c (mg), and calcium (mg) when you can estimate them (use 0 only if truly unknown).
+11. For each ingredient, put quantity in "amount" (e.g. "2 cloves") and prep tips in optional "note" (e.g. "Peeled and minced"). Do not bury prep tips only inside amount.
+12. Vary ingredient coverage across the 3 recipes (list every ingredient in ingredients_used OR missing_ingredients):
    - Recipe 1: 100% match — missing_ingredients must be []
    - Recipe 2: ~80–90% match — at most 1–2 essential missing items
    - Recipe 3: ~70–80% match — 2–4 essential missing items
@@ -134,10 +135,10 @@ Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
       { "order": 1, "instruction": "Detailed step description", "duration_minutes": 5 }
     ],
     "ingredients_used": [
-      { "name": "Chicken Breast", "amount": "300g" }
+      { "name": "Chicken Breast", "amount": "300g", "note": "Boneless, skinless" }
     ],
     "missing_ingredients": [
-      { "name": "Fresh Parsley", "amount": "small bunch" }
+      { "name": "Fresh Parsley", "amount": "small bunch", "note": "Chopped" }
     ],
     "nutrition": {
       "calories": 450,
@@ -149,7 +150,10 @@ Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
       "sugar": 8,
       "saturated_fat": 4,
       "cholesterol": 85,
-      "potassium": 420
+      "potassium": 420,
+      "iron": 3,
+      "vitamin_c": 12,
+      "calcium": 80
     }
   }
 ]`;

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/generated_recipe.dart';
 import '../models/merged_shopping_list.dart';
 import '../models/shopping_list.dart';
+import '../utils/ingredient_line_parse.dart';
 import 'local_db_service.dart';
 import 'shopping_list_merge.dart';
 
@@ -31,9 +32,14 @@ class ShoppingListService {
       return raw
           .map((i) {
             final m = Map<String, dynamic>.from(i as Map);
+            final parsed = IngredientLineParse.splitAmountAndNote(
+              m['amount'] as String? ?? '',
+              explicitNote: m['note'] as String?,
+            );
             return ShoppingListItem(
               name: m['name'] as String? ?? '',
-              amount: m['amount'] as String? ?? '',
+              amount: parsed.amount,
+              note: parsed.note,
             );
           })
           .where((i) => i.name.isNotEmpty)
@@ -48,18 +54,26 @@ class ShoppingListService {
     final seen = <String>{};
     final items = <ShoppingListItem>[];
 
-    void add(String name, String amount) {
+    void add(String name, String amount, {String note = ''}) {
       final key = name.trim().toLowerCase();
       if (name.trim().isEmpty || seen.contains(key)) return;
       seen.add(key);
-      items.add(ShoppingListItem(name: name.trim(), amount: amount.trim()));
+      final parsed = IngredientLineParse.splitAmountAndNote(
+        amount,
+        explicitNote: note,
+      );
+      items.add(ShoppingListItem(
+        name: name.trim(),
+        amount: parsed.amount,
+        note: parsed.note,
+      ));
     }
 
     for (final i in recipe.ingredientsUsed) {
-      add(i.name, i.amount);
+      add(i.name, i.amount, note: i.note);
     }
     for (final i in recipe.missingIngredients) {
-      add(i.name, i.amount);
+      add(i.name, i.amount, note: i.note);
     }
     return items;
   }

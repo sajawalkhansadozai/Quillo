@@ -15,7 +15,7 @@ class ShoppingListsScreen extends StatefulWidget {
 class _ShoppingListsScreenState extends State<ShoppingListsScreen> {
   MergedShoppingListResult _merged = MergedShoppingListResult.empty;
   bool _loading = true;
-  bool _showCompleted = false;
+  bool _hideChecked = false;
 
   int get _toBuyCount => _merged.totalCount - _merged.checkedCount;
 
@@ -69,7 +69,7 @@ class _ShoppingListsScreenState extends State<ShoppingListsScreen> {
         title: const Text('Clear completed items?'),
         content: Text(
           'Remove ${_merged.checkedCount} item${_merged.checkedCount == 1 ? '' : 's'} '
-          'you already shopped. Your list will only show what you still need to buy.',
+          'you already shopped.',
         ),
         actions: [
           TextButton(
@@ -86,16 +86,15 @@ class _ShoppingListsScreenState extends State<ShoppingListsScreen> {
     if (ok != true || !mounted) return;
     await ShoppingListService.removeCompletedItems();
     if (!mounted) return;
-    setState(() => _showCompleted = false);
     await _load();
   }
 
-  List<ShoppingListCategory> _categories({required bool completedOnly}) {
+  List<ShoppingListCategory> get _visibleCategories {
     return _merged.categories
         .map((cat) {
-          final items = cat.items
-              .where((i) => completedOnly ? i.checked : !i.checked)
-              .toList();
+          final items = _hideChecked
+              ? cat.items.where((i) => !i.checked).toList()
+              : cat.items;
           return ShoppingListCategory(
             id: cat.id,
             label: cat.label,
@@ -108,288 +107,352 @@ class _ShoppingListsScreenState extends State<ShoppingListsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final toBuy = _categories(completedOnly: false);
-    final completed = _categories(completedOnly: true);
-
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textDark, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Shopping List',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            color: AppColors.textDark,
-            fontFamily: 'Nunito',
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          if (_merged.checkedCount > 0)
-            IconButton(
-              tooltip: 'Clear completed',
-              icon: const Icon(Icons.playlist_remove_rounded,
-                  color: AppColors.textDark),
-              onPressed: _clearCompleted,
-            ),
-        ],
-      ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-          : _merged.totalCount == 0
-              ? RefreshIndicator(
-                  color: AppColors.primary,
-                  onRefresh: _load,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [_EmptyState()],
+      backgroundColor: const Color(0xFFF4F4F6),
+      body: SafeArea(
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              )
+            : Column(
+                children: [
+                  _Header(
+                    hideChecked: _hideChecked,
+                    hasChecked: _merged.checkedCount > 0,
+                    onBack: () => Navigator.pop(context),
+                    onToggleHide: () =>
+                        setState(() => _hideChecked = !_hideChecked),
+                    onClearCompleted: _merged.checkedCount > 0
+                        ? _clearCompleted
+                        : null,
                   ),
-                )
-              : RefreshIndicator(
-                  color: AppColors.primary,
-                  onRefresh: _load,
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(child: _SummaryBar(
-                        recipeCount: _merged.recipeCount,
-                        toBuyCount: _toBuyCount,
-                        completedCount: _merged.checkedCount,
-                      )),
-                      if (toBuy.isEmpty && _merged.checkedCount > 0)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                            child: Text(
-                              'Everything is checked off. Clear completed items '
-                              'before your next shop, or add a new recipe.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMedium.withValues(alpha: 0.9),
-                                height: 1.4,
-                              ),
+                  Expanded(
+                    child: _merged.totalCount == 0
+                        ? RefreshIndicator(
+                            color: AppColors.primary,
+                            onRefresh: _load,
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: const [_EmptyState()],
                             ),
-                          ),
-                        ),
-                      ..._categorySlivers(toBuy, muted: false),
-                      if (_merged.checkedCount > 0) ...[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                            child: InkWell(
-                              onTap: () => setState(
-                                  () => _showCompleted = !_showCompleted),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 10, horizontal: 4),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      _showCompleted
-                                          ? Icons.expand_less_rounded
-                                          : Icons.expand_more_rounded,
-                                      color: AppColors.textMedium,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      _showCompleted
-                                          ? 'Hide completed'
-                                          : 'Show ${_merged.checkedCount} completed',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textMedium,
+                          )
+                        : RefreshIndicator(
+                            color: AppColors.primary,
+                            onRefresh: _load,
+                            child: CustomScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: _SummarySection(
+                                    itemsLeft: _toBuyCount,
+                                    checkedCount: _merged.checkedCount,
+                                    totalCount: _merged.totalCount,
+                                    recipeCount: _merged.recipeCount,
+                                  ),
+                                ),
+                                if (_visibleCategories.isEmpty &&
+                                    _hideChecked &&
+                                    _merged.checkedCount > 0)
+                                  const SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding:
+                                          EdgeInsets.fromLTRB(24, 32, 24, 16),
+                                      child: Text(
+                                        'All items are checked. Tap “Show checked” to see them again.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.textMedium,
+                                          height: 1.4,
+                                        ),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                for (final cat in _visibleCategories) ...[
+                                  SliverToBoxAdapter(
+                                    child: _CategoryHeader(
+                                      label: cat.label,
+                                      checkedCount: _merged.categories
+                                          .firstWhere((c) => c.id == cat.id)
+                                          .items
+                                          .where((i) => i.checked)
+                                          .length,
+                                      totalCount: _merged.categories
+                                          .firstWhere((c) => c.id == cat.id)
+                                          .items
+                                          .length,
+                                    ),
+                                  ),
+                                  SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, i) {
+                                        final item = cat.items[i];
+                                        return _IngredientRow(
+                                          item: item,
+                                          onTap: () => _toggle(item),
+                                        );
+                                      },
+                                      childCount: cat.items.length,
+                                    ),
+                                  ),
+                                ],
+                                const SliverToBoxAdapter(
+                                    child: SizedBox(height: 40)),
+                              ],
                             ),
                           ),
-                        ),
-                        if (_showCompleted) ...[
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                              child: Text(
-                                'ALREADY SHOPPED',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textLight.withValues(alpha: 0.9),
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ),
-                          ),
-                          ..._categorySlivers(completed, muted: true),
-                        ],
-                      ],
-                      const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                    ],
                   ),
-                ),
-    );
-  }
-
-  List<Widget> _categorySlivers(List<ShoppingListCategory> categories,
-      {required bool muted}) {
-    return [
-      for (final cat in categories) ...[
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: Text(
-              cat.label.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textLight,
-                letterSpacing: 1.2,
+                ],
               ),
-            ),
-          ),
-        ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, i) {
-              final item = cat.items[i];
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: _IngredientRow(
-                  item: item,
-                  muted: muted,
-                  onTap: () => _toggle(item),
-                ),
-              );
-            },
-            childCount: cat.items.length,
-          ),
-        ),
-      ],
-    ];
+      ),
+    );
   }
 }
 
-class _SummaryBar extends StatelessWidget {
-  final int recipeCount;
-  final int toBuyCount;
-  final int completedCount;
+// ── Header ────────────────────────────────────────────────────────────────────
 
-  const _SummaryBar({
-    required this.recipeCount,
-    required this.toBuyCount,
-    required this.completedCount,
+class _Header extends StatelessWidget {
+  final bool hideChecked;
+  final bool hasChecked;
+  final VoidCallback onBack;
+  final VoidCallback onToggleHide;
+  final VoidCallback? onClearCompleted;
+
+  const _Header({
+    required this.hideChecked,
+    required this.hasChecked,
+    required this.onBack,
+    required this.onToggleHide,
+    this.onClearCompleted,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$toBuyCount item${toBuyCount == 1 ? '' : 's'} to buy',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
+      padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: AppColors.textDark, size: 18),
+            onPressed: onBack,
+          ),
+          const Expanded(
+            child: Text(
+              'Shopping list',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
                 color: AppColors.textDark,
                 fontFamily: 'Nunito',
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '$recipeCount recipe${recipeCount == 1 ? '' : 's'}'
-              '${completedCount > 0 ? ' · $completedCount already shopped' : ''}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textMedium,
+          ),
+          if (hasChecked)
+            TextButton(
+              onPressed: onToggleHide,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                hideChecked ? 'Show checked' : 'Hide checked',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ],
-        ),
+          if (onClearCompleted != null)
+            IconButton(
+              tooltip: 'Clear completed',
+              icon: const Icon(Icons.playlist_remove_rounded,
+                  color: AppColors.textLight, size: 22),
+              onPressed: onClearCompleted,
+            ),
+        ],
       ),
     );
   }
 }
 
+// ── Summary + progress ────────────────────────────────────────────────────────
+
+class _SummarySection extends StatelessWidget {
+  final int itemsLeft;
+  final int checkedCount;
+  final int totalCount;
+  final int recipeCount;
+
+  const _SummarySection({
+    required this.itemsLeft,
+    required this.checkedCount,
+    required this.totalCount,
+    required this.recipeCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$itemsLeft item${itemsLeft == 1 ? '' : 's'} left',
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$checkedCount of $totalCount in your basket'
+            ' · $recipeCount recipe${recipeCount == 1 ? '' : 's'}',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textMedium,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SegmentedProgress(
+            checkedCount: checkedCount,
+            totalCount: totalCount,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentedProgress extends StatelessWidget {
+  final int checkedCount;
+  final int totalCount;
+
+  const _SegmentedProgress({
+    required this.checkedCount,
+    required this.totalCount,
+  });
+
+  static const _empty = Color(0xFFE8E4DC);
+
+  @override
+  Widget build(BuildContext context) {
+    if (totalCount <= 0) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Cap segment count so bars stay readable on long lists.
+        final segments = totalCount.clamp(1, 40);
+        final filledRatio =
+            totalCount == 0 ? 0.0 : checkedCount / totalCount;
+        final filled = (segments * filledRatio).round().clamp(0, segments);
+
+        return Row(
+          children: List.generate(segments, (i) {
+            final isFilled = i < filled;
+            return Expanded(
+              child: Container(
+                height: 8,
+                margin: EdgeInsets.only(
+                  right: i == segments - 1 ? 0 : 3,
+                ),
+                decoration: BoxDecoration(
+                  color: isFilled ? AppColors.primary : _empty,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+// ── Category ──────────────────────────────────────────────────────────────────
+
+class _CategoryHeader extends StatelessWidget {
+  final String label;
+  final int checkedCount;
+  final int totalCount;
+
+  const _CategoryHeader({
+    required this.label,
+    required this.checkedCount,
+    required this.totalCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label ($checkedCount of $totalCount)',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFE6E6EC)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Row ───────────────────────────────────────────────────────────────────────
+
 class _IngredientRow extends StatelessWidget {
   final MergedShoppingItem item;
-  final bool muted;
   final VoidCallback onTap;
 
   const _IngredientRow({
     required this.item,
-    this.muted = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final checked = item.checked || muted;
-    return GestureDetector(
+    final checked = item.checked;
+    return InkWell(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: muted ? const Color(0xFFF8F8FA) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: checked
-                ? AppColors.primary.withValues(alpha: muted ? 0.2 : 0.4)
-                : AppColors.chipBorder,
-          ),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               width: 24,
               height: 24,
+              margin: const EdgeInsets.only(top: 1),
               decoration: BoxDecoration(
-                color: checked
-                    ? AppColors.primary.withValues(alpha: muted ? 0.5 : 1)
-                    : const Color(0xFFF3F3F3),
-                borderRadius: BorderRadius.circular(7),
+                color: checked ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: checked
-                      ? AppColors.primary.withValues(alpha: muted ? 0.5 : 1)
-                      : const Color(0xFFE0E0E0),
+                  color: checked ? AppColors.primary : const Color(0xFFC8C8D4),
+                  width: 1.5,
                 ),
               ),
               child: checked
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  ? const Icon(Icons.check, size: 15, color: Colors.white)
                   : null,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,30 +460,53 @@ class _IngredientRow extends StatelessWidget {
                   Text(
                     item.name,
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
                       color: checked
                           ? AppColors.textLight
                           : AppColors.textDark,
                       decoration:
                           checked ? TextDecoration.lineThrough : null,
+                      decorationColor: AppColors.textLight,
                     ),
                   ),
-                  if (item.amount.isNotEmpty)
+                  if (item.note.isNotEmpty) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      item.amount,
+                      item.note,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
+                        height: 1.3,
                         color: checked
                             ? AppColors.textLight
                             : AppColors.textMedium,
                         decoration:
                             checked ? TextDecoration.lineThrough : null,
+                        decorationColor: AppColors.textLight,
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
+            if (item.amount.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              Text(
+                item.amount,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: checked
+                      ? AppColors.textLight
+                      : AppColors.textMedium,
+                  decoration:
+                      checked ? TextDecoration.lineThrough : null,
+                  decorationColor: AppColors.textLight,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -440,7 +526,7 @@ class _EmptyState extends StatelessWidget {
           Container(
             width: 72,
             height: 72,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.primaryLight,
               shape: BoxShape.circle,
             ),

@@ -44,6 +44,9 @@ function extractSpoonacularNutrition(
     else if (name === 'saturated fat') values.saturated_fat = amount;
     else if (name === 'cholesterol') values.cholesterol = amount;
     else if (name === 'potassium') values.potassium = amount;
+    else if (name === 'iron') values.iron = amount;
+    else if (name === 'vitamin c') values.vitamin_c = amount;
+    else if (name === 'calcium') values.calcium = amount;
   }
   return values;
 }
