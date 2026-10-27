@@ -1146,11 +1146,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Header ─────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
+    final canPop = Navigator.of(context).canPop();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
       child: Row(
         children: [
-          const SizedBox(width: 40),
+          if (canPop)
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+              color: AppColors.textDark,
+            )
+          else
+            const SizedBox(width: 40),
           const Expanded(
             child: Text(
               'Settings',
@@ -1163,7 +1171,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 38),
+          const SizedBox(width: 40),
         ],
       ),
     );

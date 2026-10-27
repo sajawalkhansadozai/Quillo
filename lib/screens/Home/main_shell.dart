@@ -7,10 +7,13 @@ import '../../services/notification_prefs_service.dart';
 import '../../services/subscription_service.dart';
 import '../../widgets/ad_banner.dart';
 import '../../widgets/celebration_overlays.dart';
+import '../../services/pantry_service.dart';
+import '../../services/pantry_sync_service.dart';
+import '../pantry/kitchen_hub_screen.dart';
+import '../paywall_screen.dart';
 import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
-import 'profile_screen.dart';
 import 'scan_screen.dart';
 
 class MainShell extends StatefulWidget {
@@ -28,8 +31,17 @@ class _MainShellState extends State<MainShell> {
       DeepLinkService.consumePendingIfAny();
       SubscriptionService.linkUserAfterAuth();
       NotificationPrefsService.syncToSupabase();
+      _syncPantry();
       _maybeShowStreakCelebration();
     });
+  }
+
+  Future<void> _syncPantry() async {
+    try {
+      await PantrySync.pullAndMerge();
+      await PantryService.mergeCloudActivity();
+      await PantrySync.pushAll();
+    } catch (_) {}
   }
 
   Future<void> _maybeShowStreakCelebration() async {
@@ -79,7 +91,7 @@ class _MainShellState extends State<MainShell> {
     ExploreScreen(key: _exploreKey),
     const ScanPlaceholderScreen(),
     const SavedScreen(),
-    const ProfileScreen(),
+    const KitchenHubScreen(asTab: true),
   ];
 
   /// Refresh premium when opening a tab that shows ads (checklist 4.3).
@@ -88,12 +100,38 @@ class _MainShellState extends State<MainShell> {
       _showScanSheet(context);
       return;
     }
+    // Smart Pantry is a premium feature — free users hit the paywall.
+    if (i == 4) {
+      await SubscriptionService.refreshPremiumStatus();
+      if (!await SubscriptionService.isPremium()) {
+        if (!mounted) return;
+        await _openPaywall();
+        if (!await SubscriptionService.isPremium()) return;
+      }
+    }
     if (i == 0 || i == 1) {
       await SubscriptionService.refreshPremiumStatus();
     }
     if (i == 0) _homeKey.currentState?.refresh();
     if (i == 1) _exploreKey.currentState?.refresh();
     if (mounted) setState(() => _currentIndex = i);
+  }
+
+  Future<void> _openPaywall() async {
+    await Navigator.of(context).push<bool>(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const PaywallScreen(),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+        fullscreenDialog: true,
+      ),
+    );
   }
 
   @override
@@ -162,7 +200,7 @@ class _QuilloTabBar extends StatelessWidget {
               _TabItem(icon: Icons.explore_rounded, label: 'Explore', index: 1, current: currentIndex, onTap: onTap),
               _ScanTabItem(onTap: () => onTap(2)),
               _TabItem(icon: Icons.bookmark_rounded, label: 'Saved', index: 3, current: currentIndex, onTap: onTap),
-              _TabItem(icon: Icons.person_rounded, label: 'Profile', index: 4, current: currentIndex, onTap: onTap),
+              _TabItem(icon: Icons.kitchen_rounded, label: 'Pantry', index: 4, current: currentIndex, onTap: onTap),
             ],
           ),
         ),

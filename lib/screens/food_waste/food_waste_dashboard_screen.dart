@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../services/food_waste_service.dart';
 import '../../services/in_app_notification_service.dart';
 import '../../services/subscription_service.dart';
@@ -89,22 +88,6 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     });
   }
 
-  Future<void> _shareStats() async {
-    final money = _stats.moneySavedGbp.toStringAsFixed(0);
-    final kg = _stats.kgAvoided.toStringAsFixed(0);
-    final text =
-        "I've saved £$money and avoided ${kg}kg of food waste with Quillo. "
-        '${_stats.weekStreak} week streak · ${_stats.totalScans} scans';
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Stats copied — paste to share'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   Future<void> _openPaywall() async {
     await Navigator.of(context).push(
       PageRouteBuilder(
@@ -175,13 +158,6 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
                                           color: _muted,
                                           fontWeight: FontWeight.w500,
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Center(
-                                      child: TextButton(
-                                        onPressed: _shareStats,
-                                        child: const Text('Share my impact'),
                                       ),
                                     ),
                                   ]
@@ -476,7 +452,7 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    for (final m in milestones.take(4))
+                    for (final m in milestones)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
@@ -525,7 +501,6 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     final best = weeks.isEmpty
         ? null
         : weeks.reduce((a, b) => a.amountGbp >= b.amountGbp ? a : b);
-    final hasAny = periodTotal > 0;
 
     return _Card(
       child: Column(
@@ -639,7 +614,12 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
               _LegendDot(color: _goldLine, label: 'Running total'),
             ],
           ),
-          if (!hasAny) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Weeks start Monday',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          if (thisWeek <= 0) ...[
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
@@ -650,14 +630,27 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
               ),
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text(
-                      'Nothing logged yet',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _ink,
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Nothing logged yet',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'this week · ${_monthName(DateTime.now())} £0.00',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _muted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   GestureDetector(
@@ -869,6 +862,14 @@ class _FoodWasteDashboardScreenState extends State<FoodWasteDashboardScreen>
     );
   }
 
+  static String _monthName(DateTime d) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return months[d.month - 1];
+  }
+
   static String _fmtDate(DateTime d) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -995,7 +996,7 @@ class _WeeklyChart extends StatelessWidget {
     final maxBar = weeks
         .map((w) => w.amountGbp)
         .fold<double>(0, (a, b) => a > b ? a : b);
-    final chartMax = (maxBar <= 0 ? 20.0 : maxBar * 1.25).clamp(5.0, 9999.0);
+    final chartMax = _axisMax(maxBar <= 0 ? 20 : maxBar * 1.15);
 
     var running = 0.0;
     final cumulatives = <double>[];
@@ -1013,17 +1014,28 @@ class _WeeklyChart extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final w = constraints.maxWidth;
-              final h = constraints.maxHeight - 18;
+              final h = constraints.maxHeight - 18 - 16;
               final n = weeks.length;
               final slot = w / n;
 
               return Stack(
                 children: [
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Text(
+                      '£${chartMax.round()}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: _FoodWasteDashboardScreenState._muted,
+                      ),
+                    ),
+                  ),
                   // Bars
                   Positioned(
                     left: 0,
-                    right: 0,
-                    bottom: 18,
+                    right: 28,
+                    top: 16,
                     height: h,
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1054,8 +1066,8 @@ class _WeeklyChart extends StatelessWidget {
                   // Running total line
                   Positioned(
                     left: 0,
-                    right: 0,
-                    bottom: 18,
+                    right: 28,
+                    top: 16,
                     height: h,
                     child: CustomPaint(
                       painter: _RunningLinePainter(
@@ -1068,7 +1080,7 @@ class _WeeklyChart extends StatelessWidget {
                   // X labels
                   Positioned(
                     left: 0,
-                    right: 0,
+                    right: 28,
                     bottom: 0,
                     child: Row(
                       children: [
@@ -1097,6 +1109,14 @@ class _WeeklyChart extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  static double _axisMax(double raw) {
+    const steps = [10, 20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 500, 1000];
+    for (final step in steps) {
+      if (raw <= step) return step.toDouble();
+    }
+    return raw.ceilToDouble();
   }
 
   String _label(DateTime d, bool show) {

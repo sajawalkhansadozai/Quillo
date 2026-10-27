@@ -16,18 +16,19 @@ class RecipeSearchConfig {
   /// Active provider for Explore web search. Change this line to switch APIs.
   static const String provider = 'edamam';
 
-  /// Max Explore search results: Supabase catalog first, Edamam fills the rest.
-  static const int exploreSearchLimit = 5;
+  /// Max Explore search results per page: Supabase catalog first, Edamam fills.
+  /// Kept high so users see diverse options; pages are shared via recipe_cache.
+  static const int exploreSearchLimit = 20;
 
   /// Max AI image upgrades per batch (Explore / Home / Saved / scan).
   /// High enough that a full first page (+ prefetch) can all get Gemini images.
-  static const int exploreAiImageUpgradeLimit = 25;
+  static const int exploreAiImageUpgradeLimit = 40;
 
   /// Show a skeleton if search is still loading after this delay.
   static const Duration searchSkeletonAfter = Duration(seconds: 2);
 
   /// Abort / offer retry if search takes longer than this.
-  static const Duration searchTimeout = Duration(seconds: 5);
+  static const Duration searchTimeout = Duration(seconds: 12);
 
   /// Label shown in Explore search (derived from provider).
   static String get exploreSearchHint {

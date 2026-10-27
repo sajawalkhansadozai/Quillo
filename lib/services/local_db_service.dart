@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/generated_recipe.dart';
+import '../models/pantry_item.dart';
 import '../models/shopping_list.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,11 +21,12 @@ class LocalDbService {
     final dbPath = join(await getDatabasesPath(), 'quillo.db');
     return openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await _createSavedRecipesTable(db);
         await _createShoppingListsTable(db);
         await _createSearchCacheTable(db);
+        await _createPantryItemsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -32,6 +34,9 @@ class LocalDbService {
         }
         if (oldVersion < 3) {
           await _createSearchCacheTable(db);
+        }
+        if (oldVersion < 4) {
+          await _createPantryItemsTable(db);
         }
       },
     );
@@ -65,6 +70,16 @@ class LocalDbService {
         search_term TEXT PRIMARY KEY,
         data        TEXT NOT NULL,
         cached_at   TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createPantryItemsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pantry_items (
+        id         TEXT PRIMARY KEY,
+        data       TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       )
     ''');
   }
@@ -147,6 +162,72 @@ class LocalDbService {
     await db.delete('saved_recipes');
     await db.delete('shopping_lists');
     await db.delete('search_cache');
+    await db.delete('pantry_items');
+  }
+
+  // ── Pantry items ────────────────────────────────────────────────────────────
+
+  static Future<void> savePantryItem(
+    PantryItem item, {
+    DateTime? updatedAt,
+  }) async {
+    final db = await _database;
+    await db.insert(
+      'pantry_items',
+      {
+        'id': item.id,
+        'data': jsonEncode(item.toJson()),
+        'updated_at': (updatedAt ?? DateTime.now()).toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<Map<String, DateTime>> loadPantryUpdatedAts() async {
+    final db = await _database;
+    final rows = await db.query('pantry_items', columns: ['id', 'updated_at']);
+    final out = <String, DateTime>{};
+    for (final row in rows) {
+      final id = row['id'] as String?;
+      final at = DateTime.tryParse(row['updated_at'] as String? ?? '');
+      if (id != null && at != null) out[id] = at;
+    }
+    return out;
+  }
+
+  static Future<PantryItem?> loadPantryItem(String id) async {
+    final db = await _database;
+    final rows = await db.query(
+      'pantry_items',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return _pantryItemFromRow(rows.first);
+  }
+
+  static Future<List<PantryItem>> loadAllPantryItems() async {
+    final db = await _database;
+    final rows = await db.query('pantry_items', orderBy: 'updated_at DESC');
+    return rows
+        .map(_pantryItemFromRow)
+        .whereType<PantryItem>()
+        .toList();
+  }
+
+  static PantryItem? _pantryItemFromRow(Map<String, Object?> row) {
+    try {
+      final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+      return PantryItem.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> deletePantryItem(String id) async {
+    final db = await _database;
+    await db.delete('pantry_items', where: 'id = ?', whereArgs: [id]);
   }
 
   // ── Offline search cache (normalized term → recipe list) ───────────────────

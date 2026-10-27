@@ -52,6 +52,13 @@ class ScanResult {
 // ScanService
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// What the photo is, so pantry adds don't spend a recipe scan credit.
+enum ScanPurpose {
+  recipe,
+  pantryReceipt,
+  pantryFood,
+}
+
 class ScanService {
   static final _client = Supabase.instance.client;
   static final _picker = ImagePicker();
@@ -76,7 +83,10 @@ class ScanService {
 
   // ── Full scan pipeline: compress → upload → OCR ─────────────────────────────
 
-  static Future<ScanResult> runScan(XFile imageFile) async {
+  static Future<ScanResult> runScan(
+    XFile imageFile, {
+    ScanPurpose purpose = ScanPurpose.recipe,
+  }) async {
     final user = _client.auth.currentUser;
     if (user == null) throw const ScanException('You must be signed in to scan.');
 
@@ -132,6 +142,7 @@ class ScanService {
           'image_url': signedUrl,
           'scan_id': scanId,
           'user_id': user.id,
+          'purpose': purpose.name,
         },
       );
     } catch (e) {

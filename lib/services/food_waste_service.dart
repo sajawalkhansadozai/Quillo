@@ -138,10 +138,10 @@ class FoodWasteService {
     int totalScans,
   ) {
     return [
-      WasteMilestone(label: 'First scan', unlocked: totalScans >= 1),
-      WasteMilestone(label: '10 scans', unlocked: totalScans >= 10),
       WasteMilestone(label: '£100 reached', unlocked: moneySaved >= 100),
       WasteMilestone(label: '£500 reached', unlocked: moneySaved >= 500),
+      WasteMilestone(label: 'First scan', unlocked: totalScans >= 1),
+      WasteMilestone(label: '10 scans', unlocked: totalScans >= 10),
       WasteMilestone(label: '£1,000 reached', unlocked: moneySaved >= 1000),
     ];
   }

@@ -252,10 +252,12 @@ serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const pageStart = externalOffset + 1;
     const pageEnd = externalOffset + cap;
+    const CURSOR_POSITION = 0;
 
-    // Serve from shared recipe_cache when a full page is already stored.
-    // Exact normalised term only — dietary prefs applied AFTER fetch (1.3).
-    if (excludeIds.size === 0) {
+    const isCursorPayload = (payload: unknown): payload is { __cursor?: boolean; next_url?: string } =>
+      !!payload && typeof payload === 'object' && (payload as { __cursor?: boolean }).__cursor === true;
+
+    const loadCachePage = async () => {
       const { data: cachedRows } = await admin
         .from('recipe_cache')
         .select('result_position, recipe_payload')
@@ -265,24 +267,102 @@ serve(async (req: Request) => {
         .order('result_position', { ascending: true });
 
       // Fallback for rows written before normalised_search_term existed.
-      const exactRows = cachedRows && cachedRows.length > 0
-        ? cachedRows
-        : (await admin
-            .from('recipe_cache')
-            .select('result_position, recipe_payload')
-            .eq('search_term', cacheTerm)
-            .gte('result_position', pageStart)
-            .lte('result_position', pageEnd)
-            .order('result_position', { ascending: true })).data;
+      if (cachedRows && cachedRows.length > 0) return cachedRows;
+      const { data: legacyRows } = await admin
+        .from('recipe_cache')
+        .select('result_position, recipe_payload')
+        .eq('search_term', cacheTerm)
+        .gte('result_position', pageStart)
+        .lte('result_position', pageEnd)
+        .order('result_position', { ascending: true });
+      return legacyRows ?? [];
+    };
 
-      if (exactRows && exactRows.length >= Math.min(cap, 3)) {
+    const countCachedBeyond = async (afterPosition: number): Promise<number> => {
+      const { count } = await admin
+        .from('recipe_cache')
+        .select('result_position', { count: 'exact', head: true })
+        .eq('normalised_search_term', cacheTerm)
+        .gt('result_position', afterPosition);
+      if ((count ?? 0) > 0) return count ?? 0;
+      const { count: legacyCount } = await admin
+        .from('recipe_cache')
+        .select('result_position', { count: 'exact', head: true })
+        .eq('search_term', cacheTerm)
+        .gt('result_position', afterPosition);
+      return legacyCount ?? 0;
+    };
+
+    const loadEdamamCursor = async (): Promise<string | undefined> => {
+      const { data } = await admin
+        .from('recipe_cache')
+        .select('recipe_payload')
+        .eq('normalised_search_term', cacheTerm)
+        .eq('result_position', CURSOR_POSITION)
+        .maybeSingle();
+      const payload = data?.recipe_payload;
+      if (isCursorPayload(payload) && typeof payload.next_url === 'string') {
+        return payload.next_url;
+      }
+      return undefined;
+    };
+
+    const saveEdamamCursor = async (nextUrl?: string) => {
+      try {
+        if (!nextUrl) {
+          await admin
+            .from('recipe_cache')
+            .delete()
+            .eq('search_term', cacheTerm)
+            .eq('result_position', CURSOR_POSITION);
+          return;
+        }
+        await admin.from('recipe_cache').upsert({
+          search_term: cacheTerm,
+          normalised_search_term: cacheTerm,
+          recipe_title: '__edamam_cursor__',
+          result_position: CURSOR_POSITION,
+          recipe_id: null,
+          recipe_payload: { __cursor: true, next_url: nextUrl },
+          cached_at: new Date().toISOString(),
+        }, { onConflict: 'search_term,result_position' });
+      } catch (err) {
+        console.warn('edamam cursor save failed:', err);
+      }
+    };
+
+    // Always try shared recipe_cache first (including load-more with exclude_ids).
+    // This is what makes the same search instant across devices.
+    //
+    // Important: an incomplete FIRST page (e.g. only 11 cached rows for a
+    // limit of 20) must NOT be treated as done — fall through to Edamam so
+    // users aren't stuck on a short stale page for minutes.
+    {
+      const exactRows = (await loadCachePage()).filter((row) =>
+        !isCursorPayload(row.recipe_payload)
+      );
+      const remainingInCache = exactRows.length > 0
+        ? await countCachedBeyond(pageEnd)
+        : 0;
+      const cursor = exactRows.length > 0 ? await loadEdamamCursor() : undefined;
+      const fullPage = exactRows.length >= cap;
+      const loadMorePartial = externalOffset > 0 && exactRows.length > 0;
+      const knownComplete =
+        exactRows.length > 0 && remainingInCache === 0 && !cursor;
+
+      if (fullPage || loadMorePartial || (knownComplete && externalOffset > 0)) {
         const recipes = exactRows
           .map((row) => row.recipe_payload as QuilloRecipePayload)
-          .filter(Boolean);
+          .filter((recipe) => {
+            if (!recipe?.title) return false;
+            if (recipe.id && excludeIds.has(String(recipe.id))) return false;
+            return true;
+          });
         const filtered = applyRecipePreferences(recipes, prefs, { limit: cap });
+        const hasMore = remainingInCache > 0 || !!cursor || exactRows.length >= cap;
         await recordSearchActivity(admin, user.id, rawQuery, cacheTerm, exactRows.length);
         console.log(
-          `search-catalog: cache hit q="${cacheTerm}" page=${pageStart}-${pageEnd} n=${filtered.length}`,
+          `search-catalog: cache hit q="${cacheTerm}" page=${pageStart}-${pageEnd} n=${filtered.length} more=${hasMore}`,
         );
         return new Response(
           JSON.stringify({
@@ -293,7 +373,7 @@ serve(async (req: Request) => {
             gemini_image_count: countGeminiImages(filtered),
             provider_image_count: 0,
             images_pending_upgrade: 0,
-            has_more: exactRows.length >= cap,
+            has_more: hasMore,
             next_offset: externalOffset + exactRows.length,
             from_cache: true,
             preferences_applied: prefs,
@@ -302,6 +382,12 @@ serve(async (req: Request) => {
               : {}),
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (exactRows.length > 0 && externalOffset === 0 && !fullPage) {
+        console.log(
+          `search-catalog: partial cache q="${cacheTerm}" n=${exactRows.length}/${cap} — topping up from provider`,
         );
       }
     }
@@ -323,6 +409,7 @@ serve(async (req: Request) => {
     let imagesPendingUpgrade = 0;
     let externalFetched = 0;
     let hasMore = false;
+    let edamamNextUrl: string | undefined;
 
     // Always query the external provider for Explore text search so DB noise
     // (receipt ingredient leftovers) can't crowd out real matches.
@@ -340,21 +427,28 @@ serve(async (req: Request) => {
         ? spoonacularFilters
         : undefined;
 
+      // Edamam v2 pagination needs the saved continuation URL for page 2+.
+      const continueUrl = externalOffset > 0 ? await loadEdamamCursor() : undefined;
+      // Pull a full provider page (up to 20) so we can cache more for other devices.
+      const fetchSize = Math.min(Math.max(cap, 20), 20);
+
       // Use synonym-expanded query for APIs (prawn → "prawn shrimp").
       let search = await searchByProvider(
         apiQuery,
-        cap,
+        fetchSize,
         mode,
         creds,
         preferenceFilters,
         externalOffset,
         spoonFilters,
+        continueUrl,
       );
       warnings.push(...search.warnings);
+      edamamNextUrl = search.edamamNextUrl;
 
       // Cuisine-only filters can over-constrain Edamam. Retry WITHOUT cuisine
       // but KEEP dietary + max cook time (hard constraints — never relax).
-      if (search.merged.length === 0 && (preferenceFilters || spoonFilters)) {
+      if (search.merged.length === 0 && (preferenceFilters || spoonFilters) && externalOffset === 0) {
         const dietOnlyEdamam = mapPreferencesToEdamamFilters(
           [],
           prefs.dietary,
@@ -373,24 +467,25 @@ serve(async (req: Request) => {
           );
           const retry = await searchByProvider(
             apiQuery,
-            cap,
+            fetchSize,
             mode,
             creds,
             softEdamam,
-            externalOffset,
+            0,
             softSpoon,
           );
           warnings.push(...retry.warnings);
           if (retry.merged.length > 0) {
             warnings.push('Relaxed cuisine preference filters (dietary + cook time still applied)');
             search = retry;
+            edamamNextUrl = retry.edamamNextUrl;
           }
         }
       }
 
       externalFetched = search.merged.length;
       console.log(
-        `search-catalog: q="${apiQuery}" local=${localWithFuzzy.length} external=${externalFetched} mode=${mode}`,
+        `search-catalog: q="${apiQuery}" local=${localWithFuzzy.length} external=${externalFetched} mode=${mode} offset=${externalOffset}`,
       );
 
       if (search.merged.length > 0) {
@@ -420,29 +515,33 @@ serve(async (req: Request) => {
 
         externalRecipes = externalRecipes
           .filter((r) => !excludeIds.has(String(r.id ?? '')));
-        hasMore = externalFetched >= cap;
+        hasMore = externalFetched >= fetchSize || !!edamamNextUrl;
       } else if (!creds.edamamAppId || !creds.edamamAppKey) {
         warnings.push('Edamam credentials missing — only database recipes are searchable');
+      } else if (externalOffset > 0 && !continueUrl) {
+        warnings.push('No more cached pages and no Edamam continuation — end of results');
+        hasMore = false;
       }
     }
 
-    const merged = mergeCatalogResults(localWithFuzzy, externalRecipes, apiQuery, cap);
+    // On load-more, prefer newly fetched external recipes only (local already shown).
+    const merged = externalOffset > 0
+      ? mergeCatalogResults([], externalRecipes, apiQuery, Math.max(externalRecipes.length, cap))
+      : mergeCatalogResults(localWithFuzzy, externalRecipes, apiQuery, Math.max(externalRecipes.length, cap));
     // Hard dietary + cook-time + exclusions — never fall back to unfiltered.
-    let recipes = applyRecipePreferences(merged, prefs, { limit: cap });
+    let recipes = applyRecipePreferences(merged, prefs, { limit: Math.max(merged.length, cap) });
     if (recipes.length === 0 && merged.length > 0) {
       warnings.push(
         'All matches violated dietary, cook-time, skill, or excluded-ingredient preferences',
       );
     }
     const byId = new Map(recipes.map((r) => [r.id ?? r.title, r]));
-    recipes = merged
-      .filter((r) => byId.has(r.id ?? r.title))
-      .slice(0, cap);
-    if (recipes.length === 0) recipes = [...byId.values()].slice(0, cap);
+    const ranked = merged.filter((r) => byId.has(r.id ?? r.title));
+    if (ranked.length === 0) ranked.push(...byId.values());
 
-    // Persist this page into recipe_cache for all users.
+    // Persist the full fetched batch into recipe_cache for all users / devices.
     try {
-      const upserts = recipes.map((recipe, index) => ({
+      const upserts = ranked.map((recipe, index) => ({
         search_term: cacheTerm,
         normalised_search_term: cacheTerm,
         recipe_title: recipe.title ?? '',
@@ -456,12 +555,16 @@ serve(async (req: Request) => {
           onConflict: 'search_term,result_position',
         });
       }
+      await saveEdamamCursor(edamamNextUrl);
       await recordSearchActivity(admin, user.id, rawQuery, cacheTerm, upserts.length);
     } catch (cacheErr) {
       console.warn('recipe_cache write failed:', cacheErr);
     }
 
-    const catalogCount = localWithFuzzy.length;
+    recipes = ranked.slice(0, cap);
+    hasMore = hasMore || ranked.length > cap || !!edamamNextUrl;
+
+    const catalogCount = externalOffset > 0 ? 0 : localWithFuzzy.length;
     const geminiImageCount = countGeminiImages(recipes);
 
     return new Response(
@@ -473,8 +576,8 @@ serve(async (req: Request) => {
         gemini_image_count: geminiImageCount,
         provider_image_count: recipes.length - geminiImageCount,
         images_pending_upgrade: imagesPendingUpgrade,
-        has_more: hasMore,
-        next_offset: externalOffset + externalFetched,
+        has_more: hasMore && recipes.length > 0,
+        next_offset: externalOffset + Math.max(ranked.length, externalFetched, recipes.length),
         preferences_applied: prefs,
         ...(hasAnyEdamamFilter(edamamFilters) ? { applied_filters: edamamFilters } : {}),
         ...(warnings.length > 0 ? { warning: warnings.join('; ') } : {}),

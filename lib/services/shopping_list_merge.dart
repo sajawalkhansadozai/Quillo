@@ -55,7 +55,11 @@ class ShoppingListMerge {
         name: _titleCase(first.name),
         amount: _mergeAmounts(amounts),
         note: notes.isEmpty ? '' : notes.first,
-        categoryId: _guessCategory(first.name),
+        // Pantry "Add to list" stays in its own section, even when the
+        // name would otherwise sort into Produce, Meat, or Bakery.
+        categoryId: refs.every((r) => r.list.id == ShoppingList.pantryRestockId)
+            ? 'pantry'
+            : _guessCategory(first.name),
         checked: allChecked,
         sources: refs
             .map(
@@ -94,7 +98,10 @@ class ShoppingListMerge {
 
     return MergedShoppingListResult(
       categories: categories,
-      recipeCount: lists.length,
+      recipeCount: lists
+          .where((l) =>
+              l.id != ShoppingList.pantryRestockId && l.items.isNotEmpty)
+          .length,
     );
   }
 

@@ -7,7 +7,7 @@
 //   edamam+bigoven  — Edamam first, BigOven fills gaps (default)
 //   all             — all three in parallel (compare during evaluation)
 
-import { searchEdamam } from './edamam.ts';
+import { searchEdamam, searchEdamamContinue } from './edamam.ts';
 import { searchBigOven } from './bigoven.ts';
 import { searchSpoonacular } from './spoonacular.ts';
 import { mergeAndRankRecipes } from './recipe_search_merge.ts';
@@ -55,6 +55,8 @@ export interface ProviderSearchResult {
   spoonacular: NormalizedSearchRecipe[];
   merged: NormalizedSearchRecipe[];
   warnings: string[];
+  /** Edamam API v2 continuation URL for the next page. */
+  edamamNextUrl?: string;
 }
 
 export async function searchByProvider(
@@ -65,11 +67,13 @@ export async function searchByProvider(
   edamamFilters?: EdamamSearchFilters,
   offset = 0,
   spoonacularFilters?: SpoonacularSearchFilters,
+  edamamContinueUrl?: string,
 ): Promise<ProviderSearchResult> {
   const warnings: string[] = [];
   let edamam: NormalizedSearchRecipe[] = [];
   let bigoven: NormalizedSearchRecipe[] = [];
   let spoonacular: NormalizedSearchRecipe[] = [];
+  let edamamNextUrl: string | undefined;
 
   const hasEdamam = !!(creds.edamamAppId && creds.edamamAppKey);
   const hasBigOven = !!creds.bigovenKey;
@@ -80,7 +84,26 @@ export async function searchByProvider(
       warnings.push('Edamam not configured (EDAMAM_APP_ID, EDAMAM_APP_KEY)');
       return;
     }
-    edamam = await searchEdamam(query, creds.edamamAppId!, creds.edamamAppKey!, limit, edamamFilters, offset);
+    // Page 2+ must use the continuation URL — Edamam v2 ignores from/to.
+    if (edamamContinueUrl) {
+      const page = await searchEdamamContinue(edamamContinueUrl, query);
+      edamam = page.recipes;
+      edamamNextUrl = page.nextUrl;
+    } else if (offset > 0) {
+      warnings.push('Edamam page requested without continuation URL — skipping duplicate first page');
+      edamam = [];
+    } else {
+      const page = await searchEdamam(
+        query,
+        creds.edamamAppId!,
+        creds.edamamAppKey!,
+        limit,
+        edamamFilters,
+        0,
+      );
+      edamam = page.recipes;
+      edamamNextUrl = page.nextUrl;
+    }
     if (edamam.length === 0) warnings.push('Edamam returned no results');
   };
 
@@ -138,5 +161,5 @@ export async function searchByProvider(
     ? mergeAndRankRecipes(batches, query, limit, primary)
     : [];
 
-  return { mode, edamam, bigoven, spoonacular, merged, warnings };
+  return { mode, edamam, bigoven, spoonacular, merged, warnings, edamamNextUrl };
 }

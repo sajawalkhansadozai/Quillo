@@ -41,6 +41,9 @@ class ShoppingListItem {
 }
 
 class ShoppingList {
+  /// Items added from the pantry ("Add to list"), not from a recipe.
+  static const pantryRestockId = 'pantry_restock';
+
   final String id;
   final String recipeName;
   final String? recipeId;

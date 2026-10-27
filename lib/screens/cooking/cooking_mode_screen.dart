@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/generated_recipe.dart';
+import '../../models/pantry_item.dart';
 import '../../theme/app_theme.dart';
+import '../../services/pantry_service.dart';
 import '../../services/recipe_rating_service.dart';
 import '../../services/recipe_service.dart';
 import '../../widgets/recipe_rating_section.dart';
@@ -34,6 +36,9 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   bool _ratingPromptShown = false;
   int? _userRating;
   bool _imageUpgrading = false;
+  List<PantryItem> _pantryMatches = [];
+  bool _pantryChecked = false;
+  bool _pantryMarked = false;
 
   Timer? _countdown;
   int? _timerSecondsLeft;
@@ -48,6 +53,49 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
     _recipe = widget.recipe;
     _refreshUserRating();
     unawaited(_upgradeHeroImage());
+    unawaited(_loadPantryMatches());
+  }
+
+  Future<void> _loadPantryMatches() async {
+    final names = _allIngredients.map((i) => i.name);
+    final matches = await PantryService.matchingIngredients(names);
+    if (!mounted) return;
+    setState(() {
+      _pantryMatches = matches;
+      _pantryChecked = true;
+    });
+  }
+
+  Future<void> _markPantryUsed() async {
+    if (_pantryMatches.isEmpty || _pantryMarked) return;
+    var finished = 0;
+    var reduced = 0;
+    for (final ing in _allIngredients) {
+      final found = await PantryService.matchingIngredients([ing.name]);
+      if (found.isEmpty) continue;
+      final outcome =
+          await PantryService.applyRecipeUse(found.first, ing.amount);
+      if (outcome == PantryService.useFinished) finished++;
+      if (outcome == PantryService.useReduced) reduced++;
+    }
+    if (!mounted) return;
+    setState(() => _pantryMarked = true);
+    final changed = finished + reduced;
+    final message = changed == 0
+        ? 'Left pantry items as they are. The recipe amounts did not match.'
+        : finished > 0 && reduced == 0
+            ? (finished == 1
+                ? '1 pantry item used up'
+                : '$finished pantry items used up')
+            : 'Pantry updated'
+                '${finished > 0 ? ' · $finished used up' : ''}'
+                '${reduced > 0 ? ' · $reduced reduced' : ''}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _upgradeHeroImage() async {
@@ -680,6 +728,53 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
           ),
         ),
         const SizedBox(height: 24),
+        if (_pantryChecked && _pantryMatches.isNotEmpty && !_pantryMarked)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              children: [
+                Text(
+                  'Used ${_pantryMatches.length == 1 ? _pantryMatches.first.name : '${_pantryMatches.length} pantry items'}?',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _markPantryUsed,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _color,
+                      side: BorderSide(color: _color),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Update pantry',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (_pantryMarked)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Pantry updated',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMedium,
+              ),
+            ),
+          ),
         if (_userRating == null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),

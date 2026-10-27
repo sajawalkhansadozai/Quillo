@@ -54,6 +54,23 @@ Return ONLY a valid JSON array. No markdown, no explanation, no code fences:
 
 If no food items found, return: []`;
 
+const FOOD_PROMPT = `You are looking at a photo of food or ingredients on a counter, in a fridge, or in a bag. This is not a receipt.
+
+List each distinct edible ingredient you can see.
+- Include produce, meat, dairy, pantry goods, drinks, and condiments.
+- Ignore plates, packaging branding, people, and non-food objects.
+- Estimate a quantity when it is obvious (a few tomatoes, one bottle). Otherwise use 1 piece.
+- Normalise units to one of: g, kg, ml, l, piece.
+- Do not invent items that are not visible.
+
+Return ONLY a valid JSON array. No markdown, no explanation:
+[
+  { "name": "Tomato", "quantity": 3, "unit": "piece" },
+  { "name": "Milk", "quantity": 1, "unit": "l" }
+]
+
+If nothing edible is visible, return: []`;
+
 type Ingredient = { name: string; quantity: number | null; unit: string | null };
 
 function stripBrackets(name: string): string {
@@ -98,6 +115,7 @@ function parseIngredients(rawText: string): Ingredient[] {
 async function callClaudeOcr(
   anthropicKey: string,
   jpegBase64: string,
+  prompt: string,
 ): Promise<{ ok: true; text: string } | { ok: false; status: number; body: string }> {
   const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -124,7 +142,7 @@ async function callClaudeOcr(
             },
             {
               type: 'text',
-              text: OCR_PROMPT,
+              text: prompt,
             },
           ],
         },
@@ -161,11 +179,14 @@ serve(async (req: Request) => {
       );
     }
 
-    const { image_url, scan_id, user_id } = await req.json() as {
+    const { image_url, scan_id, user_id, purpose } = await req.json() as {
       image_url: string;
       scan_id: string;
       user_id: string;
+      purpose?: string;
     };
+    const pantryAdd = purpose === 'pantryReceipt' || purpose === 'pantryFood';
+    const prompt = purpose === 'pantryFood' ? FOOD_PROMPT : OCR_PROMPT;
 
     if (!image_url || !scan_id || !user_id) {
       return new Response(
@@ -176,7 +197,9 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    // Pantry stocking does not use the recipe scan allowance.
     // Soft gate only — failed / empty OCR must NOT burn a free scan.
+    if (!pantryAdd) {
     const quotaCheck = await checkMonthlyScanAllowed(supabase, user_id);
     if (!quotaCheck.allowed) {
       return new Response(
@@ -186,6 +209,7 @@ serve(async (req: Request) => {
         }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
     }
 
     // ── Download original receipt bytes ───────────────────────────────────────
@@ -210,7 +234,11 @@ serve(async (req: Request) => {
     const outcomes: PassOutcome[] = [];
     let lastClaudeError: string | null = null;
 
-    for (const pass of [0, 1, 2, 3] as PreprocessPass[]) {
+    const passes: PreprocessPass[] = purpose === 'pantryFood'
+      ? [0]
+      : [0, 1, 2, 3];
+
+    for (const pass of passes) {
       let processed: { jpeg: Uint8Array; meta: ImageMeta };
       try {
         processed = await preprocessReceipt(receiptBuffer, pass);
@@ -219,7 +247,11 @@ serve(async (req: Request) => {
         continue;
       }
 
-      const ocr = await callClaudeOcr(anthropicKey, uint8ToBase64(processed.jpeg));
+      const ocr = await callClaudeOcr(
+        anthropicKey,
+        uint8ToBase64(processed.jpeg),
+        prompt,
+      );
       if (!ocr.ok) {
         lastClaudeError = ocr.body;
         console.error(`Claude error on pass ${pass}:`, ocr.body);
@@ -258,7 +290,7 @@ serve(async (req: Request) => {
     outcomes.sort((a, b) => b.ingredients.length - a.ingredients.length);
     const best = outcomes[0];
     const ingredients = best.ingredients;
-    const creditConsumed = ingredients.length >= CREDIT_THRESHOLD;
+    const creditConsumed = !pantryAdd && ingredients.length >= CREDIT_THRESHOLD;
     const isPartial = ingredients.length > 0 && ingredients.length < CREDIT_THRESHOLD;
 
     if (ingredients.length === 0) {

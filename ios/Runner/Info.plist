@@ -54,9 +54,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Quillo needs camera access to scan your grocery receipts</string>
+	<string>Quillo needs camera access to scan barcodes, receipts, and pantry photos</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Quillo needs photo access to upload receipt images</string>
+	<string>Quillo needs photo access for receipts and pantry ingredient photos</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Quillo uses this identifier to show relevant ads to free users.</string>
 	<key>SKAdNetworkItems</key>

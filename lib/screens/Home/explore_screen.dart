@@ -58,6 +58,7 @@ class ExploreScreenState extends State<ExploreScreen>
   bool _searchTimedOut = false;
   bool _searchHasMore = false;
   int _searchExternalOffset = 0;
+  bool _searchPageInFlight = false;
   String? _searchHint;
   Timer? _searchSkeletonTimer;
   final Set<String> _savedIds = {};
@@ -175,8 +176,12 @@ class ExploreScreenState extends State<ExploreScreen>
   }
 
   Future<void> _runSearch(String query, {bool append = false}) async {
-    final generation = ++_imageUpgradeGeneration;
+    if (append && (_searchPageInFlight || _searchLoadingMore || !_searchHasMore)) {
+      return;
+    }
+    final generation = append ? _imageUpgradeGeneration : ++_imageUpgradeGeneration;
     _searchSkeletonTimer?.cancel();
+    _searchPageInFlight = true;
     setState(() {
       if (!append) {
         _searchLoading = true;
@@ -239,13 +244,15 @@ class ExploreScreenState extends State<ExploreScreen>
       final pendingUpgrade =
           results.where(RecipeService.needsGeminiImageUpgrade).length;
       final warning = RecipeService.lastSearchImageWarning;
+      final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
+      final fresh = append
+          ? results.where((recipe) {
+              final keys = RecipeService.searchExcludeIds([recipe]);
+              return keys.every((key) => !seen.contains(key));
+            }).toList()
+          : results;
       setState(() {
         if (append) {
-          final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
-          final fresh = results.where((recipe) {
-            final keys = RecipeService.searchExcludeIds([recipe]);
-            return keys.every((key) => !seen.contains(key));
-          }).toList();
           _searchResults = [..._searchResults, ...fresh];
         } else {
           _searchResults = results;
@@ -254,7 +261,10 @@ class ExploreScreenState extends State<ExploreScreen>
         _searchLoadingMore = false;
         _searchShowSkeleton = false;
         _searchTimedOut = false;
-        _searchHasMore = RecipeService.lastSearchHasMore;
+        // Stop offering "load more" when the page added nothing new.
+        _searchHasMore = fresh.isEmpty
+            ? false
+            : RecipeService.lastSearchHasMore;
         _searchExternalOffset = RecipeService.lastSearchNextOffset;
         if (_searchResults.isEmpty) {
           _searchHint = warning?.isNotEmpty == true
@@ -270,20 +280,27 @@ class ExploreScreenState extends State<ExploreScreen>
         }
       });
       _applyFilters();
-      if (!append) {
-        unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
-      }
+      unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
       if (!mounted || generation != _imageUpgradeGeneration) return;
-      unawaited(RecipeRatingService.prefetchSummaries(_searchResults));
+      unawaited(RecipeRatingService.prefetchSummaries(
+        append ? fresh : _searchResults,
+      ));
       unawaited(_startBackgroundImageUpgrades(
-        results,
+        append ? fresh : results,
         generation,
         replaceTrackedKeys: !append,
       ));
-      if (!append && _searchHasMore) {
-        unawaited(_prefetchNextSearchPage(query, generation));
-      }
+      // Prefetch AFTER this request releases _searchPageInFlight (see finally),
+      // otherwise the guard makes prefetch a no-op and results stay stuck.
+      final shouldPrefetch = !append && _searchHasMore;
       await _loadSavedIds();
+      if (shouldPrefetch && mounted && generation == _imageUpgradeGeneration) {
+        // Let finally clear the in-flight flag first.
+        scheduleMicrotask(() {
+          if (!mounted || generation != _imageUpgradeGeneration) return;
+          unawaited(_prefetchNextSearchPage(query, generation));
+        });
+      }
     } on TimeoutException {
       debugPrint('Explore search timed out for "$query"');
       if (!mounted || generation != _imageUpgradeGeneration) return;
@@ -324,11 +341,14 @@ class ExploreScreenState extends State<ExploreScreen>
         });
         _applyFilters();
       }
+    } finally {
+      _searchPageInFlight = false;
     }
   }
 
   Future<void> _loadMoreSearch() async {
     final query = _searchController.text.trim();
+    if (query.isEmpty || !_searchHasMore || _searchPageInFlight) return;
     await _runSearch(query, append: true);
     if (!mounted) return;
     if (_searchHasMore) {
@@ -338,6 +358,8 @@ class ExploreScreenState extends State<ExploreScreen>
 
   /// Silently cache the next page so scrolling never waits on the network.
   Future<void> _prefetchNextSearchPage(String query, int generation) async {
+    if (_searchPageInFlight || !_searchHasMore) return;
+    _searchPageInFlight = true;
     try {
       final next = await RecipeService.searchCatalog(
         query: query,
@@ -348,14 +370,16 @@ class ExploreScreenState extends State<ExploreScreen>
       );
       if (!mounted || generation != _imageUpgradeGeneration) return;
       if (_searchController.text.trim() != query) return;
-      if (next.isEmpty) return;
 
       final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
       final fresh = next.where((recipe) {
         final keys = RecipeService.searchExcludeIds([recipe]);
         return keys.every((key) => !seen.contains(key));
       }).toList();
-      if (fresh.isEmpty) return;
+      if (fresh.isEmpty) {
+        if (mounted) setState(() => _searchHasMore = false);
+        return;
+      }
 
       setState(() {
         _searchResults = [..._searchResults, ...fresh];
@@ -372,6 +396,8 @@ class ExploreScreenState extends State<ExploreScreen>
       ));
     } catch (e) {
       debugPrint('prefetch next search page failed: $e');
+    } finally {
+      _searchPageInFlight = false;
     }
   }
 

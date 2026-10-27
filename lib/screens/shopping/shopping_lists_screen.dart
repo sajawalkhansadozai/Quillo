@@ -313,7 +313,7 @@ class _SummarySection extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '$checkedCount of $totalCount in your basket'
-            ' · $recipeCount recipe${recipeCount == 1 ? '' : 's'}',
+            '${recipeCount == 0 ? '' : ' · $recipeCount recipe${recipeCount == 1 ? '' : 's'}'}',
             style: const TextStyle(
               fontSize: 14,
               color: AppColors.textMedium,
@@ -393,21 +393,33 @@ class _CategoryHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 4),
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$label ($checkedCount of $totalCount)',
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-              fontFamily: 'Nunito',
-            ),
+          Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                  fontFamily: 'Nunito',
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$checkedCount of $totalCount',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textMedium,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFE6E6EC)),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFE4E4EA)),
         ],
       ),
     );

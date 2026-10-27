@@ -8,6 +8,7 @@ import '../utils/cooking_skill_labels.dart';
 import 'analytics_service.dart';
 import 'local_db_service.dart';
 import 'onboarding_router.dart';
+import 'pantry_service.dart';
 import 'subscription_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ class AuthService {
 
       try {
         await LocalDbService.clearAllUserData();
+        await PantryService.clearLocalPrefs();
       } catch (_) {}
 
       try {

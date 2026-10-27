@@ -19,6 +19,7 @@ import '../../widgets/recipe_thumbnail_image.dart';
 import '../scan/ingredient_review_screen.dart';
 import '../scan/recipe_detail_page.dart';
 import 'all_recipes_screen.dart';
+import 'profile_screen.dart';
 import 'scan_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -655,29 +656,40 @@ class HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Future<void> _openProfile() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+    if (mounted) refresh();
+  }
+
   Widget _buildHeaderAvatar() {
     const size = 40.0;
     final hasImage = _avatarUrl != null && _avatarUrl!.isNotEmpty;
 
-    return Container(
-      width: size,
-      height: size,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
-        ],
+    return GestureDetector(
+      onTap: _openProfile,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: size,
+        height: size,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
+          ],
+        ),
+        child: hasImage
+            ? Image.network(
+                _avatarUrl!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildHeaderAvatarInitial(size),
+              )
+            : _buildHeaderAvatarInitial(size),
       ),
-      child: hasImage
-          ? Image.network(
-              _avatarUrl!,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _buildHeaderAvatarInitial(size),
-            )
-          : _buildHeaderAvatarInitial(size),
     );
   }
 

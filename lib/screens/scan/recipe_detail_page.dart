@@ -1300,7 +1300,7 @@ class _IngredientTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          IngredientVisualIcon(ingredientName: item.name),
+          IngredientVisualIcon(ingredientName: item.name, size: 40),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1436,13 +1436,21 @@ class _MissingIngredientsCard extends StatelessWidget {
                     color: const Color(0xFFFFEBEE),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(
-                    '${item.name} (${item.amount})',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFFC62828),
-                    ),
+                  child: Row(
+                    children: [
+                      IngredientVisualIcon(ingredientName: item.name, size: 32),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${item.name} (${item.amount})',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFC62828),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

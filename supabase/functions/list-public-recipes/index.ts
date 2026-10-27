@@ -40,7 +40,7 @@ serve(async (req: Request) => {
     }
 
     const body = await parseRequestBody(req);
-    const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 100);
+    const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 250);
     const prefs = await resolveUserPreferences(userClient, user.id, body);
 
     const { data: parsed, error } = await listPublicRecipes(userClient, limit * 3);

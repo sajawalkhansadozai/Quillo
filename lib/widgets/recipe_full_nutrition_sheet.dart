@@ -254,20 +254,33 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
                   color: const Color(0xFFF0F0F6),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Icon(Icons.restaurant_rounded,
+                child: const Icon(Icons.pie_chart_outline_rounded,
                     size: 20, color: AppColors.textMedium),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  _perServing
-                      ? 'Servings 1 of $_servings servings'
-                      : 'Servings · $_servings total',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Servings',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _perServing
+                          ? '1 of $_servings servings'
+                          : '$_servings servings',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textMedium,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               _ServingBtn(icon: Icons.remove, onTap: _decrementServings),
@@ -329,18 +342,28 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
                   ),
                 ),
                 Positioned(
-                  bottom: 8,
+                  bottom: 4,
                   child: Column(
                     children: [
                       Text(
-                        '${n.calories} kcal',
+                        '${n.calories}',
                         style: const TextStyle(
-                          fontSize: 28,
+                          fontSize: 36,
                           fontWeight: FontWeight.w900,
                           color: AppColors.textDark,
                           fontFamily: 'Nunito',
+                          height: 1,
                         ),
                       ),
+                      const Text(
+                        'kcal',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMedium,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         '${calPct.round()}% of a 2,000 kcal day',
                         style: const TextStyle(
@@ -364,7 +387,6 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
                   progress: proteinPct.clamp(0.0, 1.0),
                   dvPct: (proteinPct * 100).round(),
                   color: _protein,
-                  emoji: '🍗',
                 ),
               ),
               Expanded(
@@ -374,7 +396,6 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
                   progress: carbsPct.clamp(0.0, 1.0),
                   dvPct: (carbsPct * 100).round(),
                   color: _carbs,
-                  emoji: '🥐',
                 ),
               ),
               Expanded(
@@ -384,7 +405,6 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
                   progress: fatPct.clamp(0.0, 1.0),
                   dvPct: (fatPct * 100).round(),
                   color: _fat,
-                  emoji: '🥑',
                 ),
               ),
             ],
@@ -456,14 +476,45 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Where the calories come from',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-              fontFamily: 'Nunito',
-            ),
+          const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Where the calories come from',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  'kcal',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ),
+              SizedBox(width: 12),
+              SizedBox(
+                width: 48,
+                child: Text(
+                  'Share',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           ClipRRect(
@@ -517,7 +568,8 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Protein and carbs contribute 4 kcal per gram; fat contributes 9 kcal per gram.',
+            '4 kcal per gram for protein and carbs, 9 for fat. '
+            'Together: ${pKcal + cKcal + fKcal} of ${n.calories} kcal.',
             style: TextStyle(
               fontSize: 11,
               color: AppColors.textLight.withValues(alpha: 0.95),
@@ -532,20 +584,30 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
   Widget _buildOtherNutrientsCard(RecipeNutritionData n) {
     final sugarsFats = <_OtherNutrient>[
       if ((n.sugar ?? 0) > 0)
-        _OtherNutrient('Sugars', '${n.sugar} g', n.sugar! / _dvSugar),
+        _OtherNutrient(
+          'Sugars',
+          '${n.sugar} g',
+          n.sugar! / _dvSugar,
+          context: 'of ${n.carbs} g carbs',
+        ),
       if ((n.saturatedFat ?? 0) > 0)
         _OtherNutrient(
-            'Saturated fat', '${n.saturatedFat} g', n.saturatedFat! / _dvSaturatedFat),
+          'Saturated fat',
+          '${n.saturatedFat} g',
+          n.saturatedFat! / _dvSaturatedFat,
+          context: 'of ${n.fat} g fat',
+        ),
       if ((n.fiber ?? 0) > 0)
         _OtherNutrient('Fibre', '${n.fiber} g', n.fiber! / _dvFiber),
-      if (_saltGrams(n.sodium) > 0)
-        _OtherNutrient(
-            'Salt',
-            '${_saltGrams(n.sodium).toStringAsFixed(1)} g',
-            _saltGrams(n.sodium) / _dvSalt),
     ];
 
+    final salt = _saltGrams(n.sodium);
     final minerals = <_OtherNutrient>[
+      if (salt > 0)
+        _OtherNutrient('Salt', '${salt.toStringAsFixed(1)} g', salt / _dvSalt),
+      if ((n.potassium ?? 0) > 0)
+        _OtherNutrient(
+            'Potassium', '${n.potassium} mg', n.potassium! / _dvPotassium),
       if ((n.cholesterol ?? 0) > 0)
         _OtherNutrient(
             'Cholesterol', '${n.cholesterol} mg', n.cholesterol! / _dvCholesterol),
@@ -553,9 +615,6 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
         _OtherNutrient('Iron', '${n.iron} mg', n.iron! / _dvIron),
       if ((n.calcium ?? 0) > 0)
         _OtherNutrient('Calcium', '${n.calcium} mg', n.calcium! / _dvCalcium),
-      if ((n.potassium ?? 0) > 0)
-        _OtherNutrient(
-            'Potassium', '${n.potassium} mg', n.potassium! / _dvPotassium),
       if ((n.vitaminC ?? 0) > 0)
         _OtherNutrient(
             'Vitamin C', '${n.vitaminC} mg', n.vitaminC! / _dvVitaminC),
@@ -586,40 +645,84 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Other nutrients',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-              fontFamily: 'Nunito',
-            ),
+          const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Other nutrients',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+              ),
+              Text(
+                '% DV*',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textMedium,
+                ),
+              ),
+            ],
           ),
           if (sugarsFats.isNotEmpty) ...[
             const SizedBox(height: 14),
-            const Text(
-              'Sugars, fats and fibre',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textMedium,
-              ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Sugars, fats and fibre',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMedium,
+                    ),
+                  ),
+                ),
+                Text(
+                  _perServing ? 'Per serving' : 'Whole recipe',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
-            for (final item in sugarsFats) _OtherNutrientRow(item: item),
+            for (final item in sugarsFats)
+              _OtherNutrientRow(item: item, perServing: _perServing),
           ],
           if (minerals.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text(
-              'Minerals and cholesterol',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textMedium,
-              ),
+            const Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Minerals and cholesterol',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMedium,
+                    ),
+                  ),
+                ),
+                Text(
+                  '% DV*',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
-            for (final item in minerals) _OtherNutrientRow(item: item),
+            for (final item in minerals)
+              _OtherNutrientRow(item: item, perServing: _perServing),
           ],
         ],
       ),
@@ -628,9 +731,10 @@ class _RecipeFullNutritionSheetState extends State<RecipeFullNutritionSheet> {
 
   Widget _buildDisclaimer() {
     return Text(
-      '* Daily Value (DV) based on a 2,000 kcal diet. Percent Daily Values '
-      'are approximate and follow common FDA reference amounts. Individual '
-      'needs may vary.',
+      '* Daily Value (DV) is the share of an average adult\'s daily '
+      'reference intake that one serving provides, based on 2,000 kcal a day. '
+      '"High" means 20% DV or more per serving and "low" 5% or less, '
+      'following the FDA\'s 5/20 guide.',
       style: TextStyle(
         fontSize: 11,
         color: AppColors.textLight.withValues(alpha: 0.95),
@@ -733,7 +837,6 @@ class _MacroRing extends StatelessWidget {
   final double progress;
   final int dvPct;
   final Color color;
-  final String emoji;
 
   const _MacroRing({
     required this.label,
@@ -741,7 +844,6 @@ class _MacroRing extends StatelessWidget {
     required this.progress,
     required this.dvPct,
     required this.color,
-    required this.emoji,
   });
 
   @override
@@ -762,20 +864,14 @@ class _MacroRing extends StatelessWidget {
                   trackColor: color.withValues(alpha: 0.15),
                 ),
               ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(emoji, style: const TextStyle(fontSize: 14)),
-                  Text(
-                    '$grams g',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                      fontFamily: 'Nunito',
-                    ),
-                  ),
-                ],
+              Text(
+                '$grams',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                  fontFamily: 'Nunito',
+                ),
               ),
             ],
           ),
@@ -819,47 +915,55 @@ class _CalorieSourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              Text(
+                '$grams g',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textMedium,
+                ),
+              ),
+            ],
           ),
         ),
-        Text(
-          '${grams}g',
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textMedium,
-          ),
-        ),
-        const SizedBox(width: 16),
         SizedBox(
-          width: 64,
+          width: 56,
           child: Text(
-            '$kcal kcal',
+            '$kcal',
             textAlign: TextAlign.right,
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: AppColors.textMedium,
+              color: AppColors.textDark,
             ),
           ),
         ),
         const SizedBox(width: 12),
         SizedBox(
-          width: 40,
+          width: 48,
           child: Text(
             '$pct%',
             textAlign: TextAlign.right,
@@ -879,8 +983,9 @@ class _OtherNutrient {
   final String label;
   final String amount;
   final double dvRatio;
+  final String? context;
 
-  const _OtherNutrient(this.label, this.amount, this.dvRatio);
+  const _OtherNutrient(this.label, this.amount, this.dvRatio, {this.context});
 
   int get dvPct => (dvRatio * 100).round();
   bool get isHigh => dvPct >= 20;
@@ -888,26 +993,42 @@ class _OtherNutrient {
 
 class _OtherNutrientRow extends StatelessWidget {
   final _OtherNutrient item;
+  final bool perServing;
 
-  const _OtherNutrientRow({required this.item});
+  const _OtherNutrientRow({required this.item, required this.perServing});
 
   @override
   Widget build(BuildContext context) {
+    final scope = perServing ? 'one serving' : 'this recipe';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  item.label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.label,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    if (item.context != null)
+                      Text(
+                        item.context!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMedium,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Text(
@@ -936,7 +1057,7 @@ class _OtherNutrientRow extends StatelessWidget {
           if (item.isHigh) ...[
             const SizedBox(height: 4),
             Text(
-              'High · ${item.dvPct}% of the daily value in one serving.',
+              'High · ${item.dvPct}% of the daily value in $scope.',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

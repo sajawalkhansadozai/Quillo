@@ -131,23 +131,70 @@ export function edamamHitToNormalized(
   };
 }
 
+export interface EdamamSearchPage {
+  recipes: NormalizedSearchRecipe[];
+  /** Edamam API v2 continuation URL — required for page 2+ (from/to are ignored). */
+  nextUrl?: string;
+}
+
+type EdamamSearchJson = {
+  hits?: Array<Record<string, unknown>>;
+  _links?: { next?: { href?: string } };
+};
+
+async function parseEdamamSearchResponse(
+  res: Response,
+  query: string,
+  logLabel: string,
+): Promise<EdamamSearchPage> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error(`Edamam search failed: ${res.status} ${body.slice(0, 300)}`);
+    return { recipes: [] };
+  }
+  const data = (await res.json()) as EdamamSearchJson;
+  const hits = data.hits ?? [];
+  const nextUrl = data._links?.next?.href?.trim() || undefined;
+  console.log(`Edamam search ${logLabel} hits=${hits.length} hasNext=${!!nextUrl}`);
+  return {
+    recipes: hits
+      .map((hit) => edamamHitToNormalized(hit, query))
+      .filter((r): r is NormalizedSearchRecipe => r != null),
+    nextUrl,
+  };
+}
+
+/** Follow an Edamam `_links.next.href` continuation URL. */
+export async function searchEdamamContinue(
+  nextUrl: string,
+  query: string,
+): Promise<EdamamSearchPage> {
+  try {
+    const res = await fetch(nextUrl, { signal: AbortSignal.timeout(8000) });
+    return await parseEdamamSearchResponse(res, query, 'continue');
+  } catch (err) {
+    console.error('Edamam continue error:', err);
+    return { recipes: [] };
+  }
+}
+
 export async function searchEdamam(
   query: string,
   appId: string,
   appKey: string,
   limit = 20,
   filters?: EdamamSearchFilters,
-  offset = 0,
-): Promise<NormalizedSearchRecipe[]> {
+  _offset = 0,
+): Promise<EdamamSearchPage> {
   const count = Math.min(Math.max(limit, 1), 20);
-  const from = Math.max(0, offset);
+  // API v2 ignores from/to for most apps — always start at 0 and paginate via nextUrl.
   const url = new URL('https://api.edamam.com/api/recipes/v2');
   url.searchParams.set('type', 'public');
   url.searchParams.set('q', query);
   url.searchParams.set('app_id', appId);
   url.searchParams.set('app_key', appKey);
-  url.searchParams.set('from', String(from));
-  url.searchParams.set('to', String(from + count - 1));
+  url.searchParams.set('from', '0');
+  url.searchParams.set('to', String(count));
 
   // Honour the user's preferences: cuisineType (OR), health + diet (AND).
   if (filters) {
@@ -167,20 +214,10 @@ export async function searchEdamam(
 
   try {
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error(`Edamam search failed: ${res.status} ${body.slice(0, 300)}`);
-      return [];
-    }
-    const data = (await res.json()) as { hits?: Array<Record<string, unknown>> };
-    const hits = data.hits ?? [];
-    console.log(`Edamam search q="${query}" hits=${hits.length} from=${from}`);
-    return hits
-      .map((hit) => edamamHitToNormalized(hit, query))
-      .filter((r): r is NormalizedSearchRecipe => r != null);
+    return await parseEdamamSearchResponse(res, query, `q="${query}"`);
   } catch (err) {
     console.error('Edamam search error:', err);
-    return [];
+    return { recipes: [] };
   }
 }
 

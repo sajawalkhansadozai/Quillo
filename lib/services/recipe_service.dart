@@ -574,17 +574,22 @@ class RecipeService {
     for (final original in targets) {
       if (!keepGoing()) return;
       final ok = await attempt(original, 1);
-      if (!ok) pending.add(original);
-      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!ok) {
+        // Clear the "enhancing" overlay immediately so search doesn't look
+        // frozen for minutes while retries run in the background.
+        onFinished?.call(original);
+        pending.add(original);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
     }
 
     // Retry pass: only the cards that failed, with internal backoff. Since
     // generated images are cached permanently, every card eventually succeeds.
     for (final original in pending) {
       if (!keepGoing()) return;
-      final ok = await attempt(original, 4);
-      if (!ok) onFinished?.call(original);
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await attempt(original, 4);
+      onFinished?.call(original);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
     }
   }
 

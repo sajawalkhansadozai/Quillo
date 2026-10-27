@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../models/ingredient_item.dart';
+import '../../widgets/ingredient_visual_icon.dart';
+import '../../services/pantry_service.dart';
+import '../../services/pantry_sync_service.dart';
 import '../../services/recipe_service.dart';
 import '../../services/scan_service.dart';
 import '../../services/scan_limit_service.dart';
 import '../../services/streak_service.dart';
 import '../../services/food_waste_service.dart';
 import '../../services/ad_service.dart';
+import '../../utils/non_food_ingredient_filter.dart';
 import '../../widgets/scan_limit_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ad_banner.dart';
@@ -99,6 +103,42 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
     super.dispose();
   }
 
+  /// Receipt ingredients always land in Smart Pantry (premium gates access only).
+  Future<int> _saveIngredientsToSmartPantry() async {
+    final foodItems = NonFoodIngredientFilter.filter(
+      _ingredients,
+      (i) => i.name,
+    );
+    if (foodItems.isEmpty) return 0;
+
+    var saved = 0;
+    for (final item in foodItems) {
+      final name = item.name.trim();
+      if (name.isEmpty) continue;
+      try {
+        final location = PantryService.guessLocation(name);
+        await PantryService.addOrMerge(
+          name: name,
+          quantity: item.quantity ?? 1,
+          unit: (item.unit ?? '').trim(),
+          location: location,
+          bestBefore: PantryService.defaultBestBefore(location, name),
+          estimated: true,
+          sourceNote: 'Added from your receipt',
+        );
+        saved++;
+      } catch (e) {
+        debugPrint('Smart Pantry auto-save failed for "$name": $e');
+      }
+    }
+    if (saved > 0) {
+      try {
+        await PantrySync.pushAll();
+      } catch (_) {}
+    }
+    return saved;
+  }
+
   // ── Generate recipes ────────────────────────────────────────────────────────
 
   Future<void> _generateRecipes() async {
@@ -133,13 +173,17 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       }
       await StreakService.recordScan();
       await FoodWasteService.recordIngredientsRescued(_ingredients);
+      final pantryAdded = await _saveIngredientsToSmartPantry();
       await adFuture;
 
       if (!mounted) return;
+      final pantryNote = pantryAdded > 0
+          ? ' · $pantryAdded saved to Smart Pantry'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${_ingredients.length} ingredients found · ${recipes.length} recipes ready',
+            '${_ingredients.length} ingredients found · ${recipes.length} recipes ready$pantryNote',
           ),
           backgroundColor: const Color(0xFF2E7D32),
           behavior: SnackBarBehavior.floating,
@@ -536,7 +580,7 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
             ),
             child: GestureDetector(
               onTap: () => _editIngredient(i),
-              child: _IngredientRow(item: item, index: i),
+              child: _IngredientRow(item: item),
             ),
           );
         }),
@@ -549,7 +593,12 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('🫙', style: TextStyle(fontSize: 56)),
+          Image.asset(
+            'assets/food_3d/jar.png',
+            width: 72,
+            height: 72,
+            fit: BoxFit.contain,
+          ),
           const SizedBox(height: 16),
           const Text('No ingredients found',
               style: TextStyle(
@@ -711,9 +760,8 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
 
 class _IngredientRow extends StatelessWidget {
   final IngredientItem item;
-  final int index;
 
-  const _IngredientRow({required this.item, required this.index});
+  const _IngredientRow({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -733,21 +781,7 @@ class _IngredientRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: Text('${index + 1}',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
-            ),
-          ),
+          IngredientVisualIcon(ingredientName: item.name, size: 40),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
