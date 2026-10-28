@@ -28,7 +28,7 @@ class RecipeSearchConfig {
   static const Duration searchSkeletonAfter = Duration(seconds: 2);
 
   /// Abort / offer retry if search takes longer than this.
-  static const Duration searchTimeout = Duration(seconds: 12);
+  static const Duration searchTimeout = Duration(seconds: 20);
 
   /// Label shown in Explore search (derived from provider).
   static String get exploreSearchHint {

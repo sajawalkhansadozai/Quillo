@@ -378,18 +378,20 @@ class _BarcodeCard extends StatelessWidget {
           const Text(
             'Scan a barcode',
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: FontWeight.w900,
               color: Colors.white,
+              fontFamily: 'Nunito',
             ),
           ),
           const SizedBox(height: 6),
           Text(
             'Point your camera at the barcode. We fill in the name, size and a best-before estimate.',
             style: TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: Colors.white.withValues(alpha: 0.92),
+              fontSize: 13,
+              height: 1.35,
+              color: Colors.white.withValues(alpha: 0.9),
+              fontFamily: 'Nunito',
             ),
           ),
           const SizedBox(height: 18),

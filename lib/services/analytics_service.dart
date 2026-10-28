@@ -16,6 +16,13 @@ class AnalyticsService {
   static const upgradedToPremium = 'upgraded to premium';
   static const cancelledPremium = 'cancelled premium';
 
+  // Smart Pantry checklist 06
+  static const pantryLockedViewed = 'pantry locked viewed';
+  static const pantryLockedCtaTapped = 'pantry locked cta tapped';
+  static const pantryUpgradePromptShown = 'pantry upgrade prompt shown';
+  static const pantryUpgradePromptDismissed = 'pantry upgrade prompt dismissed';
+  static const pantryUpgradedFromLocked = 'pantry upgraded from locked';
+
   static Future<void> initialise() async {
     if (!ObservabilityConfig.posthogEnabled) return;
     try {

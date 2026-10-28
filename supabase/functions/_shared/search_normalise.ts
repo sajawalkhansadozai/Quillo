@@ -1,10 +1,14 @@
 /** Checklist 4.1 — clean search terms before API / cache lookups. */
 export function normaliseSearchTerm(term: string): string {
+  // Fold accents (jalapeño → jalapeno) and keep letters/digits from any
+  // script, so non-Latin searches don't collapse to an empty term.
   return term
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ');
+    .replace(/[^\p{L}\p{N} ]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Checklist 5.1 — UK → US synonym expansion for US-centric recipe APIs. */

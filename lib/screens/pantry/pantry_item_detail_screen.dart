@@ -80,10 +80,24 @@ class _PantryItemDetailScreenState extends State<PantryItemDetailScreen> {
       lastDate: now.add(const Duration(days: 365 * 3)),
     );
     if (picked == null) return;
-    await _persist(item.copyWith(
+    final updated = item.copyWith(
       bestBefore: picked,
       bestBeforeEstimated: false,
-    ));
+    );
+    await _persist(updated);
+    // Checklist 3.4 — learn this correction for the ingredient.
+    await PantryService.rememberShelfCorrection(updated);
+  }
+
+  Future<void> _markFrozen() async {
+    final item = _item;
+    if (item == null || item.location == PantryLocation.freezer) return;
+    final updated = await PantryService.markFrozen(item);
+    if (!mounted) return;
+    setState(() {
+      _item = updated;
+      _all = [for (final i in _all) i.id == updated.id ? updated : i];
+    });
   }
 
   Future<void> _editCategory() async {
@@ -320,6 +334,9 @@ class _PantryItemDetailScreenState extends State<PantryItemDetailScreen> {
                   onEditDate: _pickDate,
                   onEditCategory: _editCategory,
                   onEditName: _editName,
+                  onMarkFrozen: item.location == PantryLocation.freezer
+                      ? null
+                      : _markFrozen,
                 ),
                 if (item.sourceNote != null) ...[
                   const SizedBox(height: 10),
@@ -473,18 +490,20 @@ class _Hero extends StatelessWidget {
             item.name,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 32,
+              fontSize: 26,
               fontWeight: FontWeight.w900,
               color: Colors.white,
-              letterSpacing: -0.5,
+              letterSpacing: -0.3,
+              fontFamily: 'Nunito',
             ),
           ),
           const SizedBox(height: 2),
           Text(
             item.categoryLabel,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 13,
               color: Colors.white.withValues(alpha: 0.9),
+              fontFamily: 'Nunito',
             ),
           ),
           const SizedBox(height: 20),
@@ -576,9 +595,10 @@ class _FreshnessCard extends StatelessWidget {
                     Text(
                       _title,
                       style: TextStyle(
-                        fontSize: 22,
+                        fontSize: 17,
                         fontWeight: FontWeight.w900,
                         color: color,
+                        fontFamily: 'Nunito',
                       ),
                     ),
                     if (item.bestBefore != null)
@@ -748,6 +768,7 @@ class _DetailsCard extends StatelessWidget {
   final VoidCallback onEditDate;
   final VoidCallback onEditCategory;
   final VoidCallback onEditName;
+  final VoidCallback? onMarkFrozen;
 
   const _DetailsCard({
     required this.item,
@@ -755,6 +776,7 @@ class _DetailsCard extends StatelessWidget {
     required this.onEditDate,
     required this.onEditCategory,
     required this.onEditName,
+    this.onMarkFrozen,
   });
 
   @override
@@ -812,6 +834,21 @@ class _DetailsCard extends StatelessWidget {
             selected: item.location,
             onSelect: onLocation,
           ),
+          if (onMarkFrozen != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onMarkFrozen,
+                icon: const Icon(Icons.ac_unit_rounded, size: 18),
+                label: const Text('Mark as frozen'),
+                style: TextButton.styleFrom(
+                  foregroundColor: PantryColors.indigo,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
           divider,
           Row(
             children: [

@@ -88,6 +88,7 @@ We may also disclose information if required by law or to protect our rights, us
 
 - **Account data:** kept while your account is active. You may request deletion (see Section 9).
 - **Receipt images:** stored in your account until you delete scans or your account.
+- **Smart Pantry:** ingredient rows created from your receipt scans (and any you add manually) are stored in your account and on your device so we can show expiry estimates and meal suggestions. This applies whether or not you have a Premium subscription — free accounts still accumulate pantry data in the background, but cannot open the full pantry until they upgrade. Pantry rows are kept while your account is active, typically aligned with each item’s estimated shelf life plus a short grace period, after which stale items may be archived. You can clear your pantry or stop future collection at any time in **Profile → Settings**. Deleting your account removes pantry data with the rest of your account.
 - **Local data:** shopping lists and cached recipes on your device until you clear app data or uninstall.
 - **Backups and logs:** retained for a limited period for security and operations, then deleted or anonymised.
 

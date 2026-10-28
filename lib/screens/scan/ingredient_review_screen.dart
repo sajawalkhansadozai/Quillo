@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../models/ingredient_item.dart';
 import '../../widgets/ingredient_visual_icon.dart';
 import '../../services/pantry_service.dart';
-import '../../services/pantry_sync_service.dart';
 import '../../services/recipe_service.dart';
 import '../../services/scan_service.dart';
 import '../../services/scan_limit_service.dart';
@@ -103,40 +102,31 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
     super.dispose();
   }
 
-  /// Receipt ingredients always land in Smart Pantry (premium gates access only).
+  /// Checklist 01 — one scan fills recipes + pantry. Never throws into the scan.
   Future<int> _saveIngredientsToSmartPantry() async {
-    final foodItems = NonFoodIngredientFilter.filter(
-      _ingredients,
-      (i) => i.name,
-    );
-    if (foodItems.isEmpty) return 0;
-
-    var saved = 0;
-    for (final item in foodItems) {
-      final name = item.name.trim();
-      if (name.isEmpty) continue;
-      try {
-        final location = PantryService.guessLocation(name);
-        await PantryService.addOrMerge(
-          name: name,
-          quantity: item.quantity ?? 1,
-          unit: (item.unit ?? '').trim(),
-          location: location,
-          bestBefore: PantryService.defaultBestBefore(location, name),
-          estimated: true,
-          sourceNote: 'Added from your receipt',
-        );
-        saved++;
-      } catch (e) {
-        debugPrint('Smart Pantry auto-save failed for "$name": $e');
-      }
+    try {
+      final foodItems = NonFoodIngredientFilter.filter(
+        _ingredients,
+        (i) => i.name,
+      );
+      if (foodItems.isEmpty) return 0;
+      final payload = foodItems
+          .map((i) => (
+                name: i.name,
+                quantity: i.quantity,
+                unit: i.unit,
+              ))
+          .toList();
+      return await PantryService.addFromScan(
+        scanId: widget.scanId,
+        items: payload,
+        receiptFingerprint: PantryService.receiptFingerprint(payload),
+        sourceNote: 'Added from your receipt',
+      );
+    } catch (e) {
+      debugPrint('Smart Pantry auto-save failed (scan continues): $e');
+      return 0;
     }
-    if (saved > 0) {
-      try {
-        await PantrySync.pushAll();
-      } catch (_) {}
-    }
-    return saved;
   }
 
   // ── Generate recipes ────────────────────────────────────────────────────────
@@ -153,6 +143,11 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       }
     }
     setState(() => _isGenerating = true);
+
+    // Checklist 01: pantry fills from the main scan after review, in parallel
+    // with recipe generation — never blocked by recipe success/failure, and
+    // never requiring a second pantry-only scan.
+    final pantryFuture = _saveIngredientsToSmartPantry();
 
     // Show interstitial while recipes generate so results are ready when dismissed.
     final adFuture = AdService.showInterstitialIfFree(waitUntilDismissed: true);
@@ -173,7 +168,7 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
       }
       await StreakService.recordScan();
       await FoodWasteService.recordIngredientsRescued(_ingredients);
-      final pantryAdded = await _saveIngredientsToSmartPantry();
+      final pantryAdded = await pantryFuture;
       await adFuture;
 
       if (!mounted) return;
@@ -199,14 +194,17 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
         ),
       );
     } on RateLimitException catch (e) {
+      await pantryFuture;
       await adFuture;
       setState(() => _isGenerating = false);
       _showSnack(e.message);
     } on ScanException catch (e) {
+      await pantryFuture;
       await adFuture;
       setState(() => _isGenerating = false);
       _showSnack(e.message);
     } catch (e) {
+      await pantryFuture;
       await adFuture;
       setState(() => _isGenerating = false);
       _showSnack('Recipe generation is taking longer than usual — tap to retry.');
@@ -492,15 +490,35 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
         border:
             Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
-      child: Row(
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('✏️', style: TextStyle(fontSize: 16)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Tap any ingredient to edit. Swipe left to delete.',
-              style: TextStyle(
-                  fontSize: 12, color: AppColors.primary, height: 1.4),
+          Row(
+            children: [
+              Text('✏️', style: TextStyle(fontSize: 16)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Tap any ingredient to edit. Swipe left to delete.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.primary,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            // Acceptance test 8 — pantry write + premium gate copy.
+            'Food items are saved to your Smart Pantry after this step. '
+            'Smart Pantry unlocks with Premium.',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.primary,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

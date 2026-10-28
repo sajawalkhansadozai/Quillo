@@ -59,6 +59,7 @@ class ExploreScreenState extends State<ExploreScreen>
   bool _searchHasMore = false;
   int _searchExternalOffset = 0;
   bool _searchPageInFlight = false;
+  int _searchPageToken = 0;
   String? _searchHint;
   Timer? _searchSkeletonTimer;
   final Set<String> _savedIds = {};
@@ -175,13 +176,25 @@ class ExploreScreenState extends State<ExploreScreen>
     _runSearch(q);
   }
 
+  /// Claims the shared "page request in flight" flag. Only the request
+  /// holding the latest token may clear it, so an older prefetch finishing
+  /// can't unlock load-more while a newer request is still running.
+  int _claimSearchPage() {
+    _searchPageInFlight = true;
+    return ++_searchPageToken;
+  }
+
+  void _releaseSearchPage(int token) {
+    if (token == _searchPageToken) _searchPageInFlight = false;
+  }
+
   Future<void> _runSearch(String query, {bool append = false}) async {
     if (append && (_searchPageInFlight || _searchLoadingMore || !_searchHasMore)) {
       return;
     }
     final generation = append ? _imageUpgradeGeneration : ++_imageUpgradeGeneration;
     _searchSkeletonTimer?.cancel();
-    _searchPageInFlight = true;
+    final pageToken = _claimSearchPage();
     setState(() {
       if (!append) {
         _searchLoading = true;
@@ -200,6 +213,21 @@ class ExploreScreenState extends State<ExploreScreen>
       _searchSkeletonTimer = Timer(RecipeSearchConfig.searchSkeletonAfter, () {
         if (!mounted || generation != _imageUpgradeGeneration) return;
         if (_searchLoading) setState(() => _searchShowSkeleton = true);
+      });
+    }
+
+    bool isStale() =>
+        !mounted ||
+        generation != _imageUpgradeGeneration ||
+        _searchController.text.trim() != query;
+
+    void stopLoading() {
+      if (!mounted) return;
+      _searchSkeletonTimer?.cancel();
+      setState(() {
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchShowSkeleton = false;
       });
     }
 
@@ -226,10 +254,11 @@ class ExploreScreenState extends State<ExploreScreen>
         return;
       }
 
-      final results = await RecipeService.searchCatalog(
+      final requestOffset = append ? _searchExternalOffset : 0;
+      final page = await RecipeService.searchCatalog(
         query: query,
         limit: RecipeSearchConfig.exploreSearchLimit,
-        offset: append ? _searchExternalOffset : 0,
+        offset: requestOffset,
         excludeIds: append
             ? RecipeService.searchExcludeIds(_searchResults)
             : const [],
@@ -237,44 +266,39 @@ class ExploreScreenState extends State<ExploreScreen>
       ).timeout(RecipeSearchConfig.searchTimeout);
 
       if (!mounted || generation != _imageUpgradeGeneration) return;
-      if (_searchController.text.trim() != query) return;
+      if (_searchController.text.trim() != query) {
+        // The user edited the query while this was loading; a newer search
+        // owns the results, but don't leave this one's spinner behind.
+        stopLoading();
+        return;
+      }
       _searchSkeletonTimer?.cancel();
-      final catalogCount = RecipeService.lastCatalogResultCount ?? 0;
-      final externalCount = RecipeService.lastExternalResultCount ?? 0;
+      final seen = <String>{};
+      if (append) RecipeService.dedupeSearchResults(_searchResults, seen);
+      final fresh = RecipeService.dedupeSearchResults(page.recipes, seen);
       final pendingUpgrade =
-          results.where(RecipeService.needsGeminiImageUpgrade).length;
-      final warning = RecipeService.lastSearchImageWarning;
-      final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
-      final fresh = append
-          ? results.where((recipe) {
-              final keys = RecipeService.searchExcludeIds([recipe]);
-              return keys.every((key) => !seen.contains(key));
-            }).toList()
-          : results;
+          fresh.where(RecipeService.needsGeminiImageUpgrade).length;
       setState(() {
-        if (append) {
-          _searchResults = [..._searchResults, ...fresh];
-        } else {
-          _searchResults = results;
-        }
+        _searchResults = append ? [..._searchResults, ...fresh] : fresh;
         _searchLoading = false;
         _searchLoadingMore = false;
         _searchShowSkeleton = false;
         _searchTimedOut = false;
-        // Stop offering "load more" when the page added nothing new.
-        _searchHasMore = fresh.isEmpty
-            ? false
-            : RecipeService.lastSearchHasMore;
-        _searchExternalOffset = RecipeService.lastSearchNextOffset;
+        // Keep paging while the server has more and we're still moving
+        // forward, even if this page happened to be all repeats.
+        _searchHasMore = page.hasMore &&
+            (fresh.isNotEmpty || page.nextOffset > requestOffset);
+        _searchExternalOffset = page.nextOffset;
         if (_searchResults.isEmpty) {
-          _searchHint = warning?.isNotEmpty == true
-              ? warning
-              : 'No catalog or Edamam matches — check API keys if this persists';
+          _searchHint = 'No recipes found for "$query". Try another dish or ingredient.';
+          if (page.warning?.isNotEmpty == true) {
+            debugPrint('search-catalog warning: ${page.warning}');
+          }
         } else {
           _searchHint = _buildSearchHint(
             total: _searchResults.length,
-            catalogCount: catalogCount,
-            externalCount: externalCount,
+            catalogCount: page.catalogCount,
+            externalCount: page.externalCount,
             pendingUpgrade: pendingUpgrade,
           );
         }
@@ -282,15 +306,13 @@ class ExploreScreenState extends State<ExploreScreen>
       _applyFilters();
       unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
       if (!mounted || generation != _imageUpgradeGeneration) return;
-      unawaited(RecipeRatingService.prefetchSummaries(
-        append ? fresh : _searchResults,
-      ));
+      unawaited(RecipeRatingService.prefetchSummaries(fresh));
       unawaited(_startBackgroundImageUpgrades(
-        append ? fresh : results,
+        fresh,
         generation,
         replaceTrackedKeys: !append,
       ));
-      // Prefetch AFTER this request releases _searchPageInFlight (see finally),
+      // Prefetch AFTER this request releases the in-flight flag (see finally),
       // otherwise the guard makes prefetch a no-op and results stay stuck.
       final shouldPrefetch = !append && _searchHasMore;
       await _loadSavedIds();
@@ -303,9 +325,13 @@ class ExploreScreenState extends State<ExploreScreen>
       }
     } on TimeoutException {
       debugPrint('Explore search timed out for "$query"');
-      if (!mounted || generation != _imageUpgradeGeneration) return;
+      if (isStale()) {
+        stopLoading();
+        return;
+      }
       _searchSkeletonTimer?.cancel();
       final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
+      if (isStale()) return;
       final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
       setState(() {
         _searchLoading = false;
@@ -322,27 +348,31 @@ class ExploreScreenState extends State<ExploreScreen>
       _applyFilters();
     } catch (e) {
       debugPrint('Explore search error: $e');
-      if (mounted) {
-        _searchSkeletonTimer?.cancel();
-        final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
-        final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
-        setState(() {
-          _searchLoading = false;
-          _searchLoadingMore = false;
-          _searchShowSkeleton = false;
-          if (!append && filtered.isNotEmpty) {
-            _searchResults = filtered;
-            _searchHint = 'Search failed — showing cached results.';
-          } else {
-            _searchHint = append
-                ? _searchHint
-                : 'Search failed. Pull to refresh and try again.';
-          }
-        });
-        _applyFilters();
+      // An older request failing must not overwrite a newer search.
+      if (isStale()) {
+        if (mounted && generation == _imageUpgradeGeneration) stopLoading();
+        return;
       }
+      _searchSkeletonTimer?.cancel();
+      final cached = append ? <GeneratedRecipe>[] : await LocalDbService.loadSearchCache(query);
+      if (isStale()) return;
+      final filtered = RecipePreferenceFilter.apply(cached, _userPrefs);
+      setState(() {
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchShowSkeleton = false;
+        if (!append && filtered.isNotEmpty) {
+          _searchResults = filtered;
+          _searchHint = 'Search failed — showing cached results.';
+        } else if (append) {
+          _searchHint = 'Couldn\'t load more recipes. Tap to try again.';
+        } else {
+          _searchHint = 'Search failed. Pull to refresh and try again.';
+        }
+      });
+      _applyFilters();
     } finally {
-      _searchPageInFlight = false;
+      _releaseSearchPage(pageToken);
     }
   }
 
@@ -359,33 +389,30 @@ class ExploreScreenState extends State<ExploreScreen>
   /// Silently cache the next page so scrolling never waits on the network.
   Future<void> _prefetchNextSearchPage(String query, int generation) async {
     if (_searchPageInFlight || !_searchHasMore) return;
-    _searchPageInFlight = true;
+    final pageToken = _claimSearchPage();
     try {
-      final next = await RecipeService.searchCatalog(
+      final requestOffset = _searchExternalOffset;
+      final page = await RecipeService.searchCatalog(
         query: query,
         limit: RecipeSearchConfig.exploreSearchLimit,
-        offset: _searchExternalOffset,
+        offset: requestOffset,
         excludeIds: RecipeService.searchExcludeIds(_searchResults),
         preferences: _userPrefs,
       );
       if (!mounted || generation != _imageUpgradeGeneration) return;
       if (_searchController.text.trim() != query) return;
 
-      final seen = RecipeService.searchExcludeIds(_searchResults).toSet();
-      final fresh = next.where((recipe) {
-        final keys = RecipeService.searchExcludeIds([recipe]);
-        return keys.every((key) => !seen.contains(key));
-      }).toList();
-      if (fresh.isEmpty) {
-        if (mounted) setState(() => _searchHasMore = false);
-        return;
-      }
+      final seen = <String>{};
+      RecipeService.dedupeSearchResults(_searchResults, seen);
+      final fresh = RecipeService.dedupeSearchResults(page.recipes, seen);
 
       setState(() {
         _searchResults = [..._searchResults, ...fresh];
-        _searchHasMore = RecipeService.lastSearchHasMore;
-        _searchExternalOffset = RecipeService.lastSearchNextOffset;
+        _searchHasMore = page.hasMore &&
+            (fresh.isNotEmpty || page.nextOffset > requestOffset);
+        _searchExternalOffset = page.nextOffset;
       });
+      if (fresh.isEmpty) return;
       _applyFilters();
       unawaited(LocalDbService.cacheSearchResults(query, _searchResults));
       unawaited(RecipeRatingService.prefetchSummaries(fresh));
@@ -397,7 +424,7 @@ class ExploreScreenState extends State<ExploreScreen>
     } catch (e) {
       debugPrint('prefetch next search page failed: $e');
     } finally {
-      _searchPageInFlight = false;
+      _releaseSearchPage(pageToken);
     }
   }
 

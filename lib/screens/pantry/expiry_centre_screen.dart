@@ -46,7 +46,7 @@ class _ExpiryCentreScreenState extends State<ExpiryCentreScreen> {
   }
 
   Future<void> _reload() async {
-    final items = await PantryService.getAll();
+    final items = await PantryService.getActive();
     final used = await PantryService.usedLog();
     if (!mounted) return;
     setState(() {
@@ -347,11 +347,7 @@ class _ExpiryCentreScreenState extends State<ExpiryCentreScreen> {
               const SizedBox(width: 14),
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textDark,
-                ),
+                style: pantryH2,
               ),
               const SizedBox(width: 6),
               Text(

@@ -121,8 +121,24 @@ class PantryRecipeMatcher {
     return bestScore >= 70 ? best : null;
   }
 
+  /// Stable key so the same dish never appears twice in pantry meal lists.
+  static String recipeDedupeKey(GeneratedRecipe r) {
+    final id = r.id?.trim();
+    if (id != null && id.isNotEmpty) return 'id:$id';
+    final source = r.externalSource?.trim();
+    final sourceId = r.externalId?.trim();
+    if (source != null &&
+        source.isNotEmpty &&
+        sourceId != null &&
+        sourceId.isNotEmpty) {
+      return 'ext:$source:$sourceId';
+    }
+    return 'title:${_norm(r.title)}';
+  }
+
   /// Recipes the pantry covers at least [minRatio] of, best first: recipes
   /// that use expiring items rank above fuller matches.
+  /// Each recipe appears at most once (by id / external id / title).
   static List<PantryMeal> match(
     List<GeneratedRecipe> catalog,
     List<PantryItem> items, {
@@ -134,7 +150,12 @@ class PantryRecipeMatcher {
         .map((i) => i.id)
         .toSet();
     final meals = <PantryMeal>[];
+    final seenRecipes = <String>{};
     for (final r in catalog) {
+      final dedupeKey = recipeDedupeKey(r);
+      if (dedupeKey == 'title:' || seenRecipes.contains(dedupeKey)) continue;
+      seenRecipes.add(dedupeKey);
+
       final ingredients = <({String name, String amount})>[
         ...r.ingredientsUsed.map((i) => (name: i.name, amount: i.amount)),
         ...r.missingIngredients.map((i) => (name: i.name, amount: i.amount)),

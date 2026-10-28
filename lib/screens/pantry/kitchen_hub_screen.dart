@@ -1,12 +1,18 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import '../../models/generated_recipe.dart';
 import '../../models/pantry_item.dart';
+import '../../config/iap_config.dart';
+import '../../constants/legal_urls.dart';
 import '../../services/pantry_recipe_matcher.dart';
 import '../../services/pantry_service.dart';
 import '../../services/pantry_sync_service.dart';
+import '../../services/pantry_upgrade_prompt_service.dart';
 import '../../services/recipe_service.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/external_link.dart';
 import '../../widgets/recipe_thumbnail_image.dart';
 import '../paywall_screen.dart';
 import '../scan/recipe_detail_page.dart';
@@ -34,6 +40,7 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
   bool _loading = true;
   bool _isPremium = false;
   bool _searching = false;
+  bool _lockedViewLogged = false;
   String _query = '';
   PantryLocation? _filter;
   final Set<PantryLocation> _expanded = {};
@@ -59,18 +66,44 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
   }
 
   Future<void> _bootstrap() async {
+    await PantryService.ensureShelfOverridesLoaded();
     final premium = await SubscriptionService.isPremium();
     if (!mounted) return;
-    setState(() {
-      _isPremium = premium;
-      if (!premium) _loading = false;
-    });
-    if (!premium) return;
-    await Future.wait([_reload(), _loadRecipes()]);
+    setState(() => _isPremium = premium);
+    // Always load real pantry rows — locked UI needs true counts (4.2).
+    await _reload();
+    if (premium) {
+      await _loadRecipes();
+    } else if (!_lockedViewLogged) {
+      _lockedViewLogged = true;
+      final urgent = _items.where((i) {
+        final d = i.daysUntilExpiry;
+        return d != null && d <= 7;
+      }).length;
+      await PantryUpgradePromptService.recordLockedView(
+        pantryItemCount: _items.length,
+        urgentCount: urgent,
+      );
+      final showPrompt = await PantryUpgradePromptService.shouldShow(
+        pantryItemCount: _items.length,
+        urgentCount: urgent,
+      );
+      if (showPrompt) {
+        await PantryUpgradePromptService.recordShown(
+          pantryItemCount: _items.length,
+          urgentCount: urgent,
+        );
+      }
+    }
   }
 
   Future<void> _openPaywall() async {
-    await Navigator.of(context).push<bool>(
+    await PantryUpgradePromptService.recordCtaTap(
+      pantryItemCount: _items.length,
+      surface: 'pantry_locked',
+    );
+    final before = _items.length;
+    final upgraded = await Navigator.of(context).push<bool>(
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => const PaywallScreen(),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
@@ -84,6 +117,11 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
         fullscreenDialog: true,
       ),
     );
+    if (upgraded == true || await SubscriptionService.isPremium()) {
+      await PantryUpgradePromptService.recordUpgradeFromPantry(
+        pantryItemCount: before,
+      );
+    }
     await _bootstrap();
   }
 
@@ -92,7 +130,8 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
       await PantrySync.pullAndMerge();
       await PantryService.mergeCloudActivity();
     } catch (_) {}
-    final items = await PantryService.getAll();
+    // Active only — archive past shelf-life rows (checklist 2.5).
+    final items = await PantryService.getActive();
     if (!mounted) return;
     setState(() {
       _items = items;
@@ -103,7 +142,15 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
   Future<void> _loadRecipes() async {
     final recipes = await RecipeService.listPublicRecipes(limit: 250);
     if (!mounted) return;
-    setState(() => _catalog = recipes);
+    // Drop duplicate catalog rows before matching (same dish once).
+    final seen = <String>{};
+    final unique = <GeneratedRecipe>[];
+    for (final r in recipes) {
+      final key = PantryRecipeMatcher.recipeDedupeKey(r);
+      if (key == 'title:' || !seen.add(key)) continue;
+      unique.add(r);
+    }
+    setState(() => _catalog = unique);
   }
 
   Future<void> _refresh() => Future.wait([_reload(), _loadRecipes()]);
@@ -167,101 +214,230 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
     );
   }
 
+  /// Checklist 04 — real counts, one urgent item named, rest obscured.
+  Widget _buildLockedPantry() {
+    final total = _items.length;
+    final urgent = PantryService.useFirst(_items, limit: 1);
+    final needUsing = _items.where((i) {
+      final d = i.daysUntilExpiry;
+      return d != null && d <= 7;
+    }).length;
+    final shopCount = _items
+        .map((i) => i.scanId)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .length;
+    final headline = total == 0
+        ? 'Your Smart Pantry is filling as you scan'
+        : shopCount > 0
+            ? '$total items from your last $shopCount shop${shopCount == 1 ? '' : 's'}'
+            : '$total items waiting in your pantry';
+    final urgentLine = needUsing > 0
+        ? '$needUsing need using this week'
+        : total > 0
+            ? 'Nothing urgent — unlock to browse everything'
+            : 'Scan a receipt and we’ll start stocking it for you';
+
+    final blurred = _items.skip(urgent.isEmpty ? 0 : 1).take(4).toList();
+
+    return Scaffold(
+      backgroundColor: PantryColors.bg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
+          children: [
+            const Text(
+              'SMART PANTRY',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+                color: Colors.white70,
+                fontFamily: 'Nunito',
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Already filling from your scans',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                fontFamily: 'Nunito',
+                height: 1.15,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Every receipt you scan stocks this pantry automatically. '
+              'Unlock Premium to open it.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: Colors.white.withValues(alpha: 0.85),
+                fontFamily: 'Nunito',
+              ),
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _LockedStatPill(
+                  label: 'Items',
+                  value: '$total',
+                ),
+                _LockedStatPill(
+                  label: 'Use this week',
+                  value: '$needUsing',
+                ),
+                if (shopCount > 0)
+                  _LockedStatPill(
+                    label: 'Shops',
+                    value: '$shopCount',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.14),
+                    Colors.white.withValues(alpha: 0.06),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      fontFamily: 'Nunito',
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    urgentLine,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontFamily: 'Nunito',
+                    ),
+                  ),
+                  if (urgent.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Needs using first',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white60,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _LockedUrgentChip(item: urgent.first),
+                  ],
+                  if (blurred.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    ...blurred.map((item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _LockedBlurredRow(item: item),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _openPaywall,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: Text(
+                  'Unlock Smart Pantry · ${IapConfig.monthlyDisplayPrice}/month',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'Nunito',
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Or ${IapConfig.yearlyDisplayPrice}/year. Cancel anytime.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.65),
+                fontFamily: 'Nunito',
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: () =>
+                      openExternalUrl(context, LegalUrls.privacyPolicy),
+                  child: const Text(
+                    'Privacy',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+                const Text('·', style: TextStyle(color: Colors.white54)),
+                TextButton(
+                  onPressed: () =>
+                      openExternalUrl(context, LegalUrls.termsAndConditions),
+                  child: const Text(
+                    'Terms',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Shelf dates are estimates — always check the pack.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.5),
+                fontFamily: 'Nunito',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     if (!_isPremium && !_loading) {
-      return Scaffold(
-        backgroundColor: PantryColors.bg,
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Smart Pantry',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    fontFamily: 'Nunito',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Track ingredients from every receipt, get expiry alerts, and cook from what you already have.',
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontFamily: 'Nunito',
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.lock_rounded, color: Colors.white, size: 36),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Premium feature',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          fontFamily: 'Nunito',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Receipt scans still save ingredients here automatically — upgrade to unlock your Smart Pantry.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.4,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontFamily: 'Nunito',
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _openPaywall,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'Unlock Smart Pantry',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontFamily: 'Nunito',
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-              ],
-            ),
-          ),
-        ),
-      );
+      return _buildLockedPantry();
     }
 
     final useFirst = PantryService.useFirst(_items);
@@ -447,10 +623,10 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
     return Container(
-      padding: EdgeInsets.fromLTRB(20, top + 12, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, top + 6, 20, 20),
       decoration: const BoxDecoration(
         color: PantryColors.indigo,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -466,11 +642,13 @@ class _Header extends StatelessWidget {
                       color: Colors.white, size: 18),
                 ),
               const Text(
-                'Your kitchen',
+                'YOUR KITCHEN',
                 style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.4,
+                  color: Colors.white70,
+                  fontFamily: 'Nunito',
                 ),
               ),
               const Spacer(),
@@ -541,23 +719,26 @@ class _Header extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           Text(
             _headline,
             style: const TextStyle(
-              fontSize: 32,
-              height: 1.12,
+              fontSize: 26,
+              height: 1.15,
               fontWeight: FontWeight.w900,
               color: Colors.white,
-              letterSpacing: -0.5,
+              letterSpacing: -0.3,
+              fontFamily: 'Nunito',
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             _subline,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
+              height: 1.35,
               color: Colors.white.withValues(alpha: 0.9),
+              fontFamily: 'Nunito',
             ),
           ),
           if (total > 0) ...[
@@ -892,9 +1073,10 @@ class _CookTonightSection extends StatelessWidget {
                       Text(
                         r.title,
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 16,
                           fontWeight: FontWeight.w900,
                           color: AppColors.textDark,
+                          fontFamily: 'Nunito',
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -1108,6 +1290,145 @@ class _GroupRow extends StatelessWidget {
                       ),
                     ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LockedStatPill extends StatelessWidget {
+  final String label;
+  final String value;
+  const _LockedStatPill({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              fontFamily: 'Nunito',
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.65),
+              fontFamily: 'Nunito',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LockedUrgentChip extends StatelessWidget {
+  final PantryItem item;
+  const _LockedUrgentChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final days = item.daysUntilExpiry;
+    final when = days == null
+        ? 'estimate unavailable'
+        : days < 0
+            ? 'past estimate'
+            : days == 0
+                ? 'about today'
+                : days == 1
+                    ? 'about 1 day left'
+                    : 'about $days days left';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Text(item.emoji, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+                Text(
+                  when,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LockedBlurredRow extends StatelessWidget {
+  final PantryItem item;
+  const _LockedBlurredRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return ImageFiltered(
+      imageFilter: ImageFilter.blur(sigmaX: 4.5, sigmaY: 4.5),
+      child: Opacity(
+        opacity: 0.55,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Text(item.emoji, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  item.name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    fontFamily: 'Nunito',
+                  ),
+                ),
+              ),
+              const Icon(Icons.lock_rounded, color: Colors.white54, size: 16),
+            ],
+          ),
         ),
       ),
     );

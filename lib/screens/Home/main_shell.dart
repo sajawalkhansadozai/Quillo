@@ -10,7 +10,6 @@ import '../../widgets/celebration_overlays.dart';
 import '../../services/pantry_service.dart';
 import '../../services/pantry_sync_service.dart';
 import '../pantry/kitchen_hub_screen.dart';
-import '../paywall_screen.dart';
 import 'home_screen.dart';
 import 'explore_screen.dart';
 import 'saved_screen.dart';
@@ -95,43 +94,19 @@ class _MainShellState extends State<MainShell> {
   ];
 
   /// Refresh premium when opening a tab that shows ads (checklist 4.3).
+  /// Pantry tab stays visible for free users — locked state lives inside
+  /// KitchenHub (Smart Pantry checklist 4.1).
   Future<void> _onTabSelected(int i) async {
     if (i == 2) {
       _showScanSheet(context);
       return;
     }
-    // Smart Pantry is a premium feature — free users hit the paywall.
-    if (i == 4) {
-      await SubscriptionService.refreshPremiumStatus();
-      if (!await SubscriptionService.isPremium()) {
-        if (!mounted) return;
-        await _openPaywall();
-        if (!await SubscriptionService.isPremium()) return;
-      }
-    }
-    if (i == 0 || i == 1) {
+    if (i == 0 || i == 1 || i == 4) {
       await SubscriptionService.refreshPremiumStatus();
     }
     if (i == 0) _homeKey.currentState?.refresh();
     if (i == 1) _exploreKey.currentState?.refresh();
     if (mounted) setState(() => _currentIndex = i);
-  }
-
-  Future<void> _openPaywall() async {
-    await Navigator.of(context).push<bool>(
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => const PaywallScreen(),
-        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 400),
-        fullscreenDialog: true,
-      ),
-    );
   }
 
   @override

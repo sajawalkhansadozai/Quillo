@@ -57,13 +57,21 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
 
   Future<void> _load() async {
     final results = await Future.wait([
-      PantryService.getAll(),
+      PantryService.getActive(),
       RecipeService.listPublicRecipes(limit: 250),
     ]);
     if (!mounted) return;
+    final recipes = results[1] as List<GeneratedRecipe>;
+    final seen = <String>{};
+    final unique = <GeneratedRecipe>[];
+    for (final r in recipes) {
+      final key = PantryRecipeMatcher.recipeDedupeKey(r);
+      if (key == 'title:' || !seen.add(key)) continue;
+      unique.add(r);
+    }
     setState(() {
       _items = results[0] as List<PantryItem>;
-      _catalog = results[1] as List<GeneratedRecipe>;
+      _catalog = unique;
       _loading = false;
     });
     final saved = await RecipeService.loadSavedRecipes();
@@ -232,24 +240,28 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
         padding: EdgeInsets.zero,
         children: [
           PantryHeader(
+            compact: true,
             eyebrow: 'Smart recipes',
             title: 'Cook from your pantry',
             subtitle: _loading
                 ? 'Finding recipes…'
                 : '${meals.length} ${meals.length == 1 ? 'recipe' : 'recipes'} you can make now',
             children: [
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               TextField(
                 controller: _searchCtrl,
                 onChanged: (_) => setState(() => _shown = _pageSize),
+                style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Search recipes',
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  hintStyle: const TextStyle(fontSize: 14),
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
                   ),
                 ),
@@ -257,13 +269,13 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     _Chip(
                       label: 'Under 30 min',
@@ -289,10 +301,10 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 if (_loading)
                   const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 60),
+                    padding: EdgeInsets.symmetric(vertical: 40),
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else if (best == null)
@@ -319,19 +331,27 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
                         : () => _showMissing(best),
                   ),
                   if (more.isNotEmpty) ...[
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 20),
                     Row(
                       children: [
                         const Expanded(
-                          child: Text('More matches', style: pantryH2),
+                          child: Text(
+                            'More matches',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
                         ),
                         TextButton.icon(
                           onPressed: _howWeRank,
                           icon: const Icon(Icons.info_outline_rounded,
-                              size: 18, color: PantryColors.indigo),
+                              size: 16, color: PantryColors.indigo),
                           label: const Text(
                             'How we rank',
                             style: TextStyle(
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
                               color: PantryColors.indigo,
                             ),
@@ -339,7 +359,7 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Container(
                       decoration: pantryCard(),
                       child: Column(
@@ -365,10 +385,10 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
                     ),
                   ],
                   if (remaining > 0) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      height: 54,
+                      height: 44,
                       child: OutlinedButton(
                         onPressed: () =>
                             setState(() => _shown += _pageSize),
@@ -377,13 +397,13 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
                           backgroundColor: Colors.white,
                           side: const BorderSide(color: Color(0xFFD5D3F0)),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(27),
+                            borderRadius: BorderRadius.circular(22),
                           ),
                         ),
                         child: Text(
                           'Show ${remaining < _pageSize ? remaining : _pageSize} more ${remaining == 1 ? 'recipe' : 'recipes'}',
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -418,10 +438,10 @@ class _Chip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFF15153A) : Colors.white,
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color: selected ? const Color(0xFF15153A) : const Color(0xFFD5D3F0),
           ),
@@ -430,21 +450,21 @@ class _Chip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected && !dropdown) ...[
-              const Icon(Icons.check_rounded, size: 18, color: Colors.white),
-              const SizedBox(width: 6),
+              const Icon(Icons.check_rounded, size: 15, color: Colors.white),
+              const SizedBox(width: 4),
             ],
             Text(
               label,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: selected ? Colors.white : AppColors.textDark,
               ),
             ),
             if (dropdown) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Icon(Icons.keyboard_arrow_down_rounded,
-                  size: 20,
+                  size: 18,
                   color: selected ? Colors.white : AppColors.textDark),
             ],
           ],
@@ -479,7 +499,7 @@ class _SaveButton extends StatelessWidget {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Padding(padding: const EdgeInsets.all(12), child: icon),
+        child: Padding(padding: const EdgeInsets.all(8), child: icon),
       ),
     );
   }
@@ -512,7 +532,7 @@ class _BestMatchCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: 210,
+            height: 150,
             width: double.infinity,
             child: Stack(
               fit: StackFit.expand,
@@ -523,24 +543,24 @@ class _BestMatchCard extends StatelessWidget {
                     imageUrl: r.imageUrl,
                     emoji: '🍽️',
                     placeholderColor: AppColors.primaryLight,
-                    cacheWidth: 900,
+                    cacheWidth: 720,
                     zoom: 1,
                   ),
                 ),
                 Positioned(
-                  left: 14,
-                  top: 14,
+                  left: 10,
+                  top: 10,
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFF15153A),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text(
                       'Best match',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
@@ -548,49 +568,50 @@ class _BestMatchCard extends StatelessWidget {
                   ),
                 ),
                 Positioned(
-                  right: 12,
-                  top: 12,
+                  right: 8,
+                  top: 8,
                   child: _SaveButton(saved: saved, onTap: onSave, filled: true),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   r.title,
                   style: const TextStyle(
-                    fontSize: 24,
+                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                     color: AppColors.textDark,
+                    height: 1.2,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text.rich(
                   TextSpan(children: [
                     TextSpan(text: '${r.cookTimeLabel} total'),
-                    const TextSpan(text: '     '),
+                    const TextSpan(text: '   ·   '),
                     TextSpan(
                       text: r.difficultyLabel,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ]),
                   style: const TextStyle(
-                    fontSize: 15,
+                    fontSize: 13,
                     color: AppColors.textDark,
                   ),
                 ),
-                const Divider(height: 32, color: PantryColors.border),
+                const Divider(height: 22, color: PantryColors.border),
                 Row(
                   children: [
                     const Expanded(
                       child: Text(
                         'In your pantry',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textDark,
                         ),
@@ -599,7 +620,7 @@ class _BestMatchCard extends StatelessWidget {
                     Text(
                       '${meal.have.length} of ${meal.total}',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 13,
                         fontWeight: FontWeight.w800,
                         color: meal.hasAll
                             ? PantryColors.green
@@ -608,7 +629,7 @@ class _BestMatchCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 for (final item in shownItems)
                   _PantryLine(
                     label: item.name,
@@ -636,8 +657,29 @@ class _BestMatchCard extends StatelessWidget {
                       missing: true,
                     ),
                   ),
-                const SizedBox(height: 16),
-                PantryPrimaryButton(label: 'View recipe', onPressed: onOpen),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton(
+                    onPressed: onOpen,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PantryColors.indigo,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                    ),
+                    child: const Text(
+                      'View recipe',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -663,12 +705,12 @@ class _PantryLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Container(
-            width: 26,
-            height: 26,
+            width: 22,
+            height: 22,
             decoration: BoxDecoration(
               color: missing
                   ? PantryColors.segmentBg
@@ -679,7 +721,7 @@ class _PantryLine extends StatelessWidget {
             ),
             child: Icon(
               missing ? Icons.remove_rounded : Icons.check_rounded,
-              size: 16,
+              size: 14,
               color: missing
                   ? AppColors.textMedium
                   : strong
@@ -687,12 +729,12 @@ class _PantryLine extends StatelessWidget {
                       : PantryColors.green,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 13,
                 color: strong ? AppColors.textDark : AppColors.textMedium,
               ),
             ),
@@ -701,7 +743,7 @@ class _PantryLine extends StatelessWidget {
             Text(
               trailing!.$1,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: trailing!.$2,
               ),

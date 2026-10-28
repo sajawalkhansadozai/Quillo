@@ -75,6 +75,12 @@ class PantryItem {
   final String? sourceNote;
   final String emoji;
 
+  /// Receipt / scan that created or last restocked this row (checklist 1.6).
+  final String? scanId;
+
+  /// Normalised ingredient key used for dedupe (checklist 2.2 / 2.3).
+  final String? ingredientKey;
+
   const PantryItem({
     required this.id,
     required this.name,
@@ -87,6 +93,8 @@ class PantryItem {
     required this.addedAt,
     this.sourceNote,
     this.emoji = '🥬',
+    this.scanId,
+    this.ingredientKey,
   });
 
   int? get daysUntilExpiry {
@@ -121,9 +129,13 @@ class PantryItem {
     String? categoryLabel,
     DateTime? bestBefore,
     bool? bestBeforeEstimated,
+    DateTime? addedAt,
     String? sourceNote,
     String? emoji,
+    String? scanId,
+    String? ingredientKey,
     bool clearBestBefore = false,
+    bool clearScanId = false,
   }) {
     return PantryItem(
       id: id,
@@ -134,9 +146,11 @@ class PantryItem {
       categoryLabel: categoryLabel ?? this.categoryLabel,
       bestBefore: clearBestBefore ? null : (bestBefore ?? this.bestBefore),
       bestBeforeEstimated: bestBeforeEstimated ?? this.bestBeforeEstimated,
-      addedAt: addedAt,
+      addedAt: addedAt ?? this.addedAt,
       sourceNote: sourceNote ?? this.sourceNote,
       emoji: emoji ?? this.emoji,
+      scanId: clearScanId ? null : (scanId ?? this.scanId),
+      ingredientKey: ingredientKey ?? this.ingredientKey,
     );
   }
 
@@ -155,6 +169,8 @@ class PantryItem {
             DateTime.now(),
         sourceNote: json['source_note'] as String?,
         emoji: json['emoji'] as String? ?? '🥬',
+        scanId: json['scan_id'] as String?,
+        ingredientKey: json['ingredient_key'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -169,5 +185,7 @@ class PantryItem {
         'added_at': addedAt.toIso8601String(),
         if (sourceNote != null) 'source_note': sourceNote,
         'emoji': emoji,
+        if (scanId != null) 'scan_id': scanId,
+        if (ingredientKey != null) 'ingredient_key': ingredientKey,
       };
 }

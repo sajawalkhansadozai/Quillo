@@ -14,6 +14,9 @@ import '../../utils/recipe_preference_filter.dart';
 import '../../services/recipe_service.dart';
 import '../../services/recipe_rating_service.dart';
 import '../../services/in_app_notification_service.dart';
+import '../../services/pantry_upgrade_prompt_service.dart';
+import '../../config/iap_config.dart';
+import '../paywall_screen.dart';
 import '../../widgets/recipe_rating_badge.dart';
 import '../../widgets/recipe_thumbnail_image.dart';
 import '../scan/ingredient_review_screen.dart';
@@ -55,6 +58,7 @@ class HomeScreenState extends State<HomeScreen>
   int _imageUpgradeGeneration = 0;
   final Set<String> _upgradingImageKeys = {};
   String? _expiryIngredient;
+  ({int total, int urgent, String? urgentName})? _pantryPrompt;
 
   List<String> get _categories {
     final extras = _userPrefs.cuisines
@@ -247,7 +251,20 @@ class HomeScreenState extends State<HomeScreen>
         _loading = false;
       });
       final ageing = await InAppNotificationService.ageingIngredientName();
-      if (mounted) setState(() => _expiryIngredient = ageing);
+      final pantryPrompt =
+          await PantryUpgradePromptService.snapshotIfPromptable();
+      if (mounted) {
+        setState(() {
+          _expiryIngredient = ageing;
+          _pantryPrompt = pantryPrompt;
+        });
+      }
+      if (pantryPrompt != null) {
+        unawaited(PantryUpgradePromptService.recordShown(
+          pantryItemCount: pantryPrompt.total,
+          urgentCount: pantryPrompt.urgent,
+        ));
+      }
       RecipeRatingService.prefetchSummaries([
         ..._catalogRecipes,
         ..._recentRecipes,
@@ -260,6 +277,117 @@ class HomeScreenState extends State<HomeScreen>
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openPantryPaywall() async {
+    final prompt = _pantryPrompt;
+    if (prompt != null) {
+      await PantryUpgradePromptService.recordCtaTap(
+        pantryItemCount: prompt.total,
+        surface: 'home_card',
+      );
+    }
+    if (!mounted) return;
+    final upgraded = await Navigator.of(context).push<bool>(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const PaywallScreen(),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+        fullscreenDialog: true,
+      ),
+    );
+    if (upgraded == true && prompt != null) {
+      await PantryUpgradePromptService.recordUpgradeFromPantry(
+        pantryItemCount: prompt.total,
+      );
+    }
+    if (mounted) setState(() => _pantryPrompt = null);
+  }
+
+  Future<void> _dismissPantryPrompt() async {
+    final prompt = _pantryPrompt;
+    if (prompt != null) {
+      await PantryUpgradePromptService.recordDismissed(
+        pantryItemCount: prompt.total,
+      );
+    }
+    if (mounted) setState(() => _pantryPrompt = null);
+  }
+
+  Widget _buildPantryUpgradeCard() {
+    final prompt = _pantryPrompt;
+    if (prompt == null) return const SizedBox.shrink();
+    final body = prompt.urgentName != null && prompt.urgent > 0
+        ? '${prompt.total} items in your pantry · ${prompt.urgentName} needs using'
+        : '${prompt.total} items from your scans are waiting in Smart Pantry';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+      child: Material(
+        color: const Color(0xFF1B1B2F),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Smart Pantry',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        fontFamily: 'Nunito',
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _dismissPantryPrompt,
+                    icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                  ),
+                ],
+              ),
+              Text(
+                body,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _openPantryPaywall,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Unlock · ${IapConfig.monthlyDisplayPrice}/mo',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _firstName(String email) {
@@ -460,6 +588,8 @@ class HomeScreenState extends State<HomeScreen>
               // ── Header ──────────────────────────────────────────────────
               SliverToBoxAdapter(child: _buildHeader()),
               const SliverToBoxAdapter(child: ScanUsageBanner()),
+              if (_pantryPrompt != null)
+                SliverToBoxAdapter(child: _buildPantryUpgradeCard()),
               if (_expiryIngredient != null)
                 SliverToBoxAdapter(child: _buildExpiryBanner()),
 

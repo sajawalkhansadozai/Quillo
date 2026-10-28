@@ -64,15 +64,6 @@ class RecipeService {
     }
   }
 
-  /// Latest image-generation stats from the most recent external catalog search.
-  static String? lastSearchImageWarning;
-  static int? lastGeminiImageCount;
-  static int? lastProviderImageCount;
-  static int? lastCatalogResultCount;
-  static int? lastExternalResultCount;
-  static int? lastImagesPendingUpgrade;
-  static bool lastSearchHasMore = false;
-  static int lastSearchNextOffset = 0;
   static List<GeneratedRecipe> lastForYouRecipes = [];
 
   static Map<String, dynamic> _preferencesBody(
@@ -175,7 +166,10 @@ class RecipeService {
   }
 
   /// Search public catalog via edge function (Supabase + external APIs).
-  static Future<List<GeneratedRecipe>> searchCatalog({
+  ///
+  /// Throws [CatalogSearchException] when the request fails, so callers can
+  /// tell "no matches" apart from "search is broken".
+  static Future<CatalogSearchPage> searchCatalog({
     required String query,
     int limit = 50,
     int offset = 0,
@@ -183,15 +177,16 @@ class RecipeService {
     UserRecipePreferences? preferences,
   }) async {
     final term = query.trim();
-    if (term.isEmpty) return [];
-
-    if (_client.auth.currentUser == null) return [];
+    if (term.isEmpty || _client.auth.currentUser == null) {
+      return CatalogSearchPage.empty(offset);
+    }
 
     final prefs = preferences ?? await loadUserPreferences();
     final cap = limit.clamp(1, 50);
 
+    late final FunctionResponse response;
     try {
-      final response = await _client.functions.invoke(
+      response = await _client.functions.invoke(
         'search-catalog',
         body: {
           'query': term,
@@ -202,40 +197,37 @@ class RecipeService {
           ..._preferencesBody(prefs),
         },
       );
-      final data = _parseFunctionData(response.data);
-      if (response.status != 200) {
-        debugPrint(
-          'search-catalog HTTP ${response.status}: ${data?['error'] ?? response.data}',
-        );
-        lastSearchHasMore = false;
-        return [];
-      }
-
-      final recipes = RecipePreferenceFilter.apply(
-        _parseRecipeList(data?['recipes']),
-        prefs,
-      );
-      lastSearchImageWarning = data?['warning'] as String?;
-      lastGeminiImageCount = data?['gemini_image_count'] as int?;
-      lastProviderImageCount = data?['provider_image_count'] as int?;
-      lastCatalogResultCount = data?['catalog_count'] as int?;
-      lastExternalResultCount = data?['external_count'] as int?;
-      lastImagesPendingUpgrade = data?['images_pending_upgrade'] as int?;
-      lastSearchHasMore = data?['has_more'] as bool? ?? false;
-      lastSearchNextOffset = data?['next_offset'] as int? ?? offset;
-      debugPrint(
-        'searchCatalog "$term": ${recipes.length} recipes '
-        '(catalog=${lastCatalogResultCount ?? 0}, '
-        'external=${lastExternalResultCount ?? 0}, '
-        'provider=${data?['provider']}, '
-        'warning=${lastSearchImageWarning ?? 'none'})',
-      );
-      return recipes;
     } catch (e) {
       debugPrint('searchCatalog failed: $e');
-      lastSearchHasMore = false;
-      return [];
+      throw CatalogSearchException('$e');
     }
+
+    final data = _parseFunctionData(response.data);
+    if (response.status != 200) {
+      final error = data?['error'] ?? response.data;
+      debugPrint('search-catalog HTTP ${response.status}: $error');
+      throw CatalogSearchException('HTTP ${response.status}: $error');
+    }
+
+    final recipes = RecipePreferenceFilter.apply(
+      _parseRecipeList(data?['recipes']),
+      prefs,
+    );
+    final page = CatalogSearchPage(
+      recipes: recipes,
+      hasMore: data?['has_more'] as bool? ?? false,
+      nextOffset: (data?['next_offset'] as num?)?.toInt() ?? offset,
+      catalogCount: (data?['catalog_count'] as num?)?.toInt() ?? 0,
+      externalCount: (data?['external_count'] as num?)?.toInt() ?? 0,
+      warning: data?['warning'] as String?,
+    );
+    debugPrint(
+      'searchCatalog "$term" offset=$offset: ${recipes.length} recipes '
+      '(catalog=${page.catalogCount}, external=${page.externalCount}, '
+      'more=${page.hasMore}, next=${page.nextOffset}, '
+      'cache=${data?['from_cache']}, warning=${page.warning ?? 'none'})',
+    );
+    return page;
   }
 
   /// Stable keys for recipes already shown in a paginated search.
@@ -251,6 +243,34 @@ class RecipeService {
       }
     }
     return keys.toList();
+  }
+
+  /// Keys used to drop repeat cards: ids plus the normalised title, so two
+  /// different provider recipes both called "Chicken" only show once.
+  static Set<String> searchDedupeKeys(GeneratedRecipe recipe) {
+    final keys = searchExcludeIds([recipe]).toSet();
+    final title = recipe.title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
+        .trim();
+    if (title.isNotEmpty) keys.add('title:$title');
+    return keys;
+  }
+
+  /// Keeps the first recipe for each id / title, skipping any in [seen].
+  /// [seen] is updated with the keys of the recipes that are kept.
+  static List<GeneratedRecipe> dedupeSearchResults(
+    Iterable<GeneratedRecipe> recipes,
+    Set<String> seen,
+  ) {
+    final out = <GeneratedRecipe>[];
+    for (final recipe in recipes) {
+      final keys = searchDedupeKeys(recipe);
+      if (keys.any(seen.contains)) continue;
+      seen.addAll(keys);
+      out.add(recipe);
+    }
+    return out;
   }
 
   static Map<String, dynamic>? _parseFunctionData(dynamic data) {
@@ -365,6 +385,9 @@ class RecipeService {
     Duration(seconds: 12),
     Duration(seconds: 25),
   ];
+
+  /// Parallel hero-image upgrades per batch (Explore / Home / Saved / scan).
+  static const int _imageUpgradeConcurrency = 4;
 
   static Future<GeneratedRecipe?> upgradeRecipeHeroImage(
     GeneratedRecipe recipe, {
@@ -568,11 +591,33 @@ class RecipeService {
       return false;
     }
 
+    // Run a few upgrades at once: generating one image takes several
+    // seconds, so a strictly sequential queue left a 20-card page showing
+    // placeholders for minutes.
+    Future<void> runPool(
+      List<GeneratedRecipe> queue,
+      Future<void> Function(GeneratedRecipe) work,
+    ) async {
+      var next = 0;
+      Future<void> worker() async {
+        while (next < queue.length && keepGoing()) {
+          final recipe = queue[next++];
+          await work(recipe);
+        }
+      }
+
+      await Future.wait(
+        List.generate(
+          _imageUpgradeConcurrency.clamp(1, queue.length),
+          (_) => worker(),
+        ),
+      );
+    }
+
     // First pass: one quick attempt per card so images appear fast and a
     // slow/failing card never blocks the others.
     final pending = <GeneratedRecipe>[];
-    for (final original in targets) {
-      if (!keepGoing()) return;
+    await runPool(targets, (original) async {
       final ok = await attempt(original, 1);
       if (!ok) {
         // Clear the "enhancing" overlay immediately so search doesn't look
@@ -580,17 +625,15 @@ class RecipeService {
         onFinished?.call(original);
         pending.add(original);
       }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
+    });
+    if (!keepGoing() || pending.isEmpty) return;
 
     // Retry pass: only the cards that failed, with internal backoff. Since
     // generated images are cached permanently, every card eventually succeeds.
-    for (final original in pending) {
-      if (!keepGoing()) return;
+    await runPool(pending, (original) async {
       await attempt(original, 4);
       onFinished?.call(original);
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
+    });
   }
 
   /// Search all users' public recipes (Explore) — Supabase only.
@@ -741,7 +784,7 @@ class RecipeService {
     // Load full user preferences (dietary, cuisine, cook time, skill, exclusions)
     final prefs = await loadUserPreferences();
 
-    final FunctionResponse response;
+    late final FunctionResponse response;
     try {
       response = await _client.functions.invoke(
         'generate-recipes',
@@ -906,4 +949,43 @@ class RecipeService {
       return UserRecipePreferences.empty;
     }
   }
+}
+
+/// One page of Explore catalog search results.
+class CatalogSearchPage {
+  final List<GeneratedRecipe> recipes;
+  final bool hasMore;
+
+  /// Offset to send for the next page.
+  final int nextOffset;
+  final int catalogCount;
+  final int externalCount;
+
+  /// Server hint, only set when the page is empty (e.g. missing API keys).
+  final String? warning;
+
+  const CatalogSearchPage({
+    required this.recipes,
+    required this.hasMore,
+    required this.nextOffset,
+    this.catalogCount = 0,
+    this.externalCount = 0,
+    this.warning,
+  });
+
+  const CatalogSearchPage.empty(int offset)
+      : recipes = const [],
+        hasMore = false,
+        nextOffset = offset,
+        catalogCount = 0,
+        externalCount = 0,
+        warning = null;
+}
+
+class CatalogSearchException implements Exception {
+  final String message;
+  CatalogSearchException(this.message);
+
+  @override
+  String toString() => 'CatalogSearchException: $message';
 }

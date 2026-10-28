@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../services/dev_recipe_seed_service.dart';
+import '../../services/pantry_service.dart';
 import '../../services/subscription_service.dart';
 import '../../widgets/scan_usage_banner.dart';
 import '../../theme/app_theme.dart';
@@ -31,6 +32,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
+  bool _pantryCollection = true;
   bool _seedingRecipes = false;
 
   // ── Real user data ──────────────────────────────────────────────────────────
@@ -87,12 +89,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadLocalSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final pantryOn = await PantryService.isCollectionEnabled();
     if (mounted) {
       setState(() {
         _measurementUnit = prefs.getString('measurement_unit') ?? 'Metric';
         _pushNotifications = prefs.getBool('push_notifications') ?? true;
+        _pantryCollection = pantryOn;
       });
     }
+  }
+
+  Future<void> _togglePantryCollection(bool enabled) async {
+    await PantryService.setCollectionEnabled(enabled);
+    if (mounted) setState(() => _pantryCollection = enabled);
+  }
+
+  Future<void> _confirmClearPantry() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Smart Pantry?'),
+        content: const Text(
+          'This removes every pantry item on this account. '
+          'Future scans will only refill it if pantry collection is still on.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear pantry'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await PantryService.clearAllItems();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Smart Pantry cleared'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -1680,6 +1722,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       : 'Ounces, cups, Fahrenheit',
                   trailing: _measurementUnit,
                   onTap: _editMeasurementUnit,
+                ),
+                _SettingDivider(),
+                _SettingToggleRow(
+                  icon: Icons.kitchen_rounded,
+                  iconColor: const Color(0xFF00897B),
+                  title: 'Stock Smart Pantry from scans',
+                  subtitle: _pantryCollection
+                      ? 'Receipt ingredients are saved automatically'
+                      : 'Scans still make recipes — pantry writes are off',
+                  value: _pantryCollection,
+                  onChanged: _togglePantryCollection,
+                ),
+                _SettingDivider(),
+                _SettingArrowRow(
+                  icon: Icons.delete_sweep_outlined,
+                  iconColor: const Color(0xFFE53935),
+                  title: 'Clear Smart Pantry',
+                  subtitle: 'Remove all pantry items now',
+                  trailing: '',
+                  onTap: _confirmClearPantry,
                 ),
               ],
             ),

@@ -39,7 +39,7 @@ class _PantryInsightsScreenState extends State<PantryInsightsScreen> {
   }
 
   Future<void> _load() async {
-    final items = await PantryService.getAll();
+    final items = await PantryService.getActive();
     final used = await PantryService.usedLog();
     final dismissed = await PantryService.dismissedRestock();
     if (!mounted) return;

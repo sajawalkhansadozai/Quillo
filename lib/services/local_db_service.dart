@@ -235,7 +235,7 @@ class LocalDbService {
   static String normalizeSearchTerm(String term) => term
       .trim()
       .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9 ]'), '')
+      .replaceAll(RegExp(r'[^\p{L}\p{N} ]', unicode: true), '')
       .replaceAll(RegExp(r'\s+'), ' ');
 
   static Future<void> cacheSearchResults(

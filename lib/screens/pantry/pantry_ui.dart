@@ -94,17 +94,20 @@ BoxDecoration pantryCard({double radius = 20}) => BoxDecoration(
       border: Border.all(color: PantryColors.border),
     );
 
+/// Section heading — matches Home/Explore section titles.
 const pantryH2 = TextStyle(
-  fontSize: 22,
+  fontSize: 17,
   fontWeight: FontWeight.w900,
   color: AppColors.textDark,
+  fontFamily: 'Nunito',
 );
 
 const pantryCaps = TextStyle(
-  fontSize: 12,
-  letterSpacing: 0.8,
+  fontSize: 11,
+  letterSpacing: 1.0,
   fontWeight: FontWeight.w800,
   color: AppColors.textDark,
+  fontFamily: 'Nunito',
 );
 
 class PantryEmojiTile extends StatelessWidget {
@@ -174,6 +177,9 @@ class PantryHeader extends StatelessWidget {
   final List<Widget> children;
   final bool showBack;
 
+  /// Kept for callers; typography now matches Explore/Home either way.
+  final bool compact;
+
   const PantryHeader({
     super.key,
     this.eyebrow,
@@ -182,6 +188,7 @@ class PantryHeader extends StatelessWidget {
     this.trailing,
     this.children = const [],
     this.showBack = true,
+    this.compact = false,
   });
 
   @override
@@ -189,10 +196,10 @@ class PantryHeader extends StatelessWidget {
     final top = MediaQuery.of(context).padding.top;
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(20, top + 8, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, top + 6, 20, compact ? 16 : 20),
       decoration: const BoxDecoration(
         color: PantryColors.indigo,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,36 +218,41 @@ class PantryHeader extends StatelessWidget {
               if (trailing != null) trailing!,
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           if (eyebrow != null) ...[
             Text(
-              eyebrow!,
+              eyebrow!.toUpperCase(),
               style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: Colors.white.withValues(alpha: 0.85),
+                fontFamily: 'Nunito',
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
           ],
           Text(
             title,
             style: const TextStyle(
-              fontSize: 32,
-              height: 1.1,
+              // Matches Explore page title (26) / Home greeting.
+              fontSize: 26,
+              height: 1.15,
               fontWeight: FontWeight.w900,
               color: Colors.white,
-              letterSpacing: -0.5,
+              letterSpacing: -0.3,
+              fontFamily: 'Nunito',
             ),
           ),
           if (subtitle != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               subtitle!,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 13,
                 height: 1.35,
-                color: Colors.white.withValues(alpha: 0.92),
+                color: Colors.white.withValues(alpha: 0.9),
+                fontFamily: 'Nunito',
               ),
             ),
           ],
