@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quillo/models/generated_recipe.dart';
 import 'package:quillo/models/pantry_item.dart';
 import 'package:quillo/services/pantry_recipe_matcher.dart';
 import 'package:quillo/utils/pantry_quantity.dart';
@@ -137,6 +138,92 @@ void main() {
         PantryRecipeMatcher.matchIngredient('oat milk', [_item('Milk')]),
         isNull,
       );
+    });
+  });
+
+  group('near-title variants', () {
+    test('treats bap / baps and cocktail variants as the same dish', () {
+      expect(
+        PantryRecipeMatcher.isNearTitleVariant(
+          'Prawn & Avocado Bap with Baby Leaf Salad',
+          'Prawn Cocktail & Avocado Baps with Baby Leaf Salad',
+        ),
+        isTrue,
+      );
+      expect(
+        PantryRecipeMatcher.isNearTitleVariant(
+          'Prawn Cocktail & Avocado Bap with Baby Leaf Salad',
+          'Prawn Cocktail & Avocado Baps with Baby Leaf Salad',
+        ),
+        isTrue,
+      );
+    });
+
+    test('keeps clearly different dishes', () {
+      expect(
+        PantryRecipeMatcher.isNearTitleVariant(
+          'Prawn & Avocado Bap with Baby Leaf Salad',
+          'Steak & Asparagus Baps with Maille Sauce',
+        ),
+        isFalse,
+      );
+    });
+
+    GeneratedRecipe recipe(String id, String title, List<String> ings) =>
+        GeneratedRecipe(
+          id: id,
+          title: title,
+          difficulty: 'easy',
+          cookTimeMinutes: 15,
+          servings: 2,
+          steps: const [],
+          ingredientsUsed: [
+            for (final n in ings) RecipeIngredientUsed(name: n, amount: '1'),
+          ],
+          missingIngredients: const [],
+          nutrition: const RecipeNutritionData(
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fat: 0,
+          ),
+        );
+
+    test('uniqueRecipes keeps one of bap / baps wording variants', () {
+      final unique = PantryRecipeMatcher.uniqueRecipes([
+        recipe('2', 'Prawn Cocktail & Avocado Baps with Baby Leaf Salad',
+            ['Prawn']),
+        recipe('3', 'Prawn Cocktail & Avocado Bap with Baby Leaf Salad',
+            ['Prawn']),
+      ]);
+      expect(unique.map((r) => r.id), ['2']);
+    });
+
+    test('keeps only the best-ranked of near-title variants', () {
+      final pantry = [
+        _item('Prawn'),
+        _item('Avocado'),
+        _item('Baby Leaf Salad'),
+        _item('Steak'),
+        _item('Asparagus'),
+      ];
+
+      final meals = PantryRecipeMatcher.match(
+        [
+          recipe('1', 'Prawn & Avocado Bap with Baby Leaf Salad',
+              ['Prawn', 'Avocado', 'Baby Leaf Salad']),
+          recipe('2', 'Prawn Cocktail & Avocado Baps with Baby Leaf Salad',
+              ['Prawn', 'Avocado', 'Baby Leaf Salad']),
+          recipe('3', 'Prawn Cocktail & Avocado Bap with Baby Leaf Salad',
+              ['Prawn', 'Avocado', 'Baby Leaf Salad']),
+          recipe('4', 'Steak & Asparagus Baps with Maille Sauce',
+              ['Steak', 'Asparagus']),
+        ],
+        pantry,
+        minRatio: 0.5,
+      );
+
+      expect(meals.map((m) => m.recipe.id), ['1', '4']);
     });
   });
 }

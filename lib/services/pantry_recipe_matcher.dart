@@ -121,6 +121,10 @@ class PantryRecipeMatcher {
     return bestScore >= 70 ? best : null;
   }
 
+  static const _titleStopWords = {
+    'a', 'an', 'and', 'the', 'with', 'of', 'for', 'in', 'on', 'to', 'from', 'or',
+  };
+
   /// Stable key so the same dish never appears twice in pantry meal lists.
   static String recipeDedupeKey(GeneratedRecipe r) {
     final id = r.id?.trim();
@@ -136,9 +140,98 @@ class PantryRecipeMatcher {
     return 'title:${_norm(r.title)}';
   }
 
+  static String _stemToken(String w) {
+    if (w.endsWith('ies') && w.length > 4) {
+      return '${w.substring(0, w.length - 3)}y';
+    }
+    if (w.endsWith('ses') && w.length > 4) {
+      return w.substring(0, w.length - 2);
+    }
+    if (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) {
+      return w.substring(0, w.length - 1);
+    }
+    return w;
+  }
+
+  /// Significant title words used to collapse near-identical recipe variants
+  /// (e.g. "Prawn … Bap" vs "Prawn Cocktail … Baps").
+  static Set<String> titleTokens(String title) {
+    final raw = title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (raw.isEmpty) return {};
+    final out = <String>{};
+    for (final part in raw.split(' ')) {
+      if (part.isEmpty || _titleStopWords.contains(part)) continue;
+      final w = _stemToken(part);
+      if (w.isNotEmpty) out.add(w);
+    }
+    return out;
+  }
+
+  /// Sorted token key so "Bap" / "Baps" variants share one list slot.
+  static String titleFamilyKey(String title) {
+    final tokens = titleTokens(title).toList()..sort();
+    return tokens.join(' ');
+  }
+
+  /// Prefer title-family collapse for meal lists; fall back to id / source.
+  static String listDedupeKey(GeneratedRecipe r) {
+    final family = titleFamilyKey(r.title);
+    if (family.split(' ').where((t) => t.isNotEmpty).length >= 3) {
+      return 'family:$family';
+    }
+    return recipeDedupeKey(r);
+  }
+
+  /// True when two titles are near-duplicates of the same dish.
+  static bool isNearTitleVariant(String a, String b) {
+    final ta = titleTokens(a);
+    final tb = titleTokens(b);
+    if (ta.isEmpty || tb.isEmpty) return false;
+    if (ta.containsAll(tb) || tb.containsAll(ta)) return true;
+    final intersection = ta.intersection(tb).length;
+    final union = ta.union(tb).length;
+    if (union == 0) return false;
+    // Same dish with a small wording tweak (e.g. optional "Cocktail").
+    if (intersection / union >= 0.65) return true;
+    final smaller = ta.length < tb.length ? ta.length : tb.length;
+    return smaller > 0 && intersection / smaller >= 0.85;
+  }
+
+  /// Keep the first (best-ranked) meal of each near-title family.
+  static List<PantryMeal> collapseNearTitleVariants(List<PantryMeal> meals) {
+    final kept = <PantryMeal>[];
+    for (final meal in meals) {
+      final isVariant = kept.any(
+        (k) => isNearTitleVariant(k.recipe.title, meal.recipe.title),
+      );
+      if (!isVariant) kept.add(meal);
+    }
+    return kept;
+  }
+
+  /// Drop near-title variants from a catalog before matching / display.
+  static List<GeneratedRecipe> uniqueRecipes(List<GeneratedRecipe> recipes) {
+    final seen = <String>{};
+    final unique = <GeneratedRecipe>[];
+    for (final r in recipes) {
+      final key = listDedupeKey(r);
+      if (key == 'title:' || key == 'family:' || !seen.add(key)) continue;
+      // Also skip if an already-kept recipe is a near title variant.
+      if (unique.any((u) => isNearTitleVariant(u.title, r.title))) continue;
+      unique.add(r);
+    }
+    return unique;
+  }
+
   /// Recipes the pantry covers at least [minRatio] of, best first: recipes
   /// that use expiring items rank above fuller matches.
-  /// Each recipe appears at most once (by id / external id / title).
+  /// Exact duplicates (id / external id / title) and near-title variants of
+  /// the same dish appear at most once, so "Best match" is not repeated under
+  /// "More matches".
   static List<PantryMeal> match(
     List<GeneratedRecipe> catalog,
     List<PantryItem> items, {
@@ -151,9 +244,13 @@ class PantryRecipeMatcher {
         .toSet();
     final meals = <PantryMeal>[];
     final seenRecipes = <String>{};
-    for (final r in catalog) {
-      final dedupeKey = recipeDedupeKey(r);
-      if (dedupeKey == 'title:' || seenRecipes.contains(dedupeKey)) continue;
+    for (final r in uniqueRecipes(catalog)) {
+      final dedupeKey = listDedupeKey(r);
+      if (dedupeKey == 'title:' ||
+          dedupeKey == 'family:' ||
+          seenRecipes.contains(dedupeKey)) {
+        continue;
+      }
       seenRecipes.add(dedupeKey);
 
       final ingredients = <({String name, String amount})>[
@@ -190,7 +287,7 @@ class PantryRecipeMatcher {
       if (byExpiring != 0) return byExpiring;
       return b.ratio.compareTo(a.ratio);
     });
-    return meals;
+    return collapseNearTitleVariants(meals);
   }
 
   /// Meals that use [item], best first.

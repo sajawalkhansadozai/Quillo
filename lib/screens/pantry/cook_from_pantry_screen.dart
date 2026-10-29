@@ -62,16 +62,9 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
     ]);
     if (!mounted) return;
     final recipes = results[1] as List<GeneratedRecipe>;
-    final seen = <String>{};
-    final unique = <GeneratedRecipe>[];
-    for (final r in recipes) {
-      final key = PantryRecipeMatcher.recipeDedupeKey(r);
-      if (key == 'title:' || !seen.add(key)) continue;
-      unique.add(r);
-    }
     setState(() {
       _items = results[0] as List<PantryItem>;
-      _catalog = unique;
+      _catalog = PantryRecipeMatcher.uniqueRecipes(recipes);
       _loading = false;
     });
     final saved = await RecipeService.loadSavedRecipes();
@@ -83,8 +76,9 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
     final q = _searchCtrl.text.trim().toLowerCase();
     // Searching for one ingredient shows every recipe that uses it.
     final minRatio = widget.initialQuery.isNotEmpty ? 0.0 : 0.6;
-    return PantryRecipeMatcher.match(_catalog, _items, minRatio: minRatio)
-        .where((m) {
+    final filtered =
+        PantryRecipeMatcher.match(_catalog, _items, minRatio: minRatio)
+            .where((m) {
       final r = m.recipe;
       if (_under30 && r.effectiveCookTimeMinutes > 30) return false;
       if (_usesExpiring && m.usesExpiring.isEmpty) return false;
@@ -101,6 +95,8 @@ class _CookFromPantryScreenState extends State<CookFromPantryScreen> {
       }
       return true;
     }).toList();
+    // Filters can leave near-title variants adjacent; keep one dish only.
+    return PantryRecipeMatcher.collapseNearTitleVariants(filtered);
   }
 
   void _openRecipe(GeneratedRecipe r) {

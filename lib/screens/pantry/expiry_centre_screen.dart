@@ -41,7 +41,9 @@ class _ExpiryCentreScreenState extends State<ExpiryCentreScreen> {
     super.initState();
     _reload();
     RecipeService.listPublicRecipes().then((r) {
-      if (mounted) setState(() => _catalog = r);
+      if (mounted) {
+        setState(() => _catalog = PantryRecipeMatcher.uniqueRecipes(r));
+      }
     });
   }
 

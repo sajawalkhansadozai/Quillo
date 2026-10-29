@@ -46,7 +46,9 @@ class _PantryItemDetailScreenState extends State<PantryItemDetailScreen> {
 
   Future<void> _loadRecipes() async {
     final recipes = await RecipeService.listPublicRecipes(limit: 250);
-    if (mounted) setState(() => _catalog = recipes);
+    if (mounted) {
+      setState(() => _catalog = PantryRecipeMatcher.uniqueRecipes(recipes));
+    }
   }
 
   Future<void> _persist(PantryItem updated) async {

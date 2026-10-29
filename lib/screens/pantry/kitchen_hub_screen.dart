@@ -142,15 +142,8 @@ class _KitchenHubScreenState extends State<KitchenHubScreen> {
   Future<void> _loadRecipes() async {
     final recipes = await RecipeService.listPublicRecipes(limit: 250);
     if (!mounted) return;
-    // Drop duplicate catalog rows before matching (same dish once).
-    final seen = <String>{};
-    final unique = <GeneratedRecipe>[];
-    for (final r in recipes) {
-      final key = PantryRecipeMatcher.recipeDedupeKey(r);
-      if (key == 'title:' || !seen.add(key)) continue;
-      unique.add(r);
-    }
-    setState(() => _catalog = unique);
+    // Drop duplicate / near-title variant catalog rows before matching.
+    setState(() => _catalog = PantryRecipeMatcher.uniqueRecipes(recipes));
   }
 
   Future<void> _refresh() => Future.wait([_reload(), _loadRecipes()]);

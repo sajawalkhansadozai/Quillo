@@ -612,7 +612,7 @@ class _IngredientReviewScreenState extends State<IngredientReviewScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Image.asset(
-            'assets/food_3d/jar.png',
+            'assets/ingredients/jar.png',
             width: 72,
             height: 72,
             fit: BoxFit.contain,

@@ -795,30 +795,44 @@ class HomeScreenState extends State<HomeScreen>
 
   Widget _buildHeaderAvatar() {
     const size = 40.0;
+    const rim = 2.0;
     final hasImage = _avatarUrl != null && _avatarUrl!.isNotEmpty;
 
     return GestureDetector(
       onTap: _openProfile,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: size,
-        height: size,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
-          ],
+      child: Semantics(
+        button: true,
+        label: 'Profile and settings',
+        child: Container(
+          width: size + rim * 2,
+          height: size + rim * 2,
+          padding: const EdgeInsets.all(rim),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+            border: Border.all(color: AppColors.primary, width: rim),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.18),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: hasImage
+                ? Image.network(
+                    _avatarUrl!,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _buildHeaderAvatarInitial(size),
+                  )
+                : _buildHeaderAvatarInitial(size),
+          ),
         ),
-        child: hasImage
-            ? Image.network(
-                _avatarUrl!,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildHeaderAvatarInitial(size),
-              )
-            : _buildHeaderAvatarInitial(size),
       ),
     );
   }
